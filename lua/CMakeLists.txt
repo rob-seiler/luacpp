@@ -12,8 +12,8 @@ file(
     LIST_DIRECTORIES true
     ${PROJECT_SOURCE_DIR}/src/*.c
 )
-list(REMOVE_ITEM SRC_FILES "main.c") # standalone lua interpreter
-list(REMOVE_ITEM SRC_FILES "luac.c") # standalone lua compiler
+list(FILTER SRC_FILES EXCLUDE REGEX ".*main\.c") # standalone lua interpreter
+list(FILTER SRC_FILES EXCLUDE REGEX ".*luac\.c") # standalone lua compiler
 target_sources(${PROJECT_NAME} PRIVATE ${SRC_FILES})
 
 target_include_directories(
