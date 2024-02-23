@@ -18,8 +18,8 @@ target_sources(${PROJECT_NAME} PRIVATE ${SRC_FILES})
 
 target_include_directories(
     ${PROJECT_NAME}
-    PUBLIC
-	${PROJECT_SOURCE_DIR}/include
+    INTERFACE
+	${PROJECT_SOURCE_DIR}/include/lua/
 )
 
 if(UNIX AND NOT APPLE)
@@ -41,3 +41,12 @@ else()
         PRIVATE
     )
 endif()
+
+
+#We didn't change the build structure lua provided but it isn't that good to work with when compiling lua as a library.
+#Because of this we do some restructuring here.
+file(GLOB HEADER_FILES "${PROJECT_SOURCE_DIR}/src/*.h*")
+file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/include/lua)
+
+# Copy all header files to the new directory
+file(COPY ${HEADER_FILES} DESTINATION ${PROJECT_SOURCE_DIR}/include/lua)

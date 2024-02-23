@@ -1,5 +1,5 @@
-#include <scripting/LuaScript.hpp>
-#include <lua/lua.hpp>
+#include <LuaScript.hpp>
+#include <lua.hpp>
 
 #include <string>
 #include <array>

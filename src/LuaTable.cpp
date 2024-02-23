@@ -1,6 +1,6 @@
-#include <scripting/LuaTable.hpp>
-#include <scripting/LuaScript.hpp>
-#include <lua/lua.hpp>
+#include <LuaTable.hpp>
+#include <LuaScript.hpp>
+#include <lua.hpp>
 
 namespace Promess {
 namespace UFM6 {

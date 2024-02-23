@@ -355,9 +355,9 @@ private:
 		} else if constexpr (std::is_same_v<T, bool>) {
 			return asBoolean(state, index);
 		} else if constexpr (std::is_floating_point_v<T>) {
-			return asNumber(state, index);
+			return static_cast<T>(asNumber(state, index));
 		} else if constexpr (std::is_integral_v<T>) {
-			return asInteger(state, index);
+			return static_cast<T>(asInteger(state, index));
 		} else if constexpr (std::is_same_v<T, const char*>) {
 			return asString(state, index);
 		} else if constexpr (std::is_same_v<T, std::string_view>) {
