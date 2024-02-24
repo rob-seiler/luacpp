@@ -86,10 +86,10 @@ int LuaScript::overrideLuaFunction(const char* name, NativeFunction func) {
 	return 0;
 }
 
-int LuaScript::loadScriptIntoGlobal(const ScriptSource& source) {
-	int status = luaL_loadstring(m_state, source.getScriptData().data());
+int LuaScript::loadScriptIntoGlobal(const char* name, const char* code) {
+	int status = luaL_loadstring(m_state, code);
 	if (status == LUA_OK) {
-		lua_setglobal(m_state, source.getName().data());
+		lua_setglobal(m_state, name);
 	} else {
 		//lua failed to load the script and push an error message on the stack
 		//we store the message in our error log and clean up the stack
@@ -101,8 +101,8 @@ int LuaScript::loadScriptIntoGlobal(const ScriptSource& source) {
 	return status;
 }
 
-int LuaScript::loadAndExecuteScript(const ScriptSource& source) {
-	int status = luaL_dostring(m_state, source.getScriptData().data());
+int LuaScript::loadAndExecuteScript(const char* code) {
+	int status = luaL_dostring(m_state, code);
 	if (status != LUA_OK) {
 		//lua failed to load the script and push an error message on the stack
 		//we store the message in our error log and clean up the stack

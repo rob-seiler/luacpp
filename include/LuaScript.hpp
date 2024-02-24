@@ -1,7 +1,6 @@
 #ifndef SCRIPTING_LUASCRIPT_HPP
 #define SCRIPTING_LUASCRIPT_HPP
 
-#include "ScriptSource.hpp"
 #include "LuaTable.hpp"
 
 #include <string>
@@ -120,16 +119,34 @@ public:
 	 * This way you can load multiple scripts into the same lua state but this also comes with the risk of name collisions.
 	 * This scripts will share the same variables and functions.
 	 * This is also useful if you want to run a script multiple times.
-	 * @param source The source of the script
+	 * @param code The source code of the script
 	*/
-	int loadScriptIntoGlobal(const ScriptSource& source);
+	int loadScriptIntoGlobal(const char* name, const char* code);
+
+	/**
+	 * @brief Load a script into the global scope
+	 * The script is than available as a function with the name provided by the source (e.g. the file name)
+	 * You can than execute the script by calling the function with the same name.
+	 * This way you can load multiple scripts into the same lua state but this also comes with the risk of name collisions.
+	 * This scripts will share the same variables and functions.
+	 * This is also useful if you want to run a script multiple times.
+	 * @param code The source code of the script
+	*/
+	int loadScriptIntoGlobal(const char* name, const std::string& code) { return loadScriptIntoGlobal(name, code.c_str()); }
 
 	/**
 	 * @brief Load and execute a script
 	 * This will load the script and executes it immediately. The script will not be loaded into the global scope. So it is
 	 * not available as a function to call a second time.
 	*/
-	int loadAndExecuteScript(const ScriptSource& source);
+	int loadAndExecuteScript(const char* code);
+
+	/**
+	 * @brief Load and execute a script
+	 * This will load the script and executes it immediately. The script will not be loaded into the global scope. So it is
+	 * not available as a function to call a second time.
+	*/
+	int loadAndExecuteScript(const std::string& code) { return loadAndExecuteScript(code.c_str()); }
 
 	template <int NumRet = 0, typename... Args>
 	int executeFunction(std::string_view name, Args... args) {
