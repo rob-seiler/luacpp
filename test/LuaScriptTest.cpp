@@ -10,12 +10,12 @@ class TestObject {
 public:
 	TestObject() : m_x(0.0), m_y(0.0) { ++ObjectCount; }
 	~TestObject() { --ObjectCount; }
-	void translate(float x, float y) { m_x += x; m_y += y; }
+	void translate(double x, double y) { m_x += x; m_y += y; }
 
 	static uint32_t ObjectCount;
 private:
-	float m_x;
-	float m_y;
+	double m_x;
+	double m_y;
 };
 
 uint32_t TestObject::ObjectCount = 0;
