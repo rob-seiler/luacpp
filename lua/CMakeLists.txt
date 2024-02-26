@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.10)
 
 project(lua)
 set(CMAKE_CXX_STANDARD 99)
-add_library(${PROJECT_NAME})
+add_library(${PROJECT_NAME} STATIC)
 
 file(
     GLOB_RECURSE
@@ -19,7 +19,7 @@ target_sources(${PROJECT_NAME} PRIVATE ${SRC_FILES})
 target_include_directories(
     ${PROJECT_NAME}
     INTERFACE
-	${PROJECT_SOURCE_DIR}/include/lua/
+	${PROJECT_SOURCE_DIR}/include
 )
 
 if(UNIX AND NOT APPLE)
