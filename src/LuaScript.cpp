@@ -14,8 +14,7 @@ struct LibraryLoadingFunction {
 
 } // namespace
 
-namespace Promess {
-namespace UFM6 {
+namespace Lua {
 
 LuaScript::LuaScript(Library libraries) 
 : m_state(luaL_newstate()),
@@ -216,5 +215,4 @@ void LuaScript::pushCFunction(lua_State* state, NativeFunction value) { lua_push
 void LuaScript::pushLightUserData(lua_State* state, void* value) { lua_pushlightuserdata(state, value); }
 
 
-} // namespace UFM6
-} // namespace Promess
+} // namespace Lua

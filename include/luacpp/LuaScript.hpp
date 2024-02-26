@@ -10,8 +10,7 @@
 
 struct lua_State;
 
-namespace Promess {
-namespace UFM6 {
+namespace Lua {
 
 constexpr uint32_t bit(uint32_t n) { return 1 << n; }
 
@@ -435,7 +434,6 @@ inline void LuaScript::pushToStack<const std::string&>(lua_State* state, const s
 	pushString(state, value.c_str(), value.length());
 }
 
-} // namespace UFM6
-} // namespace Promess
+} // namespace Lua
 
 #endif // SCRIPTING_LUASCRIPT_HPP

@@ -6,8 +6,7 @@
 
 struct lua_State;
 
-namespace Promess {
-namespace UFM6 {
+namespace Lua {
 
 class LuaTable {
 public:
@@ -47,7 +46,6 @@ private:
 	bool m_setRaw;
 };
 
-} // namespace UFM6
-} // namespace Promess
+} // namespace Lua
 
 #endif //SCRIPTING_LUATABLE_HPP

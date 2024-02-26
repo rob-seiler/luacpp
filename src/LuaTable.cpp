@@ -2,8 +2,7 @@
 #include <LuaScript.hpp>
 #include <lua/lua.hpp>
 
-namespace Promess {
-namespace UFM6 {
+namespace Lua {
 
 LuaTable::LuaTable(lua_State* state, int index, bool rawset)
 : m_state(state), m_tableIndex(index), m_setRaw(rawset)
@@ -98,5 +97,4 @@ template bool LuaTable::readValue<const char*>(std::string_view, const char*&);
 template bool LuaTable::readValue<std::string_view>(std::string_view, std::string_view&);
 template bool LuaTable::readValue<std::string>(std::string_view, std::string&);
 
-} // namespace UFM6
-} // namespace Promess
+} // namespace Lua

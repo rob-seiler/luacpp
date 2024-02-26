@@ -4,8 +4,7 @@
 
 //#include <lua/lua.hpp>
 
-namespace Promess {
-namespace UFM6 {
+namespace Lua {
 
 class TestObject {
 public:
@@ -269,5 +268,4 @@ TEST_F(LuaScriptTest, ctordtor) {
 	EXPECT_EQ(TestObject::ObjectCount, 0);
 }
 
-} // namespace UFM6
-} // namespace Promess
+} // namespace Lua
