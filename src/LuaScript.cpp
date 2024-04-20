@@ -121,6 +121,10 @@ LuaScript::Type LuaScript::pushGlobalToStack(const char* name) {
 	return static_cast<Type>(lua_getglobal(m_state, name));
 }
 
+void LuaScript::setGlobalFromStack(const char* name) {
+	lua_setglobal(m_state, name);
+}
+
 int LuaScript::getStackSize() const {
 	return lua_gettop(m_state);
 }

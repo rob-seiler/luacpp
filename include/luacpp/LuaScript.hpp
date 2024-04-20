@@ -97,6 +97,12 @@ public:
 		return val;
 	}
 
+	template <typename T>
+	void writeVariable(const char* variableName, T value) {
+		pushToStack(value);
+		setGlobalFromStack(variableName);
+	}
+
 	/**
 	 * @brief Register a native function to be callable from Lua
 	*/
@@ -234,6 +240,12 @@ public:
 	 * @return The type of the variable
 	*/
 	Type pushGlobalToStack(const char* name);
+
+	/**
+	 * @brief Writes the stack value into the global variable given by name
+	 * @param name The name of the variable to write into
+	*/
+	void setGlobalFromStack(const char* name);
 
 	/**
 	 * @brief Get the number of values on the stack

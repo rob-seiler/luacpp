@@ -80,6 +80,26 @@ TEST_F(LuaScriptTest, simpleReadVariable) {
 	EXPECT_EQ(script.readVariable<int>("x"), 12);
 }
 
+TEST_F(LuaScriptTest, simpleWriteVariable) {
+	const char* src = R"(
+		-- This is a Lua script
+		x = 0
+		y = 0
+		function calcY()
+			y = x + 2
+		end
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	EXPECT_EQ(script.executeFunction("calcY"), 0);
+	EXPECT_EQ(script.readVariable<int>("y"), 2);
+
+	script.writeVariable("x", 10);
+	EXPECT_EQ(script.executeFunction("calcY"), 0);
+	EXPECT_EQ(script.readVariable<int>("y"), 12);
+}
+
 TEST_F(LuaScriptTest, simpleFunctionWithReturnValue) {
 	const char* src = R"(
 		function sqr(x)
