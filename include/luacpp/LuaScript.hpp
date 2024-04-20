@@ -87,6 +87,16 @@ public:
 
 	void openLibrary(Library library);
 
+
+	template <typename T>
+	T readVariable(const char* variableName) {
+		pushGlobalToStack(variableName);
+
+		T val = getStackValue<T>(m_state, -1);
+		popStack(1);
+		return val;
+	}
+
 	/**
 	 * @brief Register a native function to be callable from Lua
 	*/

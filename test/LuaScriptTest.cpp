@@ -42,6 +42,7 @@ protected:
 
 using namespace std::literals::string_view_literals;
 
+
 TEST_F(LuaScriptTest, simpleScriptExecution) {
 	const char* src = R"(
 		-- This is a Lua script
@@ -66,6 +67,17 @@ TEST_F(LuaScriptTest, simpleScriptWithInvalidSyntax) {
 	for (const std::string& err : script.getErrorList()) {
 		std::cout << err << std::endl;
 	}
+}
+
+TEST_F(LuaScriptTest, simpleReadVariable) {
+	const char* src = R"(
+		-- This is a Lua script
+		x = 10 + 2
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	EXPECT_EQ(script.readVariable<int>("x"), 12);
 }
 
 TEST_F(LuaScriptTest, simpleFunctionWithReturnValue) {
