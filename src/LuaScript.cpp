@@ -129,25 +129,6 @@ int LuaScript::getStackSize() const {
 	return lua_gettop(m_state);
 }
 
-void LuaScript::popStack(int numValues) {
-	lua_pop(m_state, numValues);
-}
-
-bool LuaScript::isOfType(Type type, int index) const {
-	switch (type) {
-		case Type::Nil: return lua_isnil(m_state, index);
-		case Type::Boolean:	return lua_isboolean(m_state, index);
-		case Type::LightUserData: return lua_islightuserdata(m_state, index);
-		case Type::Number: return lua_isnumber(m_state, index);
-		case Type::String: return lua_isstring(m_state, index);
-		case Type::Table: return lua_istable(m_state, index);
-		case Type::Function: return lua_isfunction(m_state, index);
-		case Type::UserData: return lua_isuserdata(m_state, index);
-		case Type::Thread: return lua_isthread(m_state, index);
-	}
-	return false;
-}
-
 void LuaScript::withTableDo(std::string_view tableName, TableFunction workOnTable) {
 	if (lua_getglobal(m_state, tableName.data()) == LUA_TTABLE) {
 		LuaTable table(m_state, -1); //the table is on top of the stack
@@ -198,25 +179,6 @@ int LuaScript::callFunction(int numArgs, int numResults) {
 	return lua_pcall(m_state, numArgs, numResults, 0);
 }
 
-void* LuaScript::allocateUserData(lua_State* state, size_t size, int userValues) {
-	return lua_newuserdatauv(state, size, userValues);
-}
-
-int LuaScript::calcUpValueIndex(int index) { return lua_upvalueindex(index); }
-
-void* LuaScript::asUserData(lua_State* state, int index) { return lua_touserdata(state, index); }
-bool LuaScript::asBoolean(lua_State* state, int index) { return lua_toboolean(state, index) != 0; }
-double LuaScript::asNumber(lua_State* state, int index) { return lua_tonumber(state, index); }
-int64_t LuaScript::asInteger(lua_State* state, int index) { return lua_tointeger(state, index); }
-const char* LuaScript::asString(lua_State* state, int index, size_t* len) { return lua_tolstring(state, index, len); }
-
-void LuaScript::pushBoolean(lua_State* state, bool value) { lua_pushboolean(state, value); }
-void LuaScript::pushNumber(lua_State* state, double value) { lua_pushnumber(state, value); }
-void LuaScript::pushInteger(lua_State* state, int64_t value) { lua_pushinteger(state, value); }
-void LuaScript::pushString(lua_State* state, const char* value) { lua_pushstring(state, value); }
-void LuaScript::pushString(lua_State* state, const char* value, size_t len) { lua_pushlstring(state, value, len); }
-void LuaScript::pushCFunction(lua_State* state, NativeFunction value) { lua_pushcfunction(state, value); }
-void LuaScript::pushLightUserData(lua_State* state, void* value) { lua_pushlightuserdata(state, value); }
 
 
 } // namespace Lua
