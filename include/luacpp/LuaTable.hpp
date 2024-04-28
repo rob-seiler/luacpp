@@ -4,6 +4,7 @@
 #include "Basics.hpp"
 #include <string_view>
 #include <functional>
+#include <map>
 
 struct lua_State;
 
@@ -23,7 +24,7 @@ public:
 	template <typename T>
 	bool readValue(std::string_view key, T& value) {
 		Type valType = getField(m_state, m_tableIndex, key.data());
-		const bool retVal = Basics::doesTypeMatch<T>(valType);
+		const bool retVal = Basics::getTypeFor<T>() == valType;
 		if (retVal) {
 			value = Basics::getStackValue<T>(m_state, -1);
 		}
@@ -31,6 +32,29 @@ public:
 		return retVal;
 	}
 
+	template <typename Key, typename Value>
+	std::map<Key, Value> read() {
+		std::map<Key, Value> result;
+
+		Basics::pushNil(m_state);  // Push a nil key to start the iteration
+		while (getNext() != 0) {
+			if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
+				throw std::runtime_error("Key is not of the expected type");
+			}
+			if (!Basics::isOfType(m_state, Basics::getTypeFor<Value>(), -1)) {
+				throw std::runtime_error("Value is not of the expected type");
+			}
+
+			Key k = Basics::getStackValue<Key>(m_state, -2);
+			Value v = Basics::getStackValue<Value>(m_state, -1);
+			result[k] = v;
+
+			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+		}
+
+		// No need to pop the table; it remains at the top of the stack
+		return result;
+	}
 	/**
 	 * \brief work on the nested table with the given name
 	 * This method pushes the table with the given name from the table which is currently on the stack onto the stack and calls the given function.
@@ -55,6 +79,10 @@ private:
 	static void applyKeyForValue(lua_State* state, const char* key, bool rawset = false);
 
 	static Type getField(lua_State* state, int idx, const char* key);
+
+	static int getNext(lua_State* state, int idx);
+
+	int getNext() { return getNext(m_state, m_tableIndex); }
 
 	lua_State* m_state;
 	int m_tableIndex;

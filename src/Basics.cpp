@@ -22,6 +22,7 @@ void Basics::popStack(lua_State* state, int numValues) {
 	lua_pop(state, numValues);
 }
 
+void Basics::pushNil(lua_State* state) { lua_pushnil(state); }
 void Basics::pushBoolean(lua_State* state, bool value) { lua_pushboolean(state, value); }
 void Basics::pushNumber(lua_State* state, double value) { lua_pushnumber(state, value); }
 void Basics::pushInteger(lua_State* state, int64_t value) { lua_pushinteger(state, value); }

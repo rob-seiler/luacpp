@@ -95,6 +95,18 @@ public:
 		setGlobalFromStack(variableName);
 	}
 
+	template <typename Key, typename Value>
+	std::map<Key, Value> readTable(const char* tableName) {
+		std::map<Key, Value> result;
+
+		if (pushGlobalToStack(tableName) == Type::Table) {
+			LuaTable table(m_state, -1);
+			result = table.read<Key, Value>();
+		}
+		popStack(1);
+		return result;
+	}
+
 	/**
 	 * @brief Register a native function to be callable from Lua
 	*/

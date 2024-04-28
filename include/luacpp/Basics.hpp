@@ -30,6 +30,25 @@ public:
 	Basics(Basics&&) = delete;
 	~Basics() = delete;
 
+	template <typename T>
+	constexpr static Type getTypeFor() {
+		if constexpr (std::is_void_v<T> || std::is_same_v<T, std::nullptr_t>) {
+			return Type::Nil;
+		} else if constexpr (std::is_same_v<T, bool>) {
+			return Type::Boolean;
+		} else if constexpr (std::is_pointer_v<T>) {
+			return Type::LightUserData;
+		} else if constexpr (std::is_floating_point_v<T> || std::is_integral_v<T>) {
+			return Type::Number;
+		} else if constexpr (std::is_same_v<T, const char*> || std::is_same_v<T, std::string_view> || std::is_same_v<T, std::string>) {
+			return Type::String;
+		} else if constexpr (std::is_same_v<T, NativeFunction>) {
+			return Type::Function;
+		} else {
+			return Type::None;
+		}
+	}
+
 	/**
 	 * @brief check if the value on the stack is of the given type
 	 * @param t The type to check against
@@ -37,27 +56,6 @@ public:
 	 * @return true if the value is of the given type, false otherwise
 	*/
 	static bool isOfType(lua_State* state, Type t, int index);
-
-	/**
-	 * \brief Check if the given type matches the template type
-	*/
-	template <typename T>
-	static bool doesTypeMatch(Type type) {
-		switch (type) {
-			case Type::Nil:	return std::is_same_v<T, std::nullptr_t>;
-			case Type::Boolean:	return std::is_same_v<T, bool>;
-			case Type::LightUserData: return std::is_pointer_v<T>;
-			case Type::Number: return std::is_floating_point_v<T> || std::is_integral_v<T>;
-			case Type::String: return std::is_same_v<T, const char*> || std::is_same_v<T, std::string_view> || std::is_same_v<T, std::string>;
-			case Type::Table:
-			case Type::Function:
-			case Type::UserData:
-			case Type::Thread:
-			default:
-				return false;
-		}
-		return false;
-	}
 
 	template <typename T>
 	static void pushToStack(lua_State* state, T value) {
@@ -109,6 +107,7 @@ public:
 
 	static void popStack(lua_State* state, int numValues);
 
+	static void pushNil(lua_State* state);
 	static void pushBoolean(lua_State* state, bool value);
 	static void pushNumber(lua_State* state, double value);
 	static void pushInteger(lua_State* state, int64_t value);

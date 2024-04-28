@@ -2,12 +2,16 @@
 #include <LuaScript.hpp>
 #include <Basics.hpp>
 #include <lua/lua.hpp>
+#include <stdexcept>
 
 namespace Lua {
 
 LuaTable::LuaTable(lua_State* state, int index, bool rawset)
-: m_state(state), m_tableIndex(index), m_setRaw(rawset)
+: m_state(state), m_tableIndex(lua_absindex(state, index)), m_setRaw(rawset)
 {
+	if (!Basics::isOfType(state, Type::Table, index)) {
+		throw std::runtime_error("Not implemented");
+	}
 }
 
 void LuaTable::withTableDo(std::string_view tableName, std::function<void(LuaTable&)> workOnTable) {
@@ -45,6 +49,10 @@ void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool rawset) 
 
 LuaTable::Type LuaTable::getField(lua_State* state, int idx, const char* key) {
 	return static_cast<Type>(lua_getfield(state, idx, key));
+}
+
+int LuaTable::getNext(lua_State* state, int idx) {
+	return lua_next(state, idx);
 }
 
 } // namespace Lua

@@ -140,7 +140,21 @@ TEST_F(LuaScriptTest, simpleNativeFunction) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-TEST_F(LuaScriptTest, simpleTable) {
+TEST_F(LuaScriptTest, readTable) {
+	const char* src = R"(
+		map = { a = 1, b = 2, c = 3	}
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	auto map = script.readTable<std::string, int>("map");
+	EXPECT_EQ(map.size(), 3);
+	EXPECT_EQ(map["a"], 1);
+	EXPECT_EQ(map["b"], 2);
+	EXPECT_EQ(map["c"], 3);
+}
+
+TEST_F(LuaScriptTest, withTableDo) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = 3	}
 	)";
