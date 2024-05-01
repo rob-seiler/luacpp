@@ -129,11 +129,20 @@ int LuaScript::getStackSize() const {
 	return lua_gettop(m_state);
 }
 
-void LuaScript::withTableDo(std::string_view tableName, TableFunction workOnTable) {
-	if (lua_getglobal(m_state, tableName.data()) == LUA_TTABLE) {
-		LuaTable table(m_state, -1); //the table is on top of the stack
-		workOnTable(table);
+void LuaScript::withTableDo(std::string_view tableName, TableFunction workOnTable, bool createIfMissing) {
+	if (lua_getglobal(m_state, tableName.data()) != LUA_TTABLE) {
+		if (createIfMissing) {
+			lua_newtable(m_state); // Create a new table and push it onto the stack
+			lua_pushvalue(m_state, -1); // Duplicate the table because setglobal pops the value
+			lua_setglobal(m_state, tableName.data()); // Set the new table as a global variable
+		} else {
+			lua_pop(m_state, 1); // Pop the nil from the stack to clean up
+			return; // Exit the function as there's no table to work with and creation is not requested
+		}
 	}
+
+	LuaTable table(m_state, -1); //the table is on top of the stack
+	workOnTable(table);
 	lua_pop(m_state, 1);
 }
 

@@ -107,6 +107,13 @@ public:
 		return result;
 	}
 
+	template <typename T>
+	void writeTable(const char* tableName, const std::map<std::string, T>& map) {
+		withTableDo(tableName, [this, &map](LuaTable& table) {
+			table.write(map);
+		}, true);
+	}
+
 	/**
 	 * @brief Register a native function to be callable from Lua
 	*/
@@ -292,7 +299,7 @@ public:
 	 * \brief work on the table with the given name
 	 * This method pushes the table with the given name from the global scope onto the stack and calls the given function.
 	*/
-	void withTableDo(std::string_view tableName, TableFunction workOnTable);
+	void withTableDo(std::string_view tableName, TableFunction workOnTable, bool createIfMissing);
 
 	/**
 	 * \brief work on the table stored on the given stack index
@@ -343,6 +350,11 @@ public:
 	 * \brief Clear the list of errors that occured during script execution
 	*/
 	void clearErrorList() { m_errorList.clear(); }
+
+	/**
+	 * \brief returns the internal lua state
+	*/
+	lua_State* getState() const { return m_state; }
 
 private:
 	constexpr static const char* const HandleName = "LuaScriptHandle";

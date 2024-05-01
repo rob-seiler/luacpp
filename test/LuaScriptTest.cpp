@@ -69,7 +69,7 @@ TEST_F(LuaScriptTest, simpleScriptWithInvalidSyntax) {
 	}
 }
 
-TEST_F(LuaScriptTest, simpleReadVariable) {
+TEST_F(LuaScriptTest, readVariable) {
 	const char* src = R"(
 		-- This is a Lua script
 		x = 10 + 2
@@ -80,7 +80,7 @@ TEST_F(LuaScriptTest, simpleReadVariable) {
 	EXPECT_EQ(script.readVariable<int>("x"), 12);
 }
 
-TEST_F(LuaScriptTest, simpleWriteVariable) {
+TEST_F(LuaScriptTest, writeVariable) {
 	const char* src = R"(
 		-- This is a Lua script
 		x = 0
@@ -154,6 +154,24 @@ TEST_F(LuaScriptTest, readTable) {
 	EXPECT_EQ(map["c"], 3);
 }
 
+TEST_F(LuaScriptTest, writeTable) {
+	const char* src = R"(
+		-- This is a Lua script
+		y = 0
+		function calcY()
+			y = map.a + map.b
+		end
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	std::map<std::string, int> map = { { "a", 10 }, { "b", 20 } };
+	script.writeTable("map", map);
+	
+	EXPECT_EQ(script.executeFunction("calcY"), 0);
+	EXPECT_EQ(script.readVariable<int>("y"), 30);
+}
+
 TEST_F(LuaScriptTest, withTableDo) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = 3	}
@@ -167,7 +185,7 @@ TEST_F(LuaScriptTest, withTableDo) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
 		EXPECT_TRUE(table.readValue<int>("b", b));
 		EXPECT_TRUE(table.readValue<int>("c", c));
-	});
+	}, false);
 
 	EXPECT_EQ(script.getStackSize(), 0); //all requested values should be popped from the stack
 	EXPECT_EQ(a, 1);
@@ -191,7 +209,7 @@ TEST_F(LuaScriptTest, nestedTable) {
 			EXPECT_TRUE(table.readValue<int>("d", d));
 			EXPECT_TRUE(table.readValue<int>("e", e));
 		});
-	});
+	}, false);
 
 	EXPECT_EQ(script.getStackSize(), 0); //all requested values should be popped from the stack
 	EXPECT_EQ(a, 1);
@@ -219,8 +237,8 @@ TEST_F(LuaScriptTest, metatable) {
 		static void createVectorTable(LuaScript& lua, double x, double y) {
 			//we want to keep the table on the stack because it is the return value
 			lua.createTable(nullptr, [x, y](LuaTable& table) {
-				table.createElement("x", x);
-				table.createElement("y", y);
+				table.setElement("x", x);
+				table.setElement("y", y);
 				table.assignMetaTable(MetaTable); //assign the metatable we've previously created to the table
 			});
 		}
@@ -258,7 +276,7 @@ TEST_F(LuaScriptTest, metatable) {
 
 	//add a meta table which defines the __add metamethod for our vector
 	script.createMetaTable(MetaTable, [](LuaTable& table) {
-		table.createElement(LuaScript::MetaTable::Addition, Vec2::add);
+		table.setElement(LuaScript::MetaTable::Addition, Vec2::add);
 	});
 
 	script.registerNativeFunction("createVector", Vec2::create);
@@ -272,7 +290,7 @@ TEST_F(LuaScriptTest, metatable) {
 	script.withTableDo("v3", [&v3x, &v3y](LuaTable& table) {
 		EXPECT_TRUE(table.readValue<double>("x", v3x));
 		EXPECT_TRUE(table.readValue<double>("y", v3y));
-	});
+	}, false);
 
 	EXPECT_EQ(script.getStackSize(), 0); //all requested values should be popped from the stack
 	EXPECT_DOUBLE_EQ(v3x, 11.0);
@@ -305,7 +323,7 @@ TEST_F(LuaScriptTest, ctordtor) {
 		});
 		//register metatable
 		script.createMetaTable(MetaTable, [](LuaTable& table) {
-			table.createElement(LuaScript::MetaTable::GC, destroyObject);
+			table.setElement(LuaScript::MetaTable::GC, destroyObject);
 		});
 
 		EXPECT_EQ(script.loadAndExecuteScript(src), 0);

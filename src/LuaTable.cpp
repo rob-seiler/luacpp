@@ -6,8 +6,8 @@
 
 namespace Lua {
 
-LuaTable::LuaTable(lua_State* state, int index, bool rawset)
-: m_state(state), m_tableIndex(lua_absindex(state, index)), m_setRaw(rawset)
+LuaTable::LuaTable(lua_State* state, int index, bool triggerMetaMethods)
+: m_state(state), m_tableIndex(lua_absindex(state, index)), m_triggerMetaMethods(triggerMetaMethods)
 {
 	if (!Basics::isOfType(state, Type::Table, index)) {
 		throw std::runtime_error("Not implemented");
@@ -33,12 +33,12 @@ bool LuaTable::assignMetaTable(const char* name) {
 	return false;
 }
 
-void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool rawset) {
+void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool triggerMetaMethods) {
 	//assumption of stack layout:
 	//-1: value
 	//-2: table
 
-	if (rawset) {
+	if (triggerMetaMethods) {
 		lua_pushstring(state, key);
 		lua_insert(state, -2); //move the key below the value
 		lua_rawset(state, -3);
@@ -49,6 +49,14 @@ void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool rawset) 
 
 LuaTable::Type LuaTable::getField(lua_State* state, int idx, const char* key) {
 	return static_cast<Type>(lua_getfield(state, idx, key));
+}
+
+void LuaTable::setTable(lua_State* state, int idx, bool triggerMetaMethods) {
+	if (triggerMetaMethods) {
+		lua_settable(state, idx);
+	} else {
+		lua_rawset(state, idx);
+	}
 }
 
 int LuaTable::getNext(lua_State* state, int idx) {

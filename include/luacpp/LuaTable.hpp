@@ -13,12 +13,13 @@ namespace Lua {
 class LuaTable {
 public:
 	using Type = Basics::Type;
-	LuaTable(lua_State* state, int index = -1, bool rawset = false);
+	LuaTable(lua_State* state, int index = -1, bool triggerMetaMethods = false);
 
-	template <typename T>
-	void createElement(const char* key, T value) {
-		Basics::pushToStack<T>(m_state, value);
-		applyKeyForValue(m_state, key, m_setRaw);
+	template <typename Key, typename Value>
+	void setElement(Key key, Value value) {
+		Basics::pushToStack<Key>(m_state, key);
+		Basics::pushToStack<Value>(m_state, value);
+		setTable(m_state, -3, m_triggerMetaMethods);
 	}
 
 	template <typename T>
@@ -55,6 +56,14 @@ public:
 		// No need to pop the table; it remains at the top of the stack
 		return result;
 	}
+
+    template <typename Key, typename Value>
+    void write(const std::map<Key, Value>& map) {
+        for (const auto& [key, value] : map) {
+			setElement(key, value);
+        }
+    }
+
 	/**
 	 * \brief work on the nested table with the given name
 	 * This method pushes the table with the given name from the table which is currently on the stack onto the stack and calls the given function.
@@ -80,13 +89,15 @@ private:
 
 	static Type getField(lua_State* state, int idx, const char* key);
 
+	static void setTable(lua_State* state, int idx, bool triggerMetaMethods);
+
 	static int getNext(lua_State* state, int idx);
 
 	int getNext() { return getNext(m_state, m_tableIndex); }
 
 	lua_State* m_state;
 	int m_tableIndex;
-	bool m_setRaw;
+	bool m_triggerMetaMethods;
 };
 
 } // namespace Lua
