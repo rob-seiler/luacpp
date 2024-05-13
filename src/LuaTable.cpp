@@ -47,7 +47,7 @@ void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool triggerM
 	}
 }
 
-LuaTable::Type LuaTable::getField(lua_State* state, int idx, const char* key) {
+Type LuaTable::getField(lua_State* state, int idx, const char* key) {
 	return static_cast<Type>(lua_getfield(state, idx, key));
 }
 

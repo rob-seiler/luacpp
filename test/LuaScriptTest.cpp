@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <luacpp/LuaScript.hpp>
+#include <luacpp/TypeMismatchException.hpp>
 #include <string>
 
 //#include <lua/lua.hpp>
@@ -165,8 +166,13 @@ TEST_F(LuaScriptTest, readTable_invalidValueType) {
 	bool exceptionRaised = false;
 	try {
 		script.readTable<std::string,int>("map");
-	} catch (...) {
+	} catch (const TypeMismatchException& e) {
+		EXPECT_EQ(e.getExpectedType(), Type::Number);
+		EXPECT_EQ(e.getActualType(), Type::String);
+		printf("%s\n", e.what());
 		exceptionRaised = true;
+	} catch (...) {
+		//unexpected exception raised
 	}
 	EXPECT_TRUE(exceptionRaised);
 	EXPECT_EQ(script.getStackSize(), 0);

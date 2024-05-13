@@ -113,11 +113,11 @@ int LuaScript::loadAndExecuteScript(const char* code) {
 	return status;
 }
 
-LuaScript::Type LuaScript::getType(int index) const {
+Type LuaScript::getType(int index) const {
 	return static_cast<Type>(lua_type(m_state, index));
 }
 
-LuaScript::Type LuaScript::pushGlobalToStack(const char* name) {
+Type LuaScript::pushGlobalToStack(const char* name) {
 	return static_cast<Type>(lua_getglobal(m_state, name));
 }
 

@@ -1,6 +1,7 @@
 #ifndef LUACPP_BASICS_HPP
 #define LUACPP_BASICS_HPP
 
+#include "Type.hpp"
 #include <cstdint>
 #include <string>
 
@@ -11,19 +12,6 @@ namespace Lua {
 class Basics {
 public:
 	typedef int (*NativeFunction)(lua_State*);
-
-	enum class Type : int {
-		None = -1,
-		Nil = 0,
-		Boolean = 1,
-		LightUserData = 2,
-		Number = 3,
-		String = 4,
-		Table = 5,
-		Function = 6,
-		UserData = 7,
-		Thread = 8
-	};
 
 	Basics() = delete;
 	Basics(const Basics&) = delete;
@@ -56,6 +44,8 @@ public:
 	 * @return true if the value is of the given type, false otherwise
 	*/
 	static bool isOfType(lua_State* state, Type t, int index);
+
+	static Type getType(lua_State* state, int index);
 
 	template <typename T>
 	static void pushToStack(lua_State* state, T value) {

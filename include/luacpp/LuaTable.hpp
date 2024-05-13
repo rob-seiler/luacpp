@@ -2,6 +2,7 @@
 #define LUACPP_LUATABLE_HPP
 
 #include "Basics.hpp"
+#include "TypeMismatchException.hpp"
 #include <string_view>
 #include <functional>
 #include <map>
@@ -12,7 +13,6 @@ namespace Lua {
 
 class LuaTable {
 public:
-	using Type = Basics::Type;
 	LuaTable(lua_State* state, int index = -1, bool triggerMetaMethods = false);
 
 	template <typename Key, typename Value>
@@ -41,10 +41,10 @@ public:
 		while (getNext() != 0) {
 			try {
 				if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
-					throw std::runtime_error("Key is not of the expected type");
+					throw TypeMismatchException(Basics::getTypeFor<Key>(), Basics::getType(m_state, -2), "Key");
 				}
 				if (!Basics::isOfType(m_state, Basics::getTypeFor<Value>(), -1)) {
-					throw std::runtime_error("Value is not of the expected type");
+					throw TypeMismatchException(Basics::getTypeFor<Value>(), Basics::getType(m_state, -1), "Value");
 				}
 
 				Key k = Basics::getStackValue<Key>(m_state, -2);

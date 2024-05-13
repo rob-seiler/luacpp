@@ -18,6 +18,10 @@ bool Basics::isOfType(lua_State* state, Type type, int index) {
 	return false;
 }
 
+Type Basics::getType(lua_State* state, int index) {
+	return static_cast<Type>(lua_type(state, index));
+}
+
 void Basics::popStack(lua_State* state, int numValues) {
 	lua_pop(state, numValues);
 }

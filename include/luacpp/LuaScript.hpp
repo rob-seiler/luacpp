@@ -18,7 +18,6 @@ constexpr uint32_t bit(uint32_t n) { return 1 << n; }
 class LuaScript {
 public:
 	using NativeFunction = Basics::NativeFunction;
-	using Type = Basics::Type;
 
 	typedef std::function<void(LuaTable&)> TableFunction;
 	typedef uint32_t Library;
@@ -298,7 +297,7 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getUpValue(int index) const { return getStackValue<T>(m_state, calcUpValueIndex(index)); }
+	T getUpValue(int index) const { return getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
 
 	/**
 	 * @brief check if the value on the stack is of the given type
