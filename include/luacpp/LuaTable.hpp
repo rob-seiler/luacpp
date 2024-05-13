@@ -39,11 +39,38 @@ public:
 
 		Basics::pushNil(m_state);  // Push a nil key to start the iteration
 		while (getNext() != 0) {
-			if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
-				throw std::runtime_error("Key is not of the expected type");
+			try {
+				if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
+					throw std::runtime_error("Key is not of the expected type");
+				}
+				if (!Basics::isOfType(m_state, Basics::getTypeFor<Value>(), -1)) {
+					throw std::runtime_error("Value is not of the expected type");
+				}
+
+				Key k = Basics::getStackValue<Key>(m_state, -2);
+				Value v = Basics::getStackValue<Value>(m_state, -1);
+				result[k] = v;
+			} catch (...) {
+				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
+            	throw;  // Rethrow the exception
 			}
-			if (!Basics::isOfType(m_state, Basics::getTypeFor<Value>(), -1)) {
-				throw std::runtime_error("Value is not of the expected type");
+
+			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+		}
+
+		// No need to pop the table; it remains at the top of the stack
+		return result;
+	}
+
+	template <typename Key, typename Value>
+	std::map<Key, Value> readIfMatching() noexcept {
+		std::map<Key, Value> result;
+
+		Basics::pushNil(m_state);  // Push a nil key to start the iteration
+		while (getNext() != 0) {
+			if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2) || !Basics::isOfType(m_state, Basics::getTypeFor<Value>(), -1)) {
+				Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+				continue;
 			}
 
 			Key k = Basics::getStackValue<Key>(m_state, -2);

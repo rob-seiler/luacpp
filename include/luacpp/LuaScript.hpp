@@ -99,9 +99,23 @@ public:
 	std::map<Key, Value> readTable(const char* tableName) {
 		std::map<Key, Value> result;
 
+		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
+
 		if (pushGlobalToStack(tableName) == Type::Table) {
 			LuaTable table(m_state, -1);
 			result = table.read<Key, Value>();
+		}
+		
+		return result;
+	}
+
+	template <typename Key, typename Value>
+	std::map<Key, Value> readTableIfMatching(const std::string& tableName) { 
+		std::map<Key, Value> result;
+
+		if (pushGlobalToStack(tableName.c_str()) == Type::Table) {
+			LuaTable table(m_state, -1);
+			result = table.readIfMatching<Key, Value>();
 		}
 		popStack(1);
 		return result;

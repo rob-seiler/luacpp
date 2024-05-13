@@ -154,6 +154,37 @@ TEST_F(LuaScriptTest, readTable) {
 	EXPECT_EQ(map["c"], 3);
 }
 
+TEST_F(LuaScriptTest, readTable_invalidValueType) {
+	const char* src = R"(
+		map = { a = 1, b = "two", c = 3	}
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+
+	bool exceptionRaised = false;
+	try {
+		script.readTable<std::string,int>("map");
+	} catch (...) {
+		exceptionRaised = true;
+	}
+	EXPECT_TRUE(exceptionRaised);
+	EXPECT_EQ(script.getStackSize(), 0);
+}
+
+TEST_F(LuaScriptTest, readTableIfMatching) {
+	const char* src = R"(
+		map = { a = 1, b = "two", c = 3	}
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	auto map = script.readTableIfMatching<std::string, int>("map");
+	EXPECT_EQ(map.size(), 2);
+	EXPECT_EQ(map["a"], 1);
+	EXPECT_EQ(map["c"], 3);
+}
+
 TEST_F(LuaScriptTest, writeTable) {
 	const char* src = R"(
 		-- This is a Lua script
