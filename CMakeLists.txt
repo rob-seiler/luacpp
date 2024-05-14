@@ -1,9 +1,19 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.28)
 add_subdirectory(./lua)
 
 project(luacpp)
-set(CMAKE_CXX_STANDARD 17)
 add_library(${PROJECT_NAME} STATIC)
+
+# Define an option for C++20 modules
+option(USE_CPP20_MODULES "Compile with C++20 modules" OFF)
+
+# Check the option and set the appropriate compile options
+if(USE_CPP20_MODULES)
+    target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
+    #ToDo configure the library correctly for modules
+else()
+    target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
+endif()
 
 file(
     GLOB_RECURSE
