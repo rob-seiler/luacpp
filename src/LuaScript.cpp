@@ -11,7 +11,6 @@ struct LibraryLoadingFunction {
 	const char* name;
 	int (*func)(lua_State*);
 };
-
 } // namespace
 
 namespace Lua {
@@ -75,6 +74,11 @@ int LuaScript::registerNativeFunction(const char* name, NativeFunction func, int
 	lua_pushcclosure(m_state, func, numUpValues);
 	lua_setglobal(m_state, name);
 	return 0;
+}
+
+int LuaScript::registerMethod(const char* name, Method method) {
+	m_callbacks.push_back(method);
+	return registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 int LuaScript::overrideLuaFunction(const char* name, NativeFunction func) {
@@ -178,6 +182,12 @@ bool LuaScript::assignMetaTable(const char* name) {
 		return true;
 	}
 	return false;
+}
+
+int LuaScript::dispatchMethod(lua_State* state) {
+	const int index = lua_tointeger(state, lua_upvalueindex(1));
+	LuaScript* script = static_cast<LuaScript*>(lua_touserdata(state, lua_upvalueindex(2)));
+	return script->m_callbacks[index](*script);
 }
 
 bool LuaScript::loadFunction(const char* funcName) { 

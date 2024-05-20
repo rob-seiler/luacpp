@@ -28,6 +28,16 @@ private:
 
 uint32_t TestObject::ObjectCount = 0;
 
+class Counter {
+public:
+	Counter() = default;
+	void increment() { ++m_count; }
+	void increase(int val) { m_count += val; }
+	int getCount() const { return m_count; }
+private:
+	int m_count = 0; 
+};
+
 int destroyObject(lua_State* lvm) {
 	LuaScript lua(lvm);
 	TestObject* obj = reinterpret_cast<TestObject*>(lua.getArgument<void*>(1));
@@ -146,6 +156,22 @@ TEST_F(LuaScriptTest, simpleNativeFunction) {
 	EXPECT_EQ(script.executeFunctionAndReadReturnVal(rc, "calcHypothenuse", 3, 4), 0);
 	EXPECT_EQ(rc, 5);
 	EXPECT_EQ(script.getStackSize(), 0);
+}
+
+TEST_F(LuaScriptTest, registerMethod) {
+	const char* src = R"(
+		count(10);
+	)";
+
+	Counter counter;
+	LuaScript script(LuaScript::LibNone);
+	EXPECT_EQ(script.registerMethod("count", [&counter](LuaScript& script) {
+		const int count = script.getArgument<int>(1);
+		counter.increase(count);
+		return 0;
+	}), 0);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	EXPECT_EQ(counter.getCount(), 10);
 }
 
 TEST_F(LuaScriptTest, readTable) {

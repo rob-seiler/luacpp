@@ -24,6 +24,7 @@ constexpr uint32_t bit(uint32_t n) { return 1 << n; }
 class LuaScript {
 public:
 	using NativeFunction = Basics::NativeFunction;
+	using Method = std::function<int(LuaScript&)>;
 
 	typedef std::function<void(LuaTable&)> TableFunction;
 	typedef uint32_t Library;
@@ -151,6 +152,8 @@ public:
 		return status;
 	
 	}
+
+	int registerMethod(const char* name, Method method);
 
 	/**
 	 * @brief Override an existing lua function with the given native function to be callable from Lua
@@ -378,6 +381,9 @@ public:
 private:
 	constexpr static const char* const HandleName = "LuaScriptHandle";
 	constexpr static const char* const GlobalScope = "_G";
+
+	static int dispatchMethod(lua_State* state);
+
 	/**
 	 * @brief loads a function from the global scope onto the stack
 	 * @param funcName The name of the function
@@ -395,6 +401,7 @@ private:
 
 	lua_State* m_state; ///< instance of the lua virtual machine
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
+	std::vector<Method> m_callbacks; ///< list of registered methods
 	std::vector<std::string> m_errorList; ///< list of errors that occured during script execution
 };
 
