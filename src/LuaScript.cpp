@@ -185,7 +185,7 @@ bool LuaScript::assignMetaTable(const char* name) {
 }
 
 int LuaScript::dispatchMethod(lua_State* state) {
-	const int index = lua_tointeger(state, lua_upvalueindex(1));
+	const int32_t index = static_cast<int32_t>(lua_tointeger(state, lua_upvalueindex(1)));
 	LuaScript* script = static_cast<LuaScript*>(lua_touserdata(state, lua_upvalueindex(2)));
 	return script->m_callbacks[index](*script);
 }
