@@ -1,12 +1,18 @@
 #ifndef LUACPP_LUASCRIPT_HPP
 #define LUACPP_LUASCRIPT_HPP
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Basics;
+import luacpp.Table;
+#else
 #include "Basics.hpp"
 #include "LuaTable.hpp"
+#endif
 
 #include <string>
 #include <vector>
 #include <functional>
+#include <memory>
 #include <cstdint>
 
 struct lua_State;

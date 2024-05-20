@@ -1,7 +1,12 @@
 #ifndef LUACPP_BASICS_HPP
 #define LUACPP_BASICS_HPP
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Type;
+#else
 #include "Type.hpp"
+#endif
+
 #include <cstdint>
 #include <string>
 

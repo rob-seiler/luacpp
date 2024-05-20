@@ -1,9 +1,16 @@
 #include <gtest/gtest.h>
-#include <luacpp/LuaScript.hpp>
-#include <luacpp/TypeMismatchException.hpp>
 #include <string>
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Script;
+import luacpp.TypeMismatchException;
+#else
+#include <luacpp/LuaScript.hpp>
+#include <luacpp/TypeMismatchException.hpp>
+#endif
+
 //#include <lua/lua.hpp>
+struct lua_State;
 
 namespace Lua {
 

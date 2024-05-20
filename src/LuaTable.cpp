@@ -1,6 +1,10 @@
+#ifdef USE_CPP20_MODULES
+import luacpp.Basics;
+#else
 #include <LuaTable.hpp>
-#include <LuaScript.hpp>
 #include <Basics.hpp>
+#endif
+
 #include <lua/lua.hpp>
 #include <stdexcept>
 

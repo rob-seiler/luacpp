@@ -8,23 +8,35 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
 	option(USE_CPP20_MODULES "Compile with C++20 modules" OFF)
 	if(USE_CPP20_MODULES)
 		target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
-		#ToDo configure the library correctly for modules
+		target_compile_definitions(${PROJECT_NAME} PUBLIC USE_CPP20_MODULES)
+
+		# Add the .ixx files to the library
+		target_sources(luacpp
+			PUBLIC
+			FILE_SET CXX_MODULES FILES
+			${CMAKE_SOURCE_DIR}/modules/Type.ixx
+			${CMAKE_SOURCE_DIR}/modules/TypeMismatchException.ixx
+			${CMAKE_SOURCE_DIR}/modules/Basics.ixx
+			${CMAKE_SOURCE_DIR}/modules/Table.ixx
+			${CMAKE_SOURCE_DIR}/modules/Script.ixx
+			${CMAKE_SOURCE_DIR}/modules/Literals.ixx
+		)
 	endif()
 endif()
 
 # If USE_CPP20_MODULES is not defined or is OFF, use C++17
 if(NOT DEFINED USE_CPP20_MODULES OR NOT USE_CPP20_MODULES)
 	target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
-endif()
+	file(
+		GLOB_RECURSE
+		SRC_FILES
+		CONFIGURE_DEPENDS
+		LIST_DIRECTORIES true
+		${PROJECT_SOURCE_DIR}/src/*.cpp
+	)
+	target_sources(${PROJECT_NAME} PRIVATE ${SRC_FILES})
 
-file(
-	GLOB_RECURSE
-	SRC_FILES
-	CONFIGURE_DEPENDS
-	LIST_DIRECTORIES true
-	${PROJECT_SOURCE_DIR}/src/*.cpp
-)
-target_sources(${PROJECT_NAME} PRIVATE ${SRC_FILES})
+endif()
 
 target_include_directories(
 	${PROJECT_NAME}
