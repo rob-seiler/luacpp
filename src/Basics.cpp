@@ -35,6 +35,8 @@ void Basics::pushString(lua_State* state, const char* value, size_t len) { lua_p
 void Basics::pushCFunction(lua_State* state, NativeFunction value) { lua_pushcfunction(state, value); }
 void Basics::pushLightUserData(lua_State* state, void* value) { lua_pushlightuserdata(state, value); }
 
+bool Basics::isInteger(lua_State* state, int index) { return lua_isinteger(state, index); }
+
 void* Basics::asUserData(lua_State* state, int index) { return lua_touserdata(state, index); }
 bool Basics::asBoolean(lua_State* state, int index) { return lua_toboolean(state, index) != 0; }
 double Basics::asNumber(lua_State* state, int index) { return lua_tonumber(state, index); }

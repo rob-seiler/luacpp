@@ -111,6 +111,8 @@ public:
 	static void pushCFunction(lua_State* state, NativeFunction value);
 	static void pushLightUserData(lua_State* state, void* value);
 
+	static bool isInteger(lua_State* state, int index);
+
 	static void* asUserData(lua_State* state, int index);
 	static bool asBoolean(lua_State* state, int index);
 	static double asNumber(lua_State* state, int index);
