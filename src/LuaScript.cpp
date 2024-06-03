@@ -15,6 +15,8 @@ struct LibraryLoadingFunction {
 
 namespace Lua {
 
+std::map<lua_State*, LuaScript::DebugHook> LuaScript::s_debugHooks;
+
 LuaScript::LuaScript(Library libraries) 
 : m_state(luaL_newstate()),
   m_externalState(false)
@@ -40,6 +42,10 @@ LuaScript::LuaScript(LuaScript&& mv)
 LuaScript::~LuaScript() {
 	if (!m_externalState) {
 		lua_close(m_state);
+		auto res = s_debugHooks.find(m_state);
+		if (res != s_debugHooks.end()) {
+			s_debugHooks.erase(res);
+		}
 	}
 }
 
@@ -79,6 +85,21 @@ int LuaScript::registerNativeFunction(const char* name, NativeFunction func, int
 int LuaScript::registerMethod(const char* name, Method method) {
 	m_callbacks.push_back(method);
 	return registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
+}
+
+void LuaScript::registerDebugHook(DebugHook hook, int mask, int count) {
+	s_debugHooks[m_state] = hook;
+
+	// The C hook function
+	auto chook = [](lua_State* L, lua_Debug* ar) {
+		auto res = s_debugHooks.find(L);
+		if (res != s_debugHooks.end()) {
+			LuaScript script(L);
+			res->second(script, reinterpret_cast<const DebugInfo&>(*ar));
+		}
+	};
+
+    lua_sethook(m_state, chook, mask, count);
 }
 
 int LuaScript::overrideLuaFunction(const char* name, NativeFunction func) {

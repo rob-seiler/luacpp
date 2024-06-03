@@ -4,9 +4,13 @@
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
 import luacpp.Table;
+import luacpp.Generic;
+import luacpp.Debug;
 #else
 #include "Basics.hpp"
 #include "LuaTable.hpp"
+#include "Generic.hpp"
+#include "Debug.hpp"
 #endif
 
 #include <string>
@@ -25,6 +29,7 @@ class LuaScript {
 public:
 	using NativeFunction = Basics::NativeFunction;
 	using Method = std::function<int(LuaScript&)>;
+	using DebugHook = std::function<void(LuaScript&, const DebugInfo&)>;
 
 	typedef std::function<void(LuaTable&)> TableFunction;
 	typedef uint32_t Library;
@@ -154,6 +159,22 @@ public:
 	}
 
 	int registerMethod(const char* name, Method method);
+
+	/**
+	 * @brief Register a debug hook
+	 * The debug hook is called whenever a certain event occurs in the lua virtual machine.
+	 * The hook is called with the LuaScript instance and the debug information.
+	 * The mask defines for which events the hook should be called. Use one ore more of the
+	 * following constants to define the mask:
+	 * - MaskCall: Call event
+	 * - MaskReturn: Return event
+	 * - MaskLine: Line event
+	 * - MaskCount: Count event
+	 * @param hook The function to call
+	 * @param mask The mask of events for which the hook should be called
+	 * @param count The number of instructions between each call of the hook
+	*/
+	void registerDebugHook(DebugHook hook, int mask, int count = 0);
 
 	/**
 	 * @brief Override an existing lua function with the given native function to be callable from Lua
@@ -364,6 +385,21 @@ public:
 
 
 	/**
+	 * @brief reads the complete stack
+	 * This method returns a simple list of all values on the stack. The values
+	 * are not removed from the stack and provided in the order they are on the stack.
+	 * 
+	 * @return A list of all values on the stack (given as Generic objects)
+	*/
+	std::vector<Generic> getStack() {
+		std::vector<Generic> stack;
+		for (int i = 1, stackSize = getStackSize(); i <= stackSize; ++i) {
+			stack.push_back(Generic::fromStack(i, m_state));
+		}
+		return stack;
+	}
+
+	/**
 	 * \brief Get the list of errors that occured during script execution
 	*/
 	const std::vector<std::string>& getErrorList() const { return m_errorList; }
@@ -398,6 +434,8 @@ private:
 	 * @return The status of the lua virtual machine
 	*/
 	int callFunction(int numArgs, int numResults);
+
+	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
 
 	lua_State* m_state; ///< instance of the lua virtual machine
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class

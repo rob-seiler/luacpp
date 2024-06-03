@@ -14,6 +14,7 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
 		target_sources(luacpp
 			PUBLIC
 			FILE_SET CXX_MODULES FILES
+			${CMAKE_SOURCE_DIR}/modules/Debug.ixx
 			${CMAKE_SOURCE_DIR}/modules/Type.ixx
 			${CMAKE_SOURCE_DIR}/modules/TypeMismatchException.ixx
 			${CMAKE_SOURCE_DIR}/modules/Basics.ixx

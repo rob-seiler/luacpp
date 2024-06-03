@@ -13,6 +13,8 @@ import luacpp.Basics;
 #include <variant>
 #include <string>
 
+struct lua_State;
+
 namespace Lua {
 
 class Generic {
