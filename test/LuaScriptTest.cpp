@@ -174,6 +174,24 @@ TEST_F(LuaScriptTest, registerMethod) {
 	EXPECT_EQ(counter.getCount(), 10);
 }
 
+TEST_F(LuaScriptTest, registerDebugHook) {
+	const char* src = R"(
+		x = 10
+		y = 20
+		z = x + y
+	)";
+
+	LuaScript script(LuaScript::LibNone);
+	uint32_t callCount = 0;
+	script.registerDebugHook([&callCount](LuaScript& script, const DebugInfo& info) {
+		++callCount;
+		EXPECT_EQ(info.event, static_cast<int>(EventCodes::Line));
+		EXPECT_EQ(info.currentline, callCount + 1); //we have a new line right after the raw string starts
+	}, MaskLine, 0);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	EXPECT_EQ(callCount, 3);
+}
+
 TEST_F(LuaScriptTest, readTable) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = 3	}
