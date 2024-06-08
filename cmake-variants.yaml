@@ -1,0 +1,31 @@
+buildType:
+  default: debug
+  choices:
+    debug:
+      short: Debug
+      long: Emit debug information
+      buildType: Debug
+      buildDirectory: ${workspaceRoot}/build/debug
+      settings:
+        USE_CPP20_MODULES: OFF
+    release:
+      short: Release
+      long: Optimize generated code
+      buildType: Release
+      buildDirectory: ${workspaceRoot}/build/release
+      settings:
+        USE_CPP20_MODULES: OFF
+    debugModules:
+      short: Debug - Modules
+      long: Use C++20 modules in debug mode
+      buildType: Debug
+      buildDirectory: ${workspaceRoot}/build/debug-modules
+      settings:
+        USE_CPP20_MODULES: ON
+    releaseModules:
+      short: Release - Modules
+      long: Use C++20 modules in release mode
+      buildType: Release
+      buildDirectory: ${workspaceRoot}/build/release-modules
+      settings:
+        USE_CPP20_MODULES: ON
