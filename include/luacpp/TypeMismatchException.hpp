@@ -10,8 +10,11 @@ import luacpp.Type;
 #include <exception>
 #include <string>
 
-#if __has_include(<format>)
-	#include <format>
+#if __has_include(<version>)
+	#include <version>
+	#ifdef __cpp_lib_format
+		#include <format>
+	#endif
 #endif
 
 namespace Lua {
