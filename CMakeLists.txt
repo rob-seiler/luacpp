@@ -54,7 +54,7 @@ target_link_libraries(
 	lua
 )
 
-if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 	set(BUILD_GMOCK OFF)
 	set(INSTALL_GTEST OFF)
 	if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
