@@ -14,6 +14,7 @@ bool Basics::isOfType(lua_State* state, Type type, int index) {
 		case Type::Function: return lua_isfunction(state, index);
 		case Type::UserData: return lua_isuserdata(state, index);
 		case Type::Thread: return lua_isthread(state, index);
+		case Type::None: return false;
 	}
 	return false;
 }

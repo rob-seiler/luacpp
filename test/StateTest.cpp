@@ -2,10 +2,10 @@
 #include <string>
 
 #ifdef USE_CPP20_MODULES
-import luacpp.Script;
+import luacpp.State;
 import luacpp.TypeMismatchException;
 #else
-#include <luacpp/LuaScript.hpp>
+#include <luacpp/State.hpp>
 #include <luacpp/TypeMismatchException.hpp>
 #endif
 
@@ -39,19 +39,19 @@ private:
 };
 
 int destroyObject(lua_State* lvm) {
-	LuaScript lua(lvm);
+	State lua(lvm);
 	TestObject* obj = reinterpret_cast<TestObject*>(lua.getArgument<void*>(1));
 	obj->~TestObject(); //call destructor
 	return 0;
 };
 
 
-class LuaScriptTest : public ::testing::Test {
+class StateTest : public ::testing::Test {
 public:
-	LuaScriptTest() {
+	StateTest() {
 	}
 
-	virtual ~LuaScriptTest() {
+	virtual ~StateTest() {
 	}
 
 protected:
@@ -61,24 +61,24 @@ protected:
 using namespace std::literals::string_view_literals;
 
 
-TEST_F(LuaScriptTest, simpleScriptExecution) {
+TEST_F(StateTest, simpleScriptExecution) {
 	const char* src = R"(
 		-- This is a Lua script
 		x = 10 + 2
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-TEST_F(LuaScriptTest, simpleScriptWithInvalidSyntax) {
+TEST_F(StateTest, simpleScriptWithInvalidSyntax) {
 	const char* src = R"(
 		-- This is invalid Lua syntax
 		x = 10 +
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_NE(script.loadAndExecuteScript(src), 0);
 	EXPECT_EQ(script.getStackSize(), 0);
 	EXPECT_FALSE(script.getErrorList().empty());
@@ -87,18 +87,18 @@ TEST_F(LuaScriptTest, simpleScriptWithInvalidSyntax) {
 	}
 }
 
-TEST_F(LuaScriptTest, readVariable) {
+TEST_F(StateTest, readVariable) {
 	const char* src = R"(
 		-- This is a Lua script
 		x = 10 + 2
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
 	EXPECT_EQ(script.readVariable<int>("x"), 12);
 }
 
-TEST_F(LuaScriptTest, writeVariable) {
+TEST_F(StateTest, writeVariable) {
 	const char* src = R"(
 		-- This is a Lua script
 		x = 0
@@ -108,7 +108,7 @@ TEST_F(LuaScriptTest, writeVariable) {
 		end
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
 	EXPECT_EQ(script.executeFunction("calcY"), 0);
 	EXPECT_EQ(script.readVariable<int>("y"), 2);
@@ -118,7 +118,7 @@ TEST_F(LuaScriptTest, writeVariable) {
 	EXPECT_EQ(script.readVariable<int>("y"), 12);
 }
 
-TEST_F(LuaScriptTest, simpleFunctionWithReturnValue) {
+TEST_F(StateTest, simpleFunctionWithReturnValue) {
 	const char* src = R"(
 		function sqr(x)
 			return x * x
@@ -129,14 +129,14 @@ TEST_F(LuaScriptTest, simpleFunctionWithReturnValue) {
 		end
 	)";
 
-	LuaScript script(LuaScript::LibMath);
+	State script(State::LibMath);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	int rc = 0;
 	EXPECT_EQ(script.executeFunctionAndReadReturnVal(rc, "calcHypothenuse", 3, 4), 0);
 	EXPECT_EQ(rc, 5);
 }
 
-TEST_F(LuaScriptTest, simpleNativeFunction) {
+TEST_F(StateTest, simpleNativeFunction) {
 	//this time we don't define sqr in the script, but in C++
 	const char* src = R"(
 		function calcHypothenuse(a, b)
@@ -144,12 +144,12 @@ TEST_F(LuaScriptTest, simpleNativeFunction) {
 		end
 	)";
 	auto sqr = [](lua_State* lvm) -> int {
-		LuaScript lua(lvm);
+		State lua(lvm);
 		double val = lua.getArgument<double>(1);
 		return lua.setReturnValue(val * val);
 	};
 
-	LuaScript script(LuaScript::LibMath);
+	State script(State::LibMath);
 	EXPECT_EQ(script.registerNativeFunction("sqr", sqr), 0);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	int rc = 0;
@@ -158,14 +158,14 @@ TEST_F(LuaScriptTest, simpleNativeFunction) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-TEST_F(LuaScriptTest, registerMethod) {
+TEST_F(StateTest, registerMethod) {
 	const char* src = R"(
 		count(10);
 	)";
 
 	Counter counter;
-	LuaScript script(LuaScript::LibNone);
-	EXPECT_EQ(script.registerMethod("count", [&counter](LuaScript& script) {
+	State script(State::LibNone);
+	EXPECT_EQ(script.registerMethod("count", [&counter](State& script) {
 		const int count = script.getArgument<int>(1);
 		counter.increase(count);
 		return 0;
@@ -174,16 +174,16 @@ TEST_F(LuaScriptTest, registerMethod) {
 	EXPECT_EQ(counter.getCount(), 10);
 }
 
-TEST_F(LuaScriptTest, registerDebugHook) {
+TEST_F(StateTest, registerDebugHook) {
 	const char* src = R"(
 		x = 10
 		y = 20
 		z = x + y
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	uint32_t callCount = 0;
-	script.registerDebugHook([&callCount](LuaScript& script, const DebugInfo& info) {
+	script.registerDebugHook([&callCount](State& script, const DebugInfo& info) {
 		++callCount;
 		EXPECT_EQ(info.event, static_cast<int>(EventCodes::Line));
 		EXPECT_EQ(info.currentline, callCount + 1); //we have a new line right after the raw string starts
@@ -192,12 +192,12 @@ TEST_F(LuaScriptTest, registerDebugHook) {
 	EXPECT_EQ(callCount, 3);
 }
 
-TEST_F(LuaScriptTest, readTable) {
+TEST_F(StateTest, readTable) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = 3	}
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	auto map = script.readTable<std::string, int>("map");
 	EXPECT_EQ(map.size(), 3);
@@ -206,12 +206,12 @@ TEST_F(LuaScriptTest, readTable) {
 	EXPECT_EQ(map["c"], 3);
 }
 
-TEST_F(LuaScriptTest, readTable_invalidValueType) {
+TEST_F(StateTest, readTable_invalidValueType) {
 	const char* src = R"(
 		map = { a = 1, b = "two", c = 3	}
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 
 	bool exceptionRaised = false;
@@ -229,12 +229,12 @@ TEST_F(LuaScriptTest, readTable_invalidValueType) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-TEST_F(LuaScriptTest, readTableIfMatching) {
+TEST_F(StateTest, readTableIfMatching) {
 	const char* src = R"(
 		map = { a = 1, b = "two", c = 3	}
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	auto map = script.readTableIfMatching<std::string, int>("map");
 	EXPECT_EQ(map.size(), 2);
@@ -242,7 +242,7 @@ TEST_F(LuaScriptTest, readTableIfMatching) {
 	EXPECT_EQ(map["c"], 3);
 }
 
-TEST_F(LuaScriptTest, writeTable) {
+TEST_F(StateTest, writeTable) {
 	const char* src = R"(
 		-- This is a Lua script
 		y = 0
@@ -251,7 +251,7 @@ TEST_F(LuaScriptTest, writeTable) {
 		end
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
 	std::map<std::string, int> map = { { "a", 10 }, { "b", 20 } };
 	script.writeTable("map", map);
@@ -260,12 +260,12 @@ TEST_F(LuaScriptTest, writeTable) {
 	EXPECT_EQ(script.readVariable<int>("y"), 30);
 }
 
-TEST_F(LuaScriptTest, withTableDo) {
+TEST_F(StateTest, withTableDo) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = 3	}
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	
 	int a = 0, b = 0, c = 0;
@@ -281,12 +281,12 @@ TEST_F(LuaScriptTest, withTableDo) {
 	EXPECT_EQ(c, 3);
 }
 
-TEST_F(LuaScriptTest, nestedTable) {
+TEST_F(StateTest, nestedTable) {
 	const char* src = R"(
 		map = { a = 1, b = 2, c = { d = 3, e = 4 } }
 	)";
 
-	LuaScript script(LuaScript::LibNone);
+	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	
 	int a = 0, b = 0, d = 0, e = 0;
@@ -307,7 +307,7 @@ TEST_F(LuaScriptTest, nestedTable) {
 
 }
 
-TEST_F(LuaScriptTest, metatable) {
+TEST_F(StateTest, metatable) {
 	constexpr static const char* const MetaTable = "Vec2MetaTable";
 	const char* src = R"(
 		v1 = createVector() -- createVector is a native function which returns a table
@@ -320,9 +320,9 @@ TEST_F(LuaScriptTest, metatable) {
 		print("v3: " .. v3.x .. ", " .. v3.y)
 	)";
 
-	LuaScript script(LuaScript::LibBase);
+	State script(State::LibBase);
 	struct Vec2 {
-		static void createVectorTable(LuaScript& lua, double x, double y) {
+		static void createVectorTable(State& lua, double x, double y) {
 			//we want to keep the table on the stack because it is the return value
 			lua.createTable(nullptr, [x, y](LuaTable& table) {
 				table.setElement("x", x);
@@ -332,13 +332,13 @@ TEST_F(LuaScriptTest, metatable) {
 		}
 
 		static int create(lua_State* lvm) {
-			LuaScript lua(lvm);
+			State lua(lvm);
 			createVectorTable(lua, 0, 0);			
 			return 1;
 		}
 
 		static int add(lua_State* lvm) {
-			LuaScript lua(lvm);
+			State lua(lvm);
 			double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 			if (lua.getStackSize() >= 2) {
 				//read 1st operand
@@ -364,7 +364,7 @@ TEST_F(LuaScriptTest, metatable) {
 
 	//add a meta table which defines the __add metamethod for our vector
 	script.createMetaTable(MetaTable, [](LuaTable& table) {
-		table.setElement(LuaScript::MetaTable::Addition, Vec2::add);
+		table.setElement(State::MetaTable::Addition, Vec2::add);
 	});
 
 	script.registerNativeFunction("createVector", Vec2::create);
@@ -385,7 +385,7 @@ TEST_F(LuaScriptTest, metatable) {
 	EXPECT_DOUBLE_EQ(v3y, 22.0);
 }
 
-TEST_F(LuaScriptTest, ctordtor) {
+TEST_F(StateTest, ctordtor) {
 	constexpr static const char* const MetaTable = "TestObjectMetaTable";
 	const char* src = R"(
 		obj = createObject()
@@ -393,16 +393,16 @@ TEST_F(LuaScriptTest, ctordtor) {
 	)";
 
 	{
-		LuaScript script(LuaScript::LibBase);
+		State script(State::LibBase);
 		//register functions
 		script.registerNativeFunction("createObject", [](lua_State* lvm) -> int {
-			LuaScript lua(lvm);
+			State lua(lvm);
 			TestObject* obj = lua.createUserData<TestObject>();
 			lua.assignMetaTable(MetaTable); //assign the meta table to the userdata
 			return 1;
 		});
 		script.registerNativeFunction("translate", [](lua_State* lvm) -> int {
-			LuaScript lua(lvm);
+			State lua(lvm);
 			TestObject* obj = reinterpret_cast<TestObject*>(lua.getArgument<void*>(1));
 			double x = lua.getArgument<double>(2);
 			double y = lua.getArgument<double>(3);
@@ -411,7 +411,7 @@ TEST_F(LuaScriptTest, ctordtor) {
 		});
 		//register metatable
 		script.createMetaTable(MetaTable, [](LuaTable& table) {
-			table.setElement(LuaScript::MetaTable::GC, destroyObject);
+			table.setElement(State::MetaTable::GC, destroyObject);
 		});
 
 		EXPECT_EQ(script.loadAndExecuteScript(src), 0);

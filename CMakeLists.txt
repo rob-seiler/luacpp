@@ -20,7 +20,7 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
 			${CMAKE_SOURCE_DIR}/modules/Basics.ixx
 			${CMAKE_SOURCE_DIR}/modules/Generic.ixx
 			${CMAKE_SOURCE_DIR}/modules/Table.ixx
-			${CMAKE_SOURCE_DIR}/modules/Script.ixx
+			${CMAKE_SOURCE_DIR}/modules/State.ixx
 			${CMAKE_SOURCE_DIR}/modules/Literals.ixx
 		)
 	endif()

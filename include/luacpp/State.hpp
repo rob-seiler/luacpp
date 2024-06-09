@@ -1,5 +1,5 @@
-#ifndef LUACPP_LUASCRIPT_HPP
-#define LUACPP_LUASCRIPT_HPP
+#ifndef LUACPP_STATE_HPP
+#define LUACPP_STATE_HPP
 
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
@@ -25,11 +25,11 @@ namespace Lua {
 
 constexpr uint32_t bit(uint32_t n) { return 1 << n; }
 
-class LuaScript {
+class State {
 public:
 	using NativeFunction = Basics::NativeFunction;
-	using Method = std::function<int(LuaScript&)>;
-	using DebugHook = std::function<void(LuaScript&, const DebugInfo&)>;
+	using Method = std::function<int(State&)>;
+	using DebugHook = std::function<void(State&, const DebugInfo&)>;
 
 	typedef std::function<void(LuaTable&)> TableFunction;
 	typedef uint32_t Library;
@@ -81,12 +81,12 @@ public:
 
 
 
-	LuaScript(Library libraries = LibAll);
-	LuaScript(lua_State* state);
-	LuaScript(const LuaScript&) = delete;
-	LuaScript(LuaScript&& mv);
+	State(Library libraries = LibAll);
+	State(lua_State* state);
+	State(const State&) = delete;
+	State(State&& mv);
 
-	~LuaScript();
+	~State();
 
 	void openLibrary(Library library);
 
@@ -163,7 +163,7 @@ public:
 	/**
 	 * @brief Register a debug hook
 	 * The debug hook is called whenever a certain event occurs in the lua virtual machine.
-	 * The hook is called with the LuaScript instance and the debug information.
+	 * The hook is called with the State instance and the debug information.
 	 * The mask defines for which events the hook should be called. Use one ore more of the
 	 * following constants to define the mask:
 	 * - MaskCall: Call event
@@ -415,7 +415,7 @@ public:
 	lua_State* getState() const { return m_state; }
 
 private:
-	constexpr static const char* const HandleName = "LuaScriptHandle";
+	constexpr static const char* const HandleName = "StateHandle";
 	constexpr static const char* const GlobalScope = "_G";
 
 	static int dispatchMethod(lua_State* state);
@@ -445,4 +445,4 @@ private:
 
 } // namespace Lua
 
-#endif // LUACPP_LUASCRIPT_HPP
+#endif // LUACPP_STATE_HPP

@@ -20,6 +20,7 @@ std::string Generic::toString() const {
 		case Type::Function:
 		case Type::UserData:
 		case Type::Thread: 
+		case Type::None:
 			break;
 	}
 	return Lua::toString(m_type);
@@ -53,7 +54,8 @@ Generic Generic::fromStack(int index, lua_State* state) {
 		case Type::Table:
 		case Type::Function:
 		case Type::UserData:
-		case Type::Thread: 
+		case Type::Thread:
+		case Type::None:
 			break;
 	}
 	return generic;

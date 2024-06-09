@@ -31,8 +31,8 @@ public:
 		return m_message.c_str();
 	}
 
-	const Type getExpectedType() const { return m_expected; }
-	const Type getActualType() const { return m_actual; }
+	Type getExpectedType() const { return m_expected; }
+	Type getActualType() const { return m_actual; }
 
 private:
 #ifdef __cpp_lib_format
