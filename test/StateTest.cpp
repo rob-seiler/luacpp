@@ -269,7 +269,7 @@ TEST_F(StateTest, withTableDo) {
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	
 	int a = 0, b = 0, c = 0;
-	script.withTableDo("map", [&a, &b, &c](LuaTable& table) {
+	script.withTableDo("map", [&a, &b, &c](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
 		EXPECT_TRUE(table.readValue<int>("b", b));
 		EXPECT_TRUE(table.readValue<int>("c", c));
@@ -290,10 +290,10 @@ TEST_F(StateTest, nestedTable) {
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
 	
 	int a = 0, b = 0, d = 0, e = 0;
-	script.withTableDo("map", [&a, &b, &d, &e](LuaTable& table) {
+	script.withTableDo("map", [&a, &b, &d, &e](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
 		EXPECT_TRUE(table.readValue<int>("b", b));
-		table.withTableDo("c", [&d, &e](LuaTable& table) {
+		table.withTableDo("c", [&d, &e](Table& table) {
 			EXPECT_TRUE(table.readValue<int>("d", d));
 			EXPECT_TRUE(table.readValue<int>("e", e));
 		});
@@ -324,7 +324,7 @@ TEST_F(StateTest, metatable) {
 	struct Vec2 {
 		static void createVectorTable(State& lua, double x, double y) {
 			//we want to keep the table on the stack because it is the return value
-			lua.createTable(nullptr, [x, y](LuaTable& table) {
+			lua.createTable(nullptr, [x, y](Table& table) {
 				table.setElement("x", x);
 				table.setElement("y", y);
 				table.assignMetaTable(MetaTable); //assign the metatable we've previously created to the table
@@ -342,12 +342,12 @@ TEST_F(StateTest, metatable) {
 			double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 			if (lua.getStackSize() >= 2) {
 				//read 1st operand
-				lua.withTableDo(1, [&x1, &y1](LuaTable& table) {
+				lua.withTableDo(1, [&x1, &y1](Table& table) {
 					table.readValue<double>("x", x1);
 					table.readValue<double>("y", y1);
 				});
 				//read 2nd operand
-				lua.withTableDo(2, [&x2, &y2](LuaTable& table) {
+				lua.withTableDo(2, [&x2, &y2](Table& table) {
 					table.readValue<double>("x", x2);
 					table.readValue<double>("y", y2);
 				});
@@ -363,7 +363,7 @@ TEST_F(StateTest, metatable) {
 	};
 
 	//add a meta table which defines the __add metamethod for our vector
-	script.createMetaTable(MetaTable, [](LuaTable& table) {
+	script.createMetaTable(MetaTable, [](Table& table) {
 		table.setElement(State::MetaTable::Addition, Vec2::add);
 	});
 
@@ -375,7 +375,7 @@ TEST_F(StateTest, metatable) {
 
 	//read out v3 to check against
 	double v3x = 0, v3y = 0;
-	script.withTableDo("v3", [&v3x, &v3y](LuaTable& table) {
+	script.withTableDo("v3", [&v3x, &v3y](Table& table) {
 		EXPECT_TRUE(table.readValue<double>("x", v3x));
 		EXPECT_TRUE(table.readValue<double>("y", v3y));
 	}, false);
@@ -410,7 +410,7 @@ TEST_F(StateTest, ctordtor) {
 			return 0;
 		});
 		//register metatable
-		script.createMetaTable(MetaTable, [](LuaTable& table) {
+		script.createMetaTable(MetaTable, [](Table& table) {
 			table.setElement(State::MetaTable::GC, destroyObject);
 		});
 

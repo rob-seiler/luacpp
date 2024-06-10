@@ -18,9 +18,9 @@ struct lua_State;
 
 namespace Lua {
 
-class LuaTable {
+class Table {
 public:
-	LuaTable(lua_State* state, int index = -1, bool triggerMetaMethods = false);
+	Table(lua_State* state, int index = -1, bool triggerMetaMethods = false);
 
 	template <typename Key, typename Value>
 	void setElement(Key key, Value value) {
@@ -102,7 +102,7 @@ public:
 	 * \brief work on the nested table with the given name
 	 * This method pushes the table with the given name from the table which is currently on the stack onto the stack and calls the given function.
 	*/
-	void withTableDo(std::string_view tableName, std::function<void(LuaTable&)> workOnTable);
+	void withTableDo(std::string_view tableName, std::function<void(Table&)> workOnTable);
 
 	/**
 	 * \brief assign a metatable to the table on top of the stack

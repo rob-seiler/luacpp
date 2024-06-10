@@ -166,21 +166,21 @@ void State::withTableDo(std::string_view tableName, TableFunction workOnTable, b
 		}
 	}
 
-	LuaTable table(m_state, -1); //the table is on top of the stack
+	Table table(m_state, -1); //the table is on top of the stack
 	workOnTable(table);
 	lua_pop(m_state, 1);
 }
 
 void State::withTableDo(int index, TableFunction workOnTable) {
 	if (lua_istable(m_state, index)) {
-		LuaTable table(m_state, index); //the table is on top of the stack
+		Table table(m_state, index); //the table is on top of the stack
 		workOnTable(table);
 	}
 }
 
 void State::createTable(const char* name, TableFunction workOnTable) {
 	lua_newtable(m_state);
-	LuaTable table(m_state, -1); //the table is on top of the stack
+	Table table(m_state, -1); //the table is on top of the stack
 	workOnTable(table);
 	if (name != nullptr) {
 		lua_setglobal(m_state, name);
@@ -189,7 +189,7 @@ void State::createTable(const char* name, TableFunction workOnTable) {
 
 void State::createMetaTable(const char* name, TableFunction workOnTable) {
 	luaL_newmetatable(m_state, name);
-	LuaTable table(m_state, -1, true); //the table is on top of the stack
+	Table table(m_state, -1, true); //the table is on top of the stack
 	workOnTable(table);
 	lua_pop(m_state, 1);
 }

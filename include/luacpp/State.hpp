@@ -8,7 +8,7 @@ import luacpp.Generic;
 import luacpp.Debug;
 #else
 #include "Basics.hpp"
-#include "LuaTable.hpp"
+#include "Table.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
 #endif
@@ -31,7 +31,7 @@ public:
 	using Method = std::function<int(State&)>;
 	using DebugHook = std::function<void(State&, const DebugInfo&)>;
 
-	typedef std::function<void(LuaTable&)> TableFunction;
+	typedef std::function<void(Table&)> TableFunction;
 	typedef uint32_t Library;
 
 	constexpr static const Library LibNone = 0;
@@ -113,7 +113,7 @@ public:
 		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
 
 		if (pushGlobalToStack(tableName) == Type::Table) {
-			LuaTable table(m_state, -1);
+			Table table(m_state, -1);
 			result = table.read<Key, Value>();
 		}
 		
@@ -125,7 +125,7 @@ public:
 		std::map<Key, Value> result;
 
 		if (pushGlobalToStack(tableName.c_str()) == Type::Table) {
-			LuaTable table(m_state, -1);
+			Table table(m_state, -1);
 			result = table.readIfMatching<Key, Value>();
 		}
 		popStack(1);
@@ -134,7 +134,7 @@ public:
 
 	template <typename T>
 	void writeTable(const char* tableName, const std::map<std::string, T>& map) {
-		withTableDo(tableName, [this, &map](LuaTable& table) {
+		withTableDo(tableName, [this, &map](Table& table) {
 			table.write(map);
 		}, true);
 	}
