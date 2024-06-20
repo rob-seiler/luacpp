@@ -34,3 +34,27 @@ cmake --build . --target luacpp_test
 After these steps, you should have a built version of the `luacpp` library and the `luacpp_test` unit tests in the `build` directory.
 
 ## Usage
+After building the `luacpp` library, you can use it in your C++ projects to interact with Lua.
+
+Here's a basic example of how to use `luacpp` to execute a Lua script:
+
+```cpp
+#include <lua/State.hpp>
+
+int main() {
+	const char* src = "x = 10 + 2";
+	Lua::State lua;
+
+	lua.loadAndExecuteScript(src);
+	const int x = lua.readVariable<int>("x");
+	return 0;
+}
+```
+In this example, we first include the State.hpp header. Then we define a Lua script as a string. This script simply assigns the value 10 + 2 to the variable x. We create a Lua::State object, which represents a Lua state. We then load and execute the Lua script using the `loadAndExecuteScript` method.
+
+After the script is executed, we read the value of the variable x from the Lua state using the readVariable method. The `readVariable` method is templated, so we specify int as the template argument to indicate that we expect x to be an integer. The value of x is then stored in the x variable in our C++ code.
+
+The method `loadAndExecuteScript` expects the source code as a string. If you want to load the script from a file, you can use the simple literal `_load` provided in the file `Literal.hpp`. This literal is a very simple implemenation using `ifstream`. Here is how you would modify the code above to load the script from a file:
+```c++
+lua.loadAndExecuteScript("path/to/myscript.lua"_load);
+```

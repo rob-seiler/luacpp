@@ -79,9 +79,7 @@ public:
 		constexpr static const char* const Close = "__close"; ///< close operator (close())
 	};
 
-
-
-	State(Library libraries = LibAll);
+	State(Library libraries = LibNone);
 	State(lua_State* state);
 	State(const State&) = delete;
 	State(State&& mv);
