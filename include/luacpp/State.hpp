@@ -325,7 +325,7 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getUpValue(int index) const { return getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
+	T getUpValue(int index) const { return Basics::getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
 
 	/**
 	 * @brief check if the value on the stack is of the given type

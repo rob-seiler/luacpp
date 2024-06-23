@@ -34,12 +34,13 @@ cmake --build . --target luacpp_test
 After these steps, you should have a built version of the `luacpp` library and the `luacpp_test` unit tests in the `build` directory.
 
 ## Usage
+### Basics
 After building the `luacpp` library, you can use it in your C++ projects to interact with Lua.
 
 Here's a basic example of how to use `luacpp` to execute a Lua script:
 
 ```cpp
-#include <lua/State.hpp>
+#include <luacpp/State.hpp>
 
 int main() {
 	const char* src = "x = 10 + 2";
@@ -50,7 +51,7 @@ int main() {
 	return 0;
 }
 ```
-In this example, we first include the State.hpp header. Then we define a Lua script as a string. This script simply assigns the value 10 + 2 to the variable x. We create a Lua::State object, which represents a Lua state. We then load and execute the Lua script using the `loadAndExecuteScript` method.
+In this example, we first include the State.hpp header. Then we define a Lua script as a string. This script simply assigns the value 10 + 2 to the variable x. We create a Lua::State object, which represents a Lua state. The object is loaded with no additional builtin libraries. We then load and execute the Lua script using the `loadAndExecuteScript` method.
 
 After the script is executed, we read the value of the variable x from the Lua state using the readVariable method. The `readVariable` method is templated, so we specify int as the template argument to indicate that we expect x to be an integer. The value of x is then stored in the x variable in our C++ code.
 
@@ -58,3 +59,77 @@ The method `loadAndExecuteScript` expects the source code as a string. If you wa
 ```c++
 lua.loadAndExecuteScript("path/to/myscript.lua"_load);
 ```
+### Embedding own functions
+Loading and executing a script doesn't provide that much benifit without providing own functions to enable your application to be modifyable at runtime. You have several options to embedd functions in your lua state object. For simple function you could use method `registerNativeFunction` which accepts the c-style callback.
+A fitting example would be a sleep method which doesn't have any dependencies.
+```c++
+#include <luacpp/State.hpp>
+#include <chrono>
+#include <thread>
+
+int sleep(lua_State* lvm) {
+	Lua::State lua(lvm);
+	const int sleepTime = lua.getArgument<int>(1);
+	std::this_thread::sleep_for(std::chrono::seconds(sleepTime));
+	return 0;
+}
+int main() {
+	const char* src = "sleep(2)";
+
+	Lua::State lua;
+	lua.registerNativeFunction("sleep", sleep);
+	lua.loadAndExecuteScript(src);
+	return 0;
+}
+```
+
+You can also assign upvalues to your c-function which you can read out in your function body to get access to them during execution.
+```c++
+#include <luacpp/State.hpp>
+#include <iostream>
+
+struct User {
+	const char* name;
+};
+
+int sayHello(lua_State* lvm) {
+	Lua::State lua(lvm);
+	const User* user = lua.getUpValue<const User*>(1);
+	std::cout << "Hello " << user->name << std::endl;
+	return 0;
+}
+int main() {
+	const char* src = "sayHello()";
+
+	User user{"John"};
+
+	Lua::State lua;
+	lua.registerNativeFunctionWithUpvalues("sayHello", sayHello, &user);
+	lua.loadAndExecuteScript(src);
+	return 0;
+}
+```
+
+For more complex situations where you want to get access to your classes you could use the generic method `registerMethod` which requires a std::function as argument. Using this method you can provide lamda methods with capture or bind methods to specific instances.
+
+```c++
+#include <luacpp/State.hpp>
+
+int main() {
+	const char* src = R"(
+		x = score()
+		y = score()
+	)";
+
+	unsigned int value = 0;
+
+	Lua::State lua;
+	lua.registerMethod("score", [&value](Lua::State& lua) -> int { 
+		return lua.setReturnValue(++value);
+	});
+	lua.loadAndExecuteScript(src);
+	return 0;
+}
+```
+
+### Reading/Writing values

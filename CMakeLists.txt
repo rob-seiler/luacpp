@@ -94,3 +94,25 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 else()
 	message("No test project configured")
 endif()
+
+option(BUILD_EXAMPLES "Build examples" ON)
+if(BUILD_EXAMPLES)
+	SET (EXAMPLEDIR ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+
+	# Get a list of all subdirectories
+	file(GLOB children RELATIVE ${EXAMPLEDIR} ${EXAMPLEDIR}/*)
+	foreach(child ${children})
+		if(IS_DIRECTORY ${EXAMPLEDIR}/${child})
+			SET (EXENAME LuaExample_${child})
+			file(GLOB src_files "${EXAMPLEDIR}/${child}/*.cpp")
+			if(src_files)
+				add_executable(${EXENAME} ${src_files})
+				target_link_libraries(
+					${EXENAME}
+					PRIVATE
+					${PROJECT_NAME}
+				)
+			endif()
+		endif()
+	endforeach()
+endif()
