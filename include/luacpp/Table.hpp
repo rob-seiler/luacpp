@@ -5,9 +5,11 @@
 import luacpp.Type;
 import luacpp.TypeMismatchException;
 import luacpp.Basics;
+import luacpp.Generic;
 #else
 #include "TypeMismatchException.hpp"
 #include "Basics.hpp"
+#include "Generic.hpp"
 #endif
 
 #include <string_view>
@@ -39,6 +41,33 @@ public:
 		Basics::popStack(m_state, 1);
 		return retVal;
 	}
+
+	template <typename Key>
+	std::map<Key, Generic> readGeneric() {
+		std::map<Key, Generic> result;
+
+		Basics::pushNil(m_state);  // Push a nil key to start the iteration
+		while (getNext() != 0) {
+			try {
+				if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
+					throw TypeMismatchException(Basics::getTypeFor<Key>(), Basics::getType(m_state, -2), "Key");
+				}
+
+				Key k = Basics::getStackValue<Key>(m_state, -2);
+				result[k] = Generic::fromStack(-1, m_state);
+			} catch (...) {
+				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
+				throw;  // Rethrow the exception
+			}
+
+			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+		}
+
+		// No need to pop the table; it remains at the top of the stack
+		return result;
+	
+	}
+
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> read() {

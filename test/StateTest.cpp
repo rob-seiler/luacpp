@@ -242,6 +242,20 @@ TEST_F(StateTest, readTableIfMatching) {
 	EXPECT_EQ(map["c"], 3);
 }
 
+TEST_F(StateTest, readTableGeneric) {
+	const char* src = R"(
+		map = { a = 1, b = "two", c = 3.0 }
+	)";
+
+	State script(State::LibNone);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	auto map = script.readTableGeneric<std::string>("map");
+	EXPECT_EQ(map.size(), 3);
+	EXPECT_EQ(map["a"], Generic(1ll));
+	EXPECT_EQ(map["b"], Generic(std::string("two")));
+	EXPECT_EQ(map["c"], Generic(3.0));
+}
+
 TEST_F(StateTest, writeTable) {
 	const char* src = R"(
 		-- This is a Lua script

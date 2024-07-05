@@ -103,6 +103,20 @@ public:
 		pushToStack(value);
 		setGlobalFromStack(variableName);
 	}
+	
+	template <typename Key>
+	std::map<Key, Generic> readTableGeneric(const char* tableName) {
+		std::map<Key, Generic> result;
+
+		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
+
+		if (pushGlobalToStack(tableName) == Type::Table) {
+			Table table(m_state, -1);
+			result = table.readGeneric<Key>();
+		}
+		
+		return result;
+	}
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> readTable(const char* tableName) {

@@ -43,6 +43,11 @@ public:
 
 	static Generic fromStack(int index, lua_State* state);
 
+	bool operator==(const Generic& other) const {
+		printf("m_type: %d, other.m_type: %d\n", m_type, other.m_type);
+		return m_type == other.m_type && m_value == other.m_value;
+	}
+
 private:
 	Value m_value;
 	Type m_type;
