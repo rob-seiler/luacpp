@@ -133,3 +133,41 @@ int main() {
 ```
 
 ### Reading/Writing values
+Another way of interacting between Lua and your application is by reading an writing variables.
+To pass variables from C++ to Lua you can use the method _writeVariable_.
+```c++
+	Lua::State state;
+	state.writeVariable<double>("x", 3.1415);
+```
+
+In a similar way you can read variables from Lua using the method _readVariable_.
+```c++
+	Lua::State state;
+	double x = state.readVariable<double>("x");
+```
+
+There are other methods for different situations like _getArgument_ for reading function arguments or _getUpValue_ to read values bound to a function.
+
+A bit more special is reading and writing tables. Luacpp provides several ways in reading and writing a table. The easiest way is to use the method _readTable_ and _readTableIfMatching_. Both methods assume the table holds the same type for all its values. The difference is in the handling if this is not the case. While _readTable_ throws an exception _readTableIfMatching_ skips the entry.
+
+```c++
+	Lua::State state;
+	std::map<std::string, double> values = state.readTable<std::string, double>("lut");
+	try {
+		std::map<std::string, double> values2 = state.readTable<std::string, double>("lut2");
+	} catch (const Lua::TypeMismatchException& e) {
+		//handle exception
+	}
+```
+
+For more complex tables you can also use the method _withTableDo_. This methods creates a table object and calls the callback function so you can work on this object. After returning from this method the table is automatically removed from stack.
+
+```c++
+	int a; float b;	std::string c;
+	Lua::State state;
+	state.withTableDo("map", [&a, &b, &c](Lua::Table& table) {
+		table.readValue<int>("a", a);
+		table.readValue<float>("b", b);
+		table.readValue<std::string>("c", c);
+	}, false);
+```
