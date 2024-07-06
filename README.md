@@ -152,15 +152,24 @@ A bit more special is reading and writing tables. Luacpp provides several ways i
 
 ```c++
 	Lua::State state;
-	std::map<std::string, double> values = state.readTable<std::string, double>("lut");
 	try {
-		std::map<std::string, double> values2 = state.readTable<std::string, double>("lut2");
+		std::map<std::string, double> values = state.readTable<std::string, double>("lut");
 	} catch (const Lua::TypeMismatchException& e) {
 		//handle exception
 	}
 ```
 
-For more complex tables you can also use the method _withTableDo_. This methods creates a table object and calls the callback function so you can work on this object. After returning from this method the table is automatically removed from stack.
+A bit more generic is the version readGeneric which holds a small wrapper around the type. This could be useful if you don't care for the type and only want to convert the value into a string.
+
+```c++
+	Lua::State state;
+	auto map = script.readTableGeneric("table");
+	for (const auto& [key, value] : map) {
+		std::cout << key.toString() << ": " << value.toString() << std::endl;
+	}
+```
+
+For more complex tables (e.g. tables with nested tables) you can also use the method _withTableDo_. This methods creates a table object and calls the callback function so you can work on this object. After returning from this method the table is automatically removed from stack.
 
 ```c++
 	int a; float b;	std::string c;
