@@ -42,18 +42,13 @@ public:
 		return retVal;
 	}
 
-	template <typename Key>
-	std::map<Key, Generic> readGeneric() {
-		std::map<Key, Generic> result;
+	std::map<Generic, Generic> readGeneric() {
+		std::map<Generic, Generic> result;
 
 		Basics::pushNil(m_state);  // Push a nil key to start the iteration
 		while (getNext() != 0) {
 			try {
-				if (!Basics::isOfType(m_state, Basics::getTypeFor<Key>(), -2)) {
-					throw TypeMismatchException(Basics::getTypeFor<Key>(), Basics::getType(m_state, -2), "Key");
-				}
-
-				Key k = Basics::getStackValue<Key>(m_state, -2);
+				Generic k = Generic::fromStack(-2, m_state);
 				result[k] = Generic::fromStack(-1, m_state);
 			} catch (...) {
 				Basics::popStack(m_state, 2);  // Pop the key and value from the stack

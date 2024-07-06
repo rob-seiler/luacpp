@@ -220,7 +220,6 @@ TEST_F(StateTest, readTable_invalidValueType) {
 	} catch (const TypeMismatchException& e) {
 		EXPECT_EQ(e.getExpectedType(), Type::Number);
 		EXPECT_EQ(e.getActualType(), Type::String);
-		printf("%s\n", e.what());
 		exceptionRaised = true;
 	} catch (...) {
 		//unexpected exception raised
@@ -249,8 +248,9 @@ TEST_F(StateTest, readTableGeneric) {
 
 	State script(State::LibNone);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	auto map = script.readTableGeneric<std::string>("map");
+	auto map = script.readTableGeneric("map");
 	EXPECT_EQ(map.size(), 3);
+
 	EXPECT_EQ(map["a"], Generic(1ll));
 	EXPECT_EQ(map["b"], Generic(std::string("two")));
 	EXPECT_EQ(map["c"], Generic(3.0));
