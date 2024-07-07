@@ -133,6 +133,7 @@ int main() {
 ```
 
 ### Reading/Writing values
+#### Primitve types
 Another way of interacting between Lua and your application is by reading an writing variables.
 To pass variables from C++ to Lua you can use the method _writeVariable_.
 ```c++
@@ -148,6 +149,7 @@ In a similar way you can read variables from Lua using the method _readVariable_
 
 There are other methods for different situations like _getArgument_ for reading function arguments or _getUpValue_ to read values bound to a function.
 
+#### Tables
 A bit more special is reading and writing tables. Luacpp provides several ways in reading and writing a table. The easiest way is to use the method _readTable_ and _readTableIfMatching_. Both methods assume the table holds the same type for all its values. The difference is in the handling if this is not the case. While _readTable_ throws an exception _readTableIfMatching_ skips the entry.
 
 ```c++
@@ -180,3 +182,13 @@ For more complex tables (e.g. tables with nested tables) you can also use the me
 		table.readValue<std::string>("c", c);
 	}, false);
 ```
+
+With this method you can read and write. If you only want to write a trivial table there is also a simplified method _writeTable_.
+
+```c++
+	std::map<std::string, int> table = { { "a", 10 }, { "b", 20 } };
+	Lua::State state;
+	state.writeTable("map", table);
+```
+
+## Prospect
