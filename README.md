@@ -191,4 +191,10 @@ With this method you can read and write. If you only want to write a trivial tab
 	state.writeTable("map", table);
 ```
 
-## Prospect
+## Roadmap
+- better support for metatables so that it's easier to support object-oriented programming.
+- support of memory allocation
+- support for coroutines
+- improvement of error handling
+- improvement of debug methods
+- better documentation ;)
