@@ -20,7 +20,7 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
 			${CMAKE_SOURCE_DIR}/modules/Basics.ixx
 			${CMAKE_SOURCE_DIR}/modules/Generic.ixx
 			${CMAKE_SOURCE_DIR}/modules/Table.ixx
-			${CMAKE_SOURCE_DIR}/modules/Script.ixx
+			${CMAKE_SOURCE_DIR}/modules/State.ixx
 			${CMAKE_SOURCE_DIR}/modules/Literals.ixx
 		)
 	endif()
@@ -93,4 +93,26 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 	gtest_discover_tests(${PROJECT_NAME}_test)
 else()
 	message("No test project configured")
+endif()
+
+option(BUILD_EXAMPLES "Build examples" ON)
+if(BUILD_EXAMPLES)
+	SET (EXAMPLEDIR ${CMAKE_CURRENT_SOURCE_DIR}/examples)
+
+	# Get a list of all subdirectories
+	file(GLOB children RELATIVE ${EXAMPLEDIR} ${EXAMPLEDIR}/*)
+	foreach(child ${children})
+		if(IS_DIRECTORY ${EXAMPLEDIR}/${child})
+			SET (EXENAME LuaExample_${child})
+			file(GLOB src_files "${EXAMPLEDIR}/${child}/*.cpp")
+			if(src_files)
+				add_executable(${EXENAME} ${src_files})
+				target_link_libraries(
+					${EXENAME}
+					PRIVATE
+					${PROJECT_NAME}
+				)
+			endif()
+		endif()
+	endforeach()
 endif()

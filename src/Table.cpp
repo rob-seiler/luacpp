@@ -1,7 +1,7 @@
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
 #else
-#include <LuaTable.hpp>
+#include <Table.hpp>
 #include <Basics.hpp>
 #endif
 
@@ -10,7 +10,7 @@ import luacpp.Basics;
 
 namespace Lua {
 
-LuaTable::LuaTable(lua_State* state, int index, bool triggerMetaMethods)
+Table::Table(lua_State* state, int index, bool triggerMetaMethods)
 : m_state(state), m_tableIndex(lua_absindex(state, index)), m_triggerMetaMethods(triggerMetaMethods)
 {
 	if (!Basics::isOfType(state, Type::Table, index)) {
@@ -18,15 +18,15 @@ LuaTable::LuaTable(lua_State* state, int index, bool triggerMetaMethods)
 	}
 }
 
-void LuaTable::withTableDo(std::string_view tableName, std::function<void(LuaTable&)> workOnTable) {
+void Table::withTableDo(std::string_view tableName, std::function<void(Table&)> workOnTable) {
 	if (lua_getfield(m_state, -1, tableName.data()) == LUA_TTABLE) {
-		LuaTable table(m_state, -1); //the table is on top of the stack
+		Table table(m_state, -1); //the table is on top of the stack
 		workOnTable(table);
 	}
 	lua_pop(m_state, 1);
 }
 
-bool LuaTable::assignMetaTable(const char* name) {
+bool Table::assignMetaTable(const char* name) {
 	if (luaL_getmetatable(m_state, name) == LUA_TTABLE) {
 		//stack assumption:
 		//-1: metatable
@@ -37,7 +37,7 @@ bool LuaTable::assignMetaTable(const char* name) {
 	return false;
 }
 
-void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool triggerMetaMethods) {
+void Table::applyKeyForValue(lua_State* state, const char* key, bool triggerMetaMethods) {
 	//assumption of stack layout:
 	//-1: value
 	//-2: table
@@ -51,11 +51,11 @@ void LuaTable::applyKeyForValue(lua_State* state, const char* key, bool triggerM
 	}
 }
 
-Type LuaTable::getField(lua_State* state, int idx, const char* key) {
+Type Table::getField(lua_State* state, int idx, const char* key) {
 	return static_cast<Type>(lua_getfield(state, idx, key));
 }
 
-void LuaTable::setTable(lua_State* state, int idx, bool triggerMetaMethods) {
+void Table::setTable(lua_State* state, int idx, bool triggerMetaMethods) {
 	if (triggerMetaMethods) {
 		lua_settable(state, idx);
 	} else {
@@ -63,7 +63,7 @@ void LuaTable::setTable(lua_State* state, int idx, bool triggerMetaMethods) {
 	}
 }
 
-int LuaTable::getNext(lua_State* state, int idx) {
+int Table::getNext(lua_State* state, int idx) {
 	return lua_next(state, idx);
 }
 

@@ -1,5 +1,5 @@
-#ifndef LUACPP_LUASCRIPT_HPP
-#define LUACPP_LUASCRIPT_HPP
+#ifndef LUACPP_STATE_HPP
+#define LUACPP_STATE_HPP
 
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
@@ -8,7 +8,7 @@ import luacpp.Generic;
 import luacpp.Debug;
 #else
 #include "Basics.hpp"
-#include "LuaTable.hpp"
+#include "Table.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
 #endif
@@ -25,13 +25,13 @@ namespace Lua {
 
 constexpr uint32_t bit(uint32_t n) { return 1 << n; }
 
-class LuaScript {
+class State {
 public:
 	using NativeFunction = Basics::NativeFunction;
-	using Method = std::function<int(LuaScript&)>;
-	using DebugHook = std::function<void(LuaScript&, const DebugInfo&)>;
+	using Method = std::function<int(State&)>;
+	using DebugHook = std::function<void(State&, const DebugInfo&)>;
 
-	typedef std::function<void(LuaTable&)> TableFunction;
+	typedef std::function<void(Table&)> TableFunction;
 	typedef uint32_t Library;
 
 	constexpr static const Library LibNone = 0;
@@ -79,14 +79,12 @@ public:
 		constexpr static const char* const Close = "__close"; ///< close operator (close())
 	};
 
+	State(Library libraries = LibNone);
+	State(lua_State* state);
+	State(const State&) = delete;
+	State(State&& mv);
 
-
-	LuaScript(Library libraries = LibAll);
-	LuaScript(lua_State* state);
-	LuaScript(const LuaScript&) = delete;
-	LuaScript(LuaScript&& mv);
-
-	~LuaScript();
+	~State();
 
 	void openLibrary(Library library);
 
@@ -105,6 +103,19 @@ public:
 		pushToStack(value);
 		setGlobalFromStack(variableName);
 	}
+	
+	std::map<Generic, Generic> readTableGeneric(const char* tableName) {
+		std::map<Generic, Generic> result;
+
+		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
+
+		if (pushGlobalToStack(tableName) == Type::Table) {
+			Table table(m_state, -1);
+			result = table.readGeneric();
+		}
+		
+		return result;
+	}
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> readTable(const char* tableName) {
@@ -113,7 +124,7 @@ public:
 		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
 
 		if (pushGlobalToStack(tableName) == Type::Table) {
-			LuaTable table(m_state, -1);
+			Table table(m_state, -1);
 			result = table.read<Key, Value>();
 		}
 		
@@ -125,7 +136,7 @@ public:
 		std::map<Key, Value> result;
 
 		if (pushGlobalToStack(tableName.c_str()) == Type::Table) {
-			LuaTable table(m_state, -1);
+			Table table(m_state, -1);
 			result = table.readIfMatching<Key, Value>();
 		}
 		popStack(1);
@@ -134,7 +145,7 @@ public:
 
 	template <typename T>
 	void writeTable(const char* tableName, const std::map<std::string, T>& map) {
-		withTableDo(tableName, [this, &map](LuaTable& table) {
+		withTableDo(tableName, [this, &map](Table& table) {
 			table.write(map);
 		}, true);
 	}
@@ -163,7 +174,7 @@ public:
 	/**
 	 * @brief Register a debug hook
 	 * The debug hook is called whenever a certain event occurs in the lua virtual machine.
-	 * The hook is called with the LuaScript instance and the debug information.
+	 * The hook is called with the State instance and the debug information.
 	 * The mask defines for which events the hook should be called. Use one ore more of the
 	 * following constants to define the mask:
 	 * - MaskCall: Call event
@@ -327,7 +338,7 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getUpValue(int index) const { return getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
+	T getUpValue(int index) const { return Basics::getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
 
 	/**
 	 * @brief check if the value on the stack is of the given type
@@ -415,7 +426,7 @@ public:
 	lua_State* getState() const { return m_state; }
 
 private:
-	constexpr static const char* const HandleName = "LuaScriptHandle";
+	constexpr static const char* const HandleName = "StateHandle";
 	constexpr static const char* const GlobalScope = "_G";
 
 	static int dispatchMethod(lua_State* state);
@@ -445,4 +456,4 @@ private:
 
 } // namespace Lua
 
-#endif // LUACPP_LUASCRIPT_HPP
+#endif // LUACPP_STATE_HPP

@@ -5,9 +5,11 @@
 import luacpp.Type;
 import luacpp.TypeMismatchException;
 import luacpp.Basics;
+import luacpp.Generic;
 #else
 #include "TypeMismatchException.hpp"
 #include "Basics.hpp"
+#include "Generic.hpp"
 #endif
 
 #include <string_view>
@@ -18,9 +20,9 @@ struct lua_State;
 
 namespace Lua {
 
-class LuaTable {
+class Table {
 public:
-	LuaTable(lua_State* state, int index = -1, bool triggerMetaMethods = false);
+	Table(lua_State* state, int index = -1, bool triggerMetaMethods = false);
 
 	template <typename Key, typename Value>
 	void setElement(Key key, Value value) {
@@ -39,6 +41,28 @@ public:
 		Basics::popStack(m_state, 1);
 		return retVal;
 	}
+
+	std::map<Generic, Generic> readGeneric() {
+		std::map<Generic, Generic> result;
+
+		Basics::pushNil(m_state);  // Push a nil key to start the iteration
+		while (getNext() != 0) {
+			try {
+				Generic k = Generic::fromStack(-2, m_state);
+				result[k] = Generic::fromStack(-1, m_state);
+			} catch (...) {
+				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
+				throw;  // Rethrow the exception
+			}
+
+			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+		}
+
+		// No need to pop the table; it remains at the top of the stack
+		return result;
+	
+	}
+
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> read() {
@@ -102,7 +126,7 @@ public:
 	 * \brief work on the nested table with the given name
 	 * This method pushes the table with the given name from the table which is currently on the stack onto the stack and calls the given function.
 	*/
-	void withTableDo(std::string_view tableName, std::function<void(LuaTable&)> workOnTable);
+	void withTableDo(std::string_view tableName, std::function<void(Table&)> workOnTable);
 
 	/**
 	 * \brief assign a metatable to the table on top of the stack

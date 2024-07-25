@@ -1,5 +1,29 @@
 #include <Generic.hpp>
 
+namespace {
+
+struct Comparator {
+    template<typename T>
+    bool operator()(const T& lhs, const T& rhs) const {
+        return lhs < rhs;
+    }
+
+    // Special handling for non-comparable types or types needing special comparison
+    bool operator()(const void* lhs, const void* rhs) const { return lhs < rhs; }
+	bool operator()(const std::nullptr_t&, const std::nullptr_t&) const { return false; }
+
+    // Fallback for different types
+    template<typename T, typename U>
+    bool operator()(const T&, const U&) const { return false; }
+
+	template <>
+	bool operator()(const double& lhs, const int64_t& rhs) const { return lhs < static_cast<double>(rhs); }
+	template <>
+	bool operator()(const int64_t& lhs, const double& rhs) const { return static_cast<double>(lhs) < rhs; }
+};
+
+} //namespace anonymous
+
 namespace Lua {
 
 Generic::Generic() : m_value(nullptr), m_type(Type::Nil) {}
@@ -20,6 +44,7 @@ std::string Generic::toString() const {
 		case Type::Function:
 		case Type::UserData:
 		case Type::Thread: 
+		case Type::None:
 			break;
 	}
 	return Lua::toString(m_type);
@@ -53,10 +78,19 @@ Generic Generic::fromStack(int index, lua_State* state) {
 		case Type::Table:
 		case Type::Function:
 		case Type::UserData:
-		case Type::Thread: 
+		case Type::Thread:
+		case Type::None:
 			break;
 	}
 	return generic;
+}
+
+bool Generic::operator==(const Generic& other) const {
+	return m_type == other.m_type && m_value == other.m_value;
+}
+
+bool Generic::operator<(const Generic& other) const {
+	return m_type < other.m_type || (m_type == other.m_type && std::visit(Comparator{}, m_value, other.m_value));
 }
 
 } // namespace Lua
