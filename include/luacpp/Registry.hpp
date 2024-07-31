@@ -1,6 +1,14 @@
 #ifndef LUACPP_REGISTRY_HPP
 #define LUACPP_REGISTRY_HPP
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Generic;
+import luacpp.Basics;
+#else
+#include "Generic.hpp"
+#include "Basics.hpp"
+#endif
+
 #include <string>
 
 struct lua_State;
@@ -17,12 +25,50 @@ public:
 		MemoryError = 4,
 		ErrorError = 5
 	};
-	
+
 	Registry(lua_State* L);
 
-	ErrorCode loadScript(const char* name, const char* src);
+	ErrorCode loadScript(Generic key, const char* src);
+	
+	template <typename T>
+	ErrorCode loadScript(T key, const char* src) {
+		ErrorCode res = loadString(m_state, src);
+		if (res == ErrorCode::Ok) {
+			Basics::pushToStack(m_state, key);
+			Basics::insert(m_state, -2);
+			setRegistryTable(m_state);
+		}
+		return res;
+	}
+
+	ErrorCode getScript(Generic key);
+	
+	template <typename T>
+	ErrorCode getScript(T key) {
+		if (getEntry(key) != Type::Function) {
+			Basics::popStack(m_state, 1);
+			return ErrorCode::RuntimeError;
+		}
+		return ErrorCode::Ok;
+	}
+
+	template <typename T, typename U>
+	void setEntry(T key, U value) {
+		Basics::pushToStack(m_state, key);
+		Basics::pushToStack(m_state, value);
+		setRegistryTable(m_state);
+	}
+
+	template <typename T>
+	Type getEntry(T key) {
+		Basics::pushToStack(m_state, key);
+		return getRegistryTable(m_state);
+	}
 
 private:
+	static ErrorCode loadString(lua_State* state, const char* src);
+	static Type getRegistryTable(lua_State* state);
+	static void setRegistryTable(lua_State* state);
 	lua_State* m_state;
 };
 

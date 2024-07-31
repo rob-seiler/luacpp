@@ -49,6 +49,7 @@ public:
 	 * @return true if the value is of the given type, false otherwise
 	*/
 	static bool isOfType(lua_State* state, Type t, int index);
+	static bool isFunction(lua_State* state, int index);
 
 	static Type getType(lua_State* state, int index);
 
@@ -100,6 +101,7 @@ public:
 		}
 	}
 
+	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);
 
 	static void pushNil(lua_State* state);
