@@ -2,14 +2,17 @@
 #define LUACPP_REGISTRY_HPP
 
 #ifdef USE_CPP20_MODULES
-import luacpp.Generic;
 import luacpp.Basics;
+import luacpp.Generic;
+import luacpp.Table;
 #else
-#include "Generic.hpp"
 #include "Basics.hpp"
+#include "Generic.hpp"
+#include "Table.hpp"
 #endif
 
 #include <string>
+#include <map>
 
 struct lua_State;
 
@@ -27,6 +30,8 @@ public:
 	};
 
 	Registry(lua_State* L);
+
+	std::map<Generic, Generic> readGeneric();
 
 	ErrorCode loadScript(Generic key, const char* src);
 	
@@ -65,10 +70,15 @@ public:
 		return getRegistryTable(m_state);
 	}
 
+	bool copyContent(Registry& other);
+
 private:
 	static ErrorCode loadString(lua_State* state, const char* src);
 	static Type getRegistryTable(lua_State* state);
 	static void setRegistryTable(lua_State* state);
+	static bool isUserDefinedEntry(const Registry& registry);
+	static void copyEntry(lua_State* src, lua_State* dst);	
+
 	lua_State* m_state;
 };
 

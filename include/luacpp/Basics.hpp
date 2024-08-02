@@ -122,7 +122,7 @@ public:
 	static const char* asString(lua_State* state, int index, size_t* len = nullptr);
 
 	static void* allocateUserData(lua_State* state, size_t size, int userValues = 0);
-
+	
 	static int calcUpValueIndex(int index);
 };
 

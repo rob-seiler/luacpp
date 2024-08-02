@@ -403,11 +403,7 @@ public:
 	 * @return A list of all values on the stack (given as Generic objects)
 	*/
 	std::vector<Generic> getStack() {
-		std::vector<Generic> stack;
-		for (int i = 1, stackSize = getStackSize(); i <= stackSize; ++i) {
-			stack.push_back(Generic::fromStack(i, m_state));
-		}
-		return stack;
+		return Debug::readStack(m_state);
 	}
 
 	/**

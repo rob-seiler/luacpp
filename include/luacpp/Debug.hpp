@@ -1,6 +1,16 @@
 #ifndef LUACPP_DEBUG_HPP
 #define LUACPP_DEBUG_HPP
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Generic;
+#else
+#include "Generic.hpp"
+#endif
+
+#include <vector>
+
+struct lua_State;
+
 namespace Lua {
 
 constexpr static const int srcSize = 60;
@@ -44,6 +54,10 @@ constexpr static const int MaskReturn = 1 << static_cast<int>(EventCodes::Return
 constexpr static const int MaskLine = 1 << static_cast<int>(EventCodes::Line);
 constexpr static const int MaskCount = 1 << static_cast<int>(EventCodes::Count);
 
+class Debug {
+public:
+	static std::vector<Generic> readStack(lua_State* state);
+};
 
 } // namespace Lua
 

@@ -28,7 +28,7 @@ public:
 	void setElement(Key key, Value value) {
 		Basics::pushToStack<Key>(m_state, key);
 		Basics::pushToStack<Value>(m_state, value);
-		setTable(m_state, -3, m_triggerMetaMethods);
+		setTable(m_state, m_tableIndex, m_triggerMetaMethods);
 	}
 
 	template <typename T>
