@@ -31,8 +31,6 @@ public:
 
 	Registry(lua_State* L);
 
-	std::map<Generic, Generic> readGeneric();
-
 	ErrorCode loadScript(Generic key, const char* src);
 	
 	template <typename T>

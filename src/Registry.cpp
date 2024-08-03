@@ -5,11 +5,6 @@ namespace Lua {
 
 Registry::Registry(lua_State* L) : m_state(L) {}
 
-std::map<Generic, Generic> Registry::readGeneric() {
-	Table table(m_state);
-	return table.readGeneric();
-}
-
 Registry::ErrorCode Registry::loadScript(Generic key, const char* src) {
 	switch (key.getType()) {
 		case Type::Boolean: return loadScript(key.get<bool>(), src);
