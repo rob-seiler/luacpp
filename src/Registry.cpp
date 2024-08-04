@@ -3,7 +3,7 @@
 
 namespace Lua {
 
-Registry::Registry(lua_State* L) : m_state(L) {}
+Registry::Registry(lua_State* L) : Table(L, LUA_REGISTRYINDEX, false) {}
 
 Registry::ErrorCode Registry::loadScript(Generic key, const char* src) {
 	switch (key.getType()) {
@@ -46,14 +46,6 @@ bool Registry::copyContent(Registry& other) {
 
 Registry::ErrorCode Registry::loadString(lua_State* state, const char* src) {
 	return static_cast<ErrorCode>(luaL_loadstring(state, src));
-}
-
-Type Registry::getRegistryTable(lua_State* state) {	
-	return static_cast<Type>(lua_rawget(state, LUA_REGISTRYINDEX));
-}
-
-void Registry::setRegistryTable(lua_State* state) {
-	lua_rawset(state, LUA_REGISTRYINDEX);
 }
 
 bool Registry::isUserDefinedEntry(const Registry& registry) {
