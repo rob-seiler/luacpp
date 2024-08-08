@@ -19,6 +19,7 @@ std::map<lua_State*, State::DebugHook> State::s_debugHooks;
 
 State::State(Library libraries) 
 : m_state(luaL_newstate()),
+  m_registry(m_state),
   m_externalState(false)
 { 
 	openLibrary(libraries);
@@ -26,12 +27,14 @@ State::State(Library libraries)
 
 State::State(lua_State* state)
 : m_state(state),
+  m_registry(state),
   m_externalState(true)
 {
 }
 
 State::State(State&& mv)
 : m_state(mv.m_state),
+  m_registry(m_state),
   m_externalState(mv.m_externalState),
   m_errorList(std::move(mv.m_errorList))
 {
@@ -108,21 +111,6 @@ int State::overrideLuaFunction(const char* name, NativeFunction func) {
     lua_setfield(m_state, -2, name); //register the function under the given name
 	lua_pop(m_state, 1); //pop global scope
 	return 0;
-}
-
-int State::loadScriptIntoGlobal(const char* name, const char* code) {
-	int status = luaL_loadstring(m_state, code);
-	if (status == LUA_OK) {
-		lua_setglobal(m_state, name);
-	} else {
-		//lua failed to load the script and push an error message on the stack
-		//we store the message in our error log and clean up the stack
-		while (lua_isstring(m_state, -1)) {
-			m_errorList.emplace_back(lua_tostring(m_state, -1));
-			lua_pop(m_state, 1);
-		}
-	}
-	return status;
 }
 
 int State::loadAndExecuteScript(const char* code) {
