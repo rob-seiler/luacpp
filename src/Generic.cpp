@@ -15,12 +15,13 @@ struct Comparator {
     // Fallback for different types
     template<typename T, typename U>
     bool operator()(const T&, const U&) const { return false; }
-
-	template <>
-	bool operator()(const double& lhs, const int64_t& rhs) const { return lhs < static_cast<double>(rhs); }
-	template <>
-	bool operator()(const int64_t& lhs, const double& rhs) const { return static_cast<double>(lhs) < rhs; }
 };
+
+template <>
+bool Comparator::operator()(const double& lhs, const int64_t& rhs) const { return lhs < static_cast<double>(rhs); }
+
+template <>
+bool Comparator::operator()(const int64_t& lhs, const double& rhs) const { return static_cast<double>(lhs) < rhs; }
 
 } //namespace anonymous
 
@@ -94,6 +95,12 @@ bool Generic::operator==(const Generic& other) const {
 
 bool Generic::operator<(const Generic& other) const {
 	return m_type < other.m_type || (m_type == other.m_type && std::visit(Comparator{}, m_value, other.m_value));
+}
+
+Generic& Generic::operator=(const Generic& other) {
+	m_value = other.m_value;
+	m_type = other.m_type;
+	return *this;
 }
 
 } // namespace Lua
