@@ -41,6 +41,11 @@ if (${MODULES_SUPPORTED})
 	if(USE_CPP20_MODULES)
 		target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 		target_compile_definitions(${PROJECT_NAME} PUBLIC USE_CPP20_MODULES)
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules-ts)
+		elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules)
+		endif()
 
 		# Add the .ixx files to the library
 		target_sources(luacpp
@@ -117,6 +122,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 		${PROJECT_SOURCE_DIR}/test/*.cpp
 	)
 	target_sources(${PROJECT_NAME}_test PRIVATE ${TEST_SRC_FILES})
+
+	if (${MODULES_SUPPORTED} AND USE_CPP20_MODULES)
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules-ts)
+		elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules)
+		endif()
+	endif()
 
 	target_link_libraries(
 		${PROJECT_NAME}_test
