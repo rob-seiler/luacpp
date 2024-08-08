@@ -13,15 +13,17 @@ function(supportsModules result)
 
 	#check for compiler version
 	if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-		if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
+		#currently this implementation doesnt compile with gcc and c++20 modules
+		#if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
 			set(${result} FALSE PARENT_SCOPE)
 			return()
-		endif()
+		#endif()
 	elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
-		if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
+		#currently this implementation doesnt compile with clang and c++20 modules
+		#if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
 			set(${result} FALSE PARENT_SCOPE)
 			return()
-		endif()
+		#endif()
 	elseif (MSVC)
 		if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.34")
 			set(${result} FALSE PARENT_SCOPE)

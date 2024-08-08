@@ -5,5 +5,5 @@ export module luacpp.Type;
 
 export {
 	using Lua::Type;
-	using Lua::toString;
+	constexpr const char* Lua::toString(Lua::Type t);
 }
