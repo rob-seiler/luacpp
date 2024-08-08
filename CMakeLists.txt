@@ -4,11 +4,50 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/lua)
 project(luacpp)
 add_library(${PROJECT_NAME} STATIC)
 
-if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
+function(supportsModules result)
+	#first check if the version is greater than 3.28 if not return false
+	if (${CMAKE_VERSION} VERSION_LESS "3.28")
+		set(${result} FALSE PARENT_SCOPE)
+		return()
+	endif()
+
+	#check for compiler version
+	if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		#currently this implementation doesnt compile with gcc and c++20 modules
+		#if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "14.0")
+			set(${result} FALSE PARENT_SCOPE)
+			return()
+		#endif()
+	elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+		#currently this implementation doesnt compile with clang and c++20 modules
+		#if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "16.0")
+			set(${result} FALSE PARENT_SCOPE)
+			return()
+		#endif()
+	elseif (MSVC)
+		if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS "13.34")
+			set(${result} FALSE PARENT_SCOPE)
+			return()
+		endif()
+	else()
+		message(FATAL_ERROR "unsupported compiler")
+		return()
+	endif()
+	set(${result} TRUE PARENT_SCOPE)
+endfunction()
+
+supportsModules(MODULES_SUPPORTED)
+
+if (${MODULES_SUPPORTED})
 	option(USE_CPP20_MODULES "Compile with C++20 modules" OFF)
 	if(USE_CPP20_MODULES)
 		target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 		target_compile_definitions(${PROJECT_NAME} PUBLIC USE_CPP20_MODULES)
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules-ts)
+		elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules)
+		endif()
 
 		# Add the .ixx files to the library
 		target_sources(luacpp
@@ -28,7 +67,11 @@ if(${CMAKE_VERSION} VERSION_GREATER_EQUAL "3.28")
 endif()
 
 # If USE_CPP20_MODULES is not defined or is OFF, use C++17
-if(NOT DEFINED USE_CPP20_MODULES OR NOT USE_CPP20_MODULES)
+if(NOT ${MODULES_SUPPORTED} OR NOT ${USE_CPP20_MODULES})
+	if (NOT ${MODULES_SUPPORTED} AND ${USE_CPP20_MODULES})
+		message(FATAL_ERROR "C++20 modules are not supported by your configuration. Please build without the option USE_CPP20_MODULES or upgrade your compiler/cmake.")
+	endif()
+
 	target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 	file(
 		GLOB_RECURSE
@@ -81,6 +124,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 		${PROJECT_SOURCE_DIR}/test/*.cpp
 	)
 	target_sources(${PROJECT_NAME}_test PRIVATE ${TEST_SRC_FILES})
+
+	if (${MODULES_SUPPORTED} AND USE_CPP20_MODULES)
+		if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules-ts)
+		elseif (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+			target_compile_options(${PROJECT_NAME} PRIVATE -fmodules)
+		endif()
+	endif()
 
 	target_link_libraries(
 		${PROJECT_NAME}_test

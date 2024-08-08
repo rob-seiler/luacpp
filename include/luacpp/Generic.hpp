@@ -55,6 +55,7 @@ public:
 	bool isDouble() const;
 	bool operator==(const Generic& other) const;
 	bool operator<(const Generic& other) const;
+	Generic& operator=(const Generic& other);
 
 private:
 	Value m_value;
