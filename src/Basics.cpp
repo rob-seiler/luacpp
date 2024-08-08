@@ -18,9 +18,16 @@ bool Basics::isOfType(lua_State* state, Type type, int index) {
 	}
 	return false;
 }
+bool Basics::isFunction(lua_State* state, int index) {
+	return lua_isfunction(state, index);
+}
 
 Type Basics::getType(lua_State* state, int index) {
 	return static_cast<Type>(lua_type(state, index));
+}
+
+void Basics::insert(lua_State* state, int index) {
+	lua_insert(state, index);
 }
 
 void Basics::popStack(lua_State* state, int numValues) {

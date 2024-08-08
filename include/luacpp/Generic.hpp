@@ -51,6 +51,8 @@ public:
 
 	static Generic fromStack(int index, lua_State* state);
 
+	bool isInteger() const;
+	bool isDouble() const;
 	bool operator==(const Generic& other) const;
 	bool operator<(const Generic& other) const;
 

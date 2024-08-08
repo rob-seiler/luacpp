@@ -3,12 +3,14 @@
 
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
+import luacpp.Registry;
 import luacpp.Table;
 import luacpp.Generic;
 import luacpp.Debug;
 #else
 #include "Basics.hpp"
 #include "Table.hpp"
+#include "Registry.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
 #endif
@@ -193,26 +195,35 @@ public:
 	int overrideLuaFunction(const char* name, NativeFunction func);
 
 	/**
-	 * @brief Load a script into the global scope
-	 * The script is than available as a function with the name provided by the source (e.g. the file name)
-	 * You can than execute the script by calling the function with the same name.
-	 * This way you can load multiple scripts into the same lua state but this also comes with the risk of name collisions.
-	 * This scripts will share the same variables and functions.
-	 * This is also useful if you want to run a script multiple times.
+	 * @brief Load a script into the registry
+	 * @param name The name of the script
 	 * @param code The source code of the script
 	*/
-	int loadScriptIntoGlobal(const char* name, const char* code);
+	template <typename T>
+	int loadScript(T key, const char* code) {
+		return static_cast<int>(m_registry.loadScript<T>(key, code));
+	}
+
+	template <typename T>
+	int loadScript(T key, const std::string& code) { return loadScript<T>(key, code.c_str()); }
 
 	/**
-	 * @brief Load a script into the global scope
-	 * The script is than available as a function with the name provided by the source (e.g. the file name)
-	 * You can than execute the script by calling the function with the same name.
-	 * This way you can load multiple scripts into the same lua state but this also comes with the risk of name collisions.
-	 * This scripts will share the same variables and functions.
-	 * This is also useful if you want to run a script multiple times.
-	 * @param code The source code of the script
-	*/
-	int loadScriptIntoGlobal(const char* name, const std::string& code) { return loadScriptIntoGlobal(name, code.c_str()); }
+	 * @brief Execute a script from the registry
+	 * This method tries to load a script from the registry and executes it immediately. The script will be
+	 * popped from the stack after execution.
+	 * @param name The key in the registry where the script is stored
+	 */
+	template <typename T>
+	int executeScript(T key) {
+		int ec = static_cast<int>(m_registry.getScript(key));
+		if (ec == static_cast<int>(Registry::ErrorCode::Ok)) {
+			ec = callFunction(0, 0);
+			if (ec != 0) {
+				popStack(1); //pop the error message ToDo: improve error handling
+			}
+		}
+		return ec;
+	}
 
 	/**
 	 * @brief Load and execute a script
@@ -403,11 +414,7 @@ public:
 	 * @return A list of all values on the stack (given as Generic objects)
 	*/
 	std::vector<Generic> getStack() {
-		std::vector<Generic> stack;
-		for (int i = 1, stackSize = getStackSize(); i <= stackSize; ++i) {
-			stack.push_back(Generic::fromStack(i, m_state));
-		}
-		return stack;
+		return Debug::readStack(m_state);
 	}
 
 	/**
@@ -449,6 +456,7 @@ private:
 	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
 
 	lua_State* m_state; ///< instance of the lua virtual machine
+	Registry m_registry; ///< registry for user defined functions
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
 	std::vector<std::string> m_errorList; ///< list of errors that occured during script execution

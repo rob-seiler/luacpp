@@ -85,6 +85,9 @@ Generic Generic::fromStack(int index, lua_State* state) {
 	return generic;
 }
 
+bool Generic::isInteger() const { return std::holds_alternative<int64_t>(m_value); }
+bool Generic::isDouble() const { return std::holds_alternative<double>(m_value); }
+
 bool Generic::operator==(const Generic& other) const {
 	return m_type == other.m_type && m_value == other.m_value;
 }

@@ -118,6 +118,30 @@ TEST_F(StateTest, writeVariable) {
 	EXPECT_EQ(script.readVariable<int>("y"), 12);
 }
 
+TEST_F(StateTest, executeScriptFromRegistry) {
+	constexpr static const char* const ScriptKey = "test";
+	const char* src = R"(
+		-- This is a Lua script
+		x = x + 1
+	)";
+
+	//load the script into the registry
+	State script(State::LibNone);
+	ASSERT_EQ(script.loadScript(ScriptKey, src), 0);
+	EXPECT_EQ(script.getStackSize(), 0);
+
+	//execute the script
+	script.writeVariable("x", 0);
+	EXPECT_EQ(script.executeScript(ScriptKey), 0);
+	EXPECT_EQ(script.getStackSize(), 0);
+	EXPECT_EQ(script.readVariable<int>("x"), 1);
+
+	//execute the script again
+	EXPECT_EQ(script.executeScript(ScriptKey), 0);
+	EXPECT_EQ(script.getStackSize(), 0);
+	EXPECT_EQ(script.readVariable<int>("x"), 2);
+}
+
 TEST_F(StateTest, simpleFunctionWithReturnValue) {
 	const char* src = R"(
 		function sqr(x)

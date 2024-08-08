@@ -28,7 +28,17 @@ public:
 	void setElement(Key key, Value value) {
 		Basics::pushToStack<Key>(m_state, key);
 		Basics::pushToStack<Value>(m_state, value);
-		setTable(m_state, -3, m_triggerMetaMethods);
+		if (m_triggerMetaMethods) {
+			setTable(m_state, m_tableIndex);
+		} else {
+			setTableRaw(m_state, m_tableIndex);
+		}
+	}
+
+	template <typename T>
+	Type getElement(T key) {
+		Basics::pushToStack(m_state, key);
+		return m_triggerMetaMethods ? getTable(m_state, m_tableIndex) : getTableRaw(m_state, m_tableIndex);
 	}
 
 	template <typename T>
@@ -136,7 +146,7 @@ public:
 	*/
 	bool assignMetaTable(const char* name);
 	
-private:
+protected:
 	/**
 	 * @brief applies the given key to the value on top of the stack
 	 * 
@@ -147,7 +157,11 @@ private:
 
 	static Type getField(lua_State* state, int idx, const char* key);
 
-	static void setTable(lua_State* state, int idx, bool triggerMetaMethods);
+	static Type getTable(lua_State* state, int idx);
+	static Type getTableRaw(lua_State* state, int idx);
+
+	static void setTable(lua_State* state, int idx);
+	static void setTableRaw(lua_State* state, int idx);
 
 	static int getNext(lua_State* state, int idx);
 

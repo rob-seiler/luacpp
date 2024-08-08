@@ -1,9 +1,9 @@
 module;
-#include <LuaTable.hpp>
-#include "../src/LuaTable.cpp"
+#include <Table.hpp>
+#include "../src/Table.cpp"
 
 export module luacpp.Table;
 
 export {
-	using Lua::LuaTable;
+	using Lua::Table;
 }

@@ -55,12 +55,19 @@ Type Table::getField(lua_State* state, int idx, const char* key) {
 	return static_cast<Type>(lua_getfield(state, idx, key));
 }
 
-void Table::setTable(lua_State* state, int idx, bool triggerMetaMethods) {
-	if (triggerMetaMethods) {
-		lua_settable(state, idx);
-	} else {
-		lua_rawset(state, idx);
-	}
+Type Table::getTable(lua_State* state, int idx) {
+	return static_cast<Type>(lua_gettable(state, idx));
+}
+Type Table::getTableRaw(lua_State* state, int idx) {
+	return static_cast<Type>(lua_rawget(state, idx));
+}
+
+void Table::setTable(lua_State* state, int idx) {
+	lua_rawset(state, idx);
+}
+
+void Table::setTableRaw(lua_State* state, int idx) {
+	lua_rawset(state, idx);
 }
 
 int Table::getNext(lua_State* state, int idx) {
