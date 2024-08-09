@@ -71,3 +71,9 @@ endif()
 file(GLOB HEADER_FILES "${PROJECT_SOURCE_DIR}/src/*.h*")
 file(MAKE_DIRECTORY ${PROJECT_SOURCE_DIR}/include/lua)
 file(COPY ${HEADER_FILES} DESTINATION ${PROJECT_SOURCE_DIR}/include/lua) # Copy all header files to the new directory
+
+add_custom_target(lua_cleanSources
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_SOURCE_DIR}/include
+    COMMAND ${CMAKE_COMMAND} -E remove_directory ${PROJECT_SOURCE_DIR}/src
+    COMMENT "Removing include and src directories"
+)
