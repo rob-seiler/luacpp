@@ -2,6 +2,7 @@
 #define LUACPP_VERSION_HPP
 
 #include <cstdint>
+#include <cstddef>
 #include <array>
 
 struct lua_State;

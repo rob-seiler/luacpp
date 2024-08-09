@@ -1,6 +1,6 @@
 #include <Version.hpp>
 #include <lua/lua.hpp>
-
+#include <cstdlib>
 
 namespace Lua {
 
