@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-add_subdirectory(${CMAKE_SOURCE_DIR}/lua)
+add_subdirectory(${CMAKE_SOURCE_DIR}/extern/lua)
 
 project(luacpp)
 add_library(${PROJECT_NAME} STATIC)

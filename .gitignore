@@ -1,4 +1,5 @@
 build
-/lua/include
+extern/lua/include
+extern/lua/src
 /.vscode
 /cmake*
