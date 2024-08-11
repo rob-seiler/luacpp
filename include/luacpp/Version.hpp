@@ -18,9 +18,10 @@ public:
 	constexpr uint8_t getPatch() const { return m_patch; }
 	constexpr size_t toLuaNumber() const { return m_major * 10000 + m_minor * 100 + m_patch; }
 	constexpr uint32_t toNumber() const { return m_major << 16 | m_minor << 8 | m_patch; }
-	constexpr std::array<const char, 9> asString() const {
-		std::array<const char, 9> result{};
-		char* data = const_cast<char*>(result.data());
+	constexpr std::array<char, 9> asString() const {
+		std::array<char, 9> result{};
+		//char* data = const_cast<char*>(result.data());
+		char* data = result.data();
 		toArray(m_major, data);
 		*(data++) = '.';
 		toArray(m_minor, data);
