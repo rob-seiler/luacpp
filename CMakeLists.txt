@@ -144,6 +144,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 
 	include(GoogleTest)
 	gtest_discover_tests(${PROJECT_NAME}_test)
+
+	add_test(NAME ${PROJECT_NAME}_test COMMAND ${PROJECT_NAME}_test)
 else()
 	message("No test project configured")
 endif()
