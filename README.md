@@ -1,3 +1,6 @@
+[![Build and Test](https://github.com/rob-seiler/luacpp/actions/workflows/buildntest.yml/badge.svg)](https://github.com/rob-seiler/luacpp/actions/workflows/buildntest.yml)
+[![CodeQL](https://github.com/rob-seiler/luacpp/actions/workflows/codeql.yml/badge.svg)](https://github.com/rob-seiler/luacpp/actions/workflows/codeql.yml)
+
 # luacpp
 simple c++ wrapper for lua
 
