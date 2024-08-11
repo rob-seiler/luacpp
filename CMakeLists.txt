@@ -65,6 +65,8 @@ if (${MODULES_SUPPORTED})
 			${CMAKE_SOURCE_DIR}/modules/Literals.ixx
 		)
 	endif()
+else()
+	SET(USE_CPP20_MODULES OFF)
 endif()
 
 # If USE_CPP20_MODULES is not defined or is OFF, use C++17
@@ -144,6 +146,8 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 
 	include(GoogleTest)
 	gtest_discover_tests(${PROJECT_NAME}_test)
+
+	add_test(NAME ${PROJECT_NAME}_test COMMAND ${PROJECT_NAME}_test)
 else()
 	message("No test project configured")
 endif()
