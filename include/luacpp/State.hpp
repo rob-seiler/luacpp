@@ -430,6 +430,7 @@ public:
 	/**
 	 * \brief returns the internal lua state
 	*/
+
 	lua_State* getState() const { return m_state; }
 
 private:

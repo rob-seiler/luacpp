@@ -9,6 +9,13 @@ import luacpp.Type;
 
 #include <cstdint>
 #include <string>
+#include <map>
+
+template<typename T>
+struct is_map : std::false_type {};
+
+template<typename Key, typename Value, typename... Args>
+struct is_map<std::map<Key, Value, Args...>> : std::true_type {};
 
 struct lua_State;
 
@@ -37,6 +44,8 @@ public:
 			return Type::String;
 		} else if constexpr (std::is_same_v<T, NativeFunction>) {
 			return Type::Function;
+		} else if constexpr (is_map<T>::value) {
+			return Type::Table;
 		} else {
 			return Type::None;
 		}

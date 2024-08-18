@@ -11,14 +11,17 @@ import luacpp.Basics;
 
 #include <variant>
 #include <string>
+#include <map>
 
 struct lua_State;
 
 namespace Lua {
 
+class State;
+
 class Generic {
 public:
-	using Value = std::variant<std::nullptr_t, bool, int64_t, double, std::string, void*>;
+	using Value = std::variant<std::nullptr_t, bool, int64_t, double, std::string, void*, std::map<Generic, Generic>>;
 
 	Generic();
 
@@ -31,6 +34,7 @@ public:
 	Generic(const std::string& val) : m_value(val), m_type(Type::String) { }
 	Generic(void* val) : m_value(val), m_type(Type::LightUserData) { }
 	Generic(std::nullptr_t) : m_value(nullptr), m_type(Type::Nil) { }
+	Generic(std::map<Generic, Generic> val) : m_value(val), m_type(Type::Table) { }
 	Generic(const Generic& other) : m_value(other.m_value), m_type(other.m_type) { }
 
 	template <typename T, typename = std::enable_if_t<!std::is_integral<T>::value || std::is_same<T, int64_t>::value || std::is_same<T, bool>::value>>
@@ -38,6 +42,13 @@ public:
 
     template <typename T, typename = void, typename = std::enable_if_t<std::is_integral<T>::value && !std::is_same<T, int64_t>::value && !std::is_same<T, bool>::value>>
     T get() const { return static_cast<T>(std::get<int64_t>(m_value)); }
+
+	Generic get(Generic key) const {
+		if (m_type != Type::Table) {
+			return Generic();
+		}
+		return std::get<std::map<Generic, Generic>>(m_value).at(key);
+	}
 
 	template <typename T>
 	void set(T val) {
@@ -49,10 +60,12 @@ public:
 
 	std::string toString() const;
 
+	static Generic fromStack(int index, State& state);
 	static Generic fromStack(int index, lua_State* state);
 
 	bool isInteger() const;
 	bool isDouble() const;
+	bool isTable() const;
 	bool operator==(const Generic& other) const;
 	bool operator<(const Generic& other) const;
 	Generic& operator=(const Generic& other);
@@ -61,6 +74,11 @@ private:
 	Value m_value;
 	Type m_type;
 };
+
+template <>
+inline const std::map<Generic, Generic>& Generic::get<const std::map<Generic, Generic>&>() const {
+	return std::get<std::map<Generic, Generic>>(m_value);
+}
 
 } // namespace Lua
 
