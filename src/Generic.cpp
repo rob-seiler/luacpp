@@ -1,12 +1,7 @@
 #include <Generic.hpp>
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Table;
-import luacpp.State;
-#else
 #include <Table.hpp>
 #include <State.hpp>
-#endif
 
 namespace {
 

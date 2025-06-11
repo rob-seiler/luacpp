@@ -1,11 +1,6 @@
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-import luacpp.Stack;
-#else
 #include <Table.hpp>
 #include <Basics.hpp>
 #include <Stack.hpp>
-#endif
 
 #include <lua/lua.hpp>
 #include <stdexcept>

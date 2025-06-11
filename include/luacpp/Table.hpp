@@ -1,16 +1,9 @@
 #ifndef LUACPP_LUATABLE_HPP
 #define LUACPP_LUATABLE_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Type;
-import luacpp.TypeMismatchException;
-import luacpp.Basics;
-import luacpp.Generic;
-#else
 #include "TypeMismatchException.hpp"
 #include "Basics.hpp"
 #include "Generic.hpp"
-#endif
 
 #include <string_view>
 #include <functional>

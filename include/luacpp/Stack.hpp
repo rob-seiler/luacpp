@@ -1,11 +1,7 @@
 #ifndef LUACPP_STACK_HPP
 #define LUACPP_STACK_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-#else
 #include "Basics.hpp"
-#endif
 
 #include <string>
 

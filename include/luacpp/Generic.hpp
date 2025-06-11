@@ -1,13 +1,8 @@
 #ifndef GENERIC_HPP
 #define GENERIC_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Type;
-import luacpp.Basics;
-#else
 #include "Type.hpp"
 #include "Basics.hpp"
-#endif
 
 #include <variant>
 #include <string>

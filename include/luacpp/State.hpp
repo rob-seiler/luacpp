@@ -1,21 +1,12 @@
 #ifndef LUACPP_STATE_HPP
 #define LUACPP_STATE_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-import luacpp.Registry;
-import luacpp.Table;
-import luacpp.Generic;
-import luacpp.Debug;
-import luacpp.Stack;
-#else
 #include "Basics.hpp"
 #include "Table.hpp"
 #include "Registry.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
-#endif
 
 #include <string>
 #include <vector>

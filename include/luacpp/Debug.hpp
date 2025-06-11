@@ -1,11 +1,7 @@
 #ifndef LUACPP_DEBUG_HPP
 #define LUACPP_DEBUG_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Generic;
-#else
 #include "Generic.hpp"
-#endif
 
 #include <vector>
 
