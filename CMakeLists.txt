@@ -57,6 +57,7 @@ if (${MODULES_SUPPORTED})
 			${CMAKE_SOURCE_DIR}/modules/Type.ixx
 			${CMAKE_SOURCE_DIR}/modules/TypeMismatchException.ixx
 			${CMAKE_SOURCE_DIR}/modules/Basics.ixx
+			${CMAKE_SOURCE_DIR}/modules/Stack.ixx
 			${CMAKE_SOURCE_DIR}/modules/Generic.ixx
 			${CMAKE_SOURCE_DIR}/modules/Debug.ixx
 			${CMAKE_SOURCE_DIR}/modules/Table.ixx

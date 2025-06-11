@@ -26,8 +26,8 @@ public:
 
 	template <typename Key, typename Value>
 	void setElement(Key key, Value value) {
-		Basics::pushToStack<Key>(m_state, key);
-		Basics::pushToStack<Value>(m_state, value);
+		Stack<Key>::push(m_state, key);
+		Stack<Value>::push(m_state, value);
 		if (m_triggerMetaMethods) {
 			setTable(m_state, m_tableIndex);
 		} else {
@@ -46,7 +46,7 @@ public:
 		Type valType = getField(m_state, m_tableIndex, key.data());
 		const bool retVal = Basics::getTypeFor<T>() == valType;
 		if (retVal) {
-			value = Basics::getStackValue<T>(m_state, -1);
+			value = Stack<T>::get(m_state, -1);
 		}
 		Basics::popStack(m_state, 1);
 		return retVal;
@@ -68,8 +68,8 @@ public:
 					throw TypeMismatchException(Basics::getTypeFor<Value>(), Basics::getType(m_state, -1), "Value");
 				}
 
-				Key k = Basics::getStackValue<Key>(m_state, -2);
-				Value v = Basics::getStackValue<Value>(m_state, -1);
+				Key k = Stack<Key>::get(m_state, -2);
+				Value v = Stack<Value>::get(m_state, -1);
 				result[k] = v;
 			} catch (...) {
 				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
@@ -94,8 +94,8 @@ public:
 				continue;
 			}
 
-			Key k = Basics::getStackValue<Key>(m_state, -2);
-			Value v = Basics::getStackValue<Value>(m_state, -1);
+			Key k = Stack<Key>::get(m_state, -2);
+			Value v = Stack<Value>::get(m_state, -1);
 			result[k] = v;
 
 			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration

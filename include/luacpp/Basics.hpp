@@ -3,13 +3,12 @@
 
 #ifdef USE_CPP20_MODULES
 import luacpp.Type;
-import luacpp.Stack;
 #else
 #include "Type.hpp"
-#include "Stack.hpp"
 #endif
 
 #include <cstdint>
+#include <string>
 #include <map>
 
 template<typename T>
@@ -21,8 +20,6 @@ struct is_map<std::map<Key, Value, Args...>> : std::true_type {};
 struct lua_State;
 
 namespace Lua {
-
-class Generic;
 
 class Basics {
 public:
@@ -64,16 +61,6 @@ public:
 	static bool isFunction(lua_State* state, int index);
 
 	static Type getType(lua_State* state, int index);
-
-	template <typename T>
-	static void pushToStack(lua_State* state, T value) {
-		Stack<T>::push(state, value);
-	}
-
-	template <typename T>
-	static T getStackValue(lua_State* state, int index) {
-		return Stack<T>::get(state, index);
-	}
 
 	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);

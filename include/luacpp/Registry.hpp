@@ -5,10 +5,12 @@
 import luacpp.Basics;
 import luacpp.Generic;
 import luacpp.Table;
+import luacpp.Stack;
 #else
 #include "Basics.hpp"
 #include "Generic.hpp"
 #include "Table.hpp"
+#include "Stack.hpp"
 #endif
 
 #include <string>

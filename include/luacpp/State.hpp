@@ -7,12 +7,14 @@ import luacpp.Registry;
 import luacpp.Table;
 import luacpp.Generic;
 import luacpp.Debug;
+import luacpp.Stack;
 #else
 #include "Basics.hpp"
 #include "Table.hpp"
 #include "Registry.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
+#include "Stack.hpp"
 #endif
 
 #include <string>
@@ -95,7 +97,7 @@ public:
 	T readVariable(const char* variableName) {
 		pushGlobalToStack(variableName);
 
-		T val = Basics::getStackValue<T>(m_state, -1);
+		T val = Stack<T>::get(m_state, -1);
 		popStack(1);
 		return val;
 	}
@@ -339,9 +341,9 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getStackValue(int index) const { return Basics::getStackValue<T>(m_state, index); }
+	T getStackValue(int index) const { return Stack<T>::get(m_state, index); }
 	template <typename T>
-	T getArgument(int index) const { return Basics::getStackValue<T>(m_state, index); }
+	T getArgument(int index) const { return Stack<T>::get(m_state, index); }
 
 	/**
 	 * @brief Get a value from the upvalue list

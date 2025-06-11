@@ -1,6 +1,12 @@
 #include <Stack.hpp>
+
+#ifdef USE_CPP20_MODULES
+import luacpp.Basics;
+import luacpp.Generic;
+#else
 #include <Basics.hpp>
 #include <Generic.hpp>
+#endif
 
 namespace Lua {
 

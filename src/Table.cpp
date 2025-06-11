@@ -1,8 +1,10 @@
 #ifdef USE_CPP20_MODULES
 import luacpp.Basics;
+import luacpp.Stack;
 #else
 #include <Table.hpp>
 #include <Basics.hpp>
+#include <Stack.hpp>
 #endif
 
 #include <lua/lua.hpp>
@@ -40,8 +42,8 @@ std::map<Generic, Generic> Table::readGeneric() {
 
 void Table::writeGeneric(const std::map<Generic, Generic>& map) {
 	for (const auto& [key, value] : map) {
-		Basics::pushToStack(m_state, key);
-		Basics::pushToStack(m_state, value);
+		pushToStack(m_state, key);
+		pushToStack(m_state, value);
 		if (m_triggerMetaMethods) {
 			setTable(m_state, m_tableIndex);
 		} else {

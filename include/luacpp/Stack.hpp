@@ -1,6 +1,12 @@
 #ifndef LUACPP_STACK_HPP
 #define LUACPP_STACK_HPP
 
+#ifdef USE_CPP20_MODULES
+import luacpp.Basics;
+#else
+#include "Basics.hpp"
+#endif
+
 #include <string>
 
 struct lua_State;
@@ -68,6 +74,17 @@ template <>
 struct Stack<Generic> {
 	static void push(lua_State* state, Generic value);
 };
+
+//convenience functions for template deduction
+template <typename T>
+void pushToStack(lua_State* state, T value) {
+	Stack<T>::push(state, value);
+}
+
+template <typename T>
+T getStackValue(lua_State* state, int index) {
+	return Stack<T>::get(state, index);
+}
 
 } // namespace Lua
 
