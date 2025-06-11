@@ -403,7 +403,7 @@ public:
 	 * @param value The value to push
 	*/
 	template <typename T>
-	void pushToStack(T value) { return Basics::pushToStack(m_state, value); }
+	void pushToStack(T value) { return Stack<T>::push(m_state, value); }
 
 
 	/**

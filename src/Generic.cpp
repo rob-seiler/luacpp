@@ -102,6 +102,36 @@ Generic Generic::fromStack(int index, lua_State* state) {
 	return generic;
 }
 
+Generic::ErrorCode Generic::toStack(const Generic& generic, State& state) {
+	return toStack(generic, state.getState());
+}
+Generic::ErrorCode Generic::toStack(const Generic& generic, lua_State* state) {
+	switch (generic.getType()) {
+		case Type::Nil:	Basics::pushNil(state);	break;
+		case Type::Boolean: Basics::pushBoolean(state, generic.get<bool>()); break;
+		case Type::Number:
+			if (generic.isInteger()) {
+				Basics::pushInteger(state, generic.get<int64_t>());
+			} else {
+				Basics::pushNumber(state, generic.get<double>());
+			}
+			break;
+		case Type::String: Basics::pushString(state, generic.get<std::string>().c_str()); break;
+		case Type::LightUserData: Basics::pushLightUserData(state, generic.get<void*>()); break;
+		case Type::Table: {
+			Table table(state);
+			table.writeGeneric(generic.get<std::map<Generic, Generic>>());
+			break;
+		}
+		case Type::Function:
+		case Type::UserData:
+		case Type::Thread:
+		case Type::None:
+			return ErrorCode::TypeNotSupported;
+	}
+	return ErrorCode::NoError;
+}
+
 bool Generic::isInteger() const { return std::holds_alternative<int64_t>(m_value); }
 bool Generic::isDouble() const { return std::holds_alternative<double>(m_value); }
 bool Generic::isTable() const { return std::holds_alternative<std::map<Generic, Generic>>(m_value); }

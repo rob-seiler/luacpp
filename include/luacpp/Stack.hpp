@@ -1,0 +1,74 @@
+#ifndef LUACPP_STACK_HPP
+#define LUACPP_STACK_HPP
+
+#include <string>
+
+struct lua_State;
+
+namespace Lua {
+
+template <typename T>
+struct Stack {
+	static void push(lua_State* state, T value) {
+		if constexpr (std::is_same_v<T, bool>) {
+			Basics::pushBoolean(state, value);
+		} else if constexpr (std::is_floating_point_v<T>) {
+			Basics::pushNumber(state, value);
+		} else if constexpr (std::is_integral_v<T>) {
+			Basics::pushInteger(state, value);
+		} else if constexpr (std::is_same_v<T, const char*>) {
+			Basics::pushString(state, value);
+		} else if constexpr (std::is_same_v<T, std::string_view>) {
+			Basics::pushString(state, value.data(), value.length());
+		} else if constexpr (std::is_same_v<T, std::string>) {
+			Basics::pushString(state, value.c_str(), value.length());
+		} else if constexpr (std::is_same_v<T, Basics::NativeFunction>) {
+			Basics::pushCFunction(state, value);
+		} else if constexpr (std::is_pointer_v<T>) {
+			Basics::pushLightUserData(state, value);
+		} else {
+			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
+		}
+	}
+
+	static T get(lua_State* state, int index) {
+		if constexpr (std::is_pointer_v<T>) {
+			return static_cast<T>(Basics::asUserData(state, index));
+		} else if constexpr (std::is_same_v<T, bool>) {
+			return Basics::asBoolean(state, index);
+		} else if constexpr (std::is_floating_point_v<T>) {
+			return static_cast<T>(Basics::asNumber(state, index));
+		} else if constexpr (std::is_integral_v<T>) {
+			return static_cast<T>(Basics::asInteger(state, index));
+		} else if constexpr (std::is_same_v<T, const char*>) {
+			return Basics::asString(state, index);
+		} else if constexpr (std::is_same_v<T, std::string_view>) {
+			size_t len;
+			const char* str = Basics::asString(state, index, &len);
+			return std::string_view(str, len);
+		} else if constexpr (std::is_same_v<T, std::string>) {
+			size_t len;
+			const char* str = Basics::asString(state, index, &len);
+			return std::string(str, len);
+		} else {
+			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
+		}
+	}
+};
+
+// Specialization for const std::string&
+template <>
+struct Stack<const std::string&> {
+	static void push(lua_State* state, const std::string& value);
+};
+
+// Specialization for Generic
+class Generic;
+template <>
+struct Stack<Generic> {
+	static void push(lua_State* state, Generic value);
+};
+
+} // namespace Lua
+
+#endif // LUACPP_STACK_HPP

@@ -37,7 +37,7 @@ public:
 
 	template <typename T>
 	Type getElement(T key) {
-		Basics::pushToStack(m_state, key);
+		Stack<T>::push(m_state, key);
 		return m_triggerMetaMethods ? getTable(m_state, m_tableIndex) : getTableRaw(m_state, m_tableIndex);
 	}
 
@@ -52,27 +52,7 @@ public:
 		return retVal;
 	}
 
-	std::map<Generic, Generic> readGeneric() {
-		std::map<Generic, Generic> result;
-
-		Basics::pushNil(m_state);  // Push a nil key to start the iteration
-		while (getNext() != 0) {
-			try {
-				Generic k = Generic::fromStack(-2, m_state);
-				result[k] = Generic::fromStack(-1, m_state);
-			} catch (...) {
-				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
-				throw;  // Rethrow the exception
-			}
-
-			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
-		}
-
-		// No need to pop the table; it remains at the top of the stack
-		return result;
-	
-	}
-
+	std::map<Generic, Generic> readGeneric();
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> read() {
@@ -131,6 +111,8 @@ public:
 			setElement(key, value);
         }
     }
+
+	void writeGeneric(const std::map<Generic, Generic>& map);
 
 	/**
 	 * \brief work on the nested table with the given name

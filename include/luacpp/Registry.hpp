@@ -37,7 +37,7 @@ public:
 	ErrorCode loadScript(T key, const char* src) {
 		ErrorCode res = loadString(m_state, src);
 		if (res == ErrorCode::Ok) {
-			Basics::pushToStack(m_state, key);
+			Stack<T>::push(m_state, key);
 			Basics::insert(m_state, -2);
 			setTableRaw(m_state, m_tableIndex);
 		}

@@ -23,6 +23,12 @@ class Generic {
 public:
 	using Value = std::variant<std::nullptr_t, bool, int64_t, double, std::string, void*, std::map<Generic, Generic>>;
 
+	enum class ErrorCode {
+		NoError,
+		NoTable,
+		TypeNotSupported
+	};
+
 	Generic();
 
 	template<typename T, typename = std::enable_if_t<std::is_integral<T>::value>>
@@ -62,6 +68,13 @@ public:
 
 	static Generic fromStack(int index, State& state);
 	static Generic fromStack(int index, lua_State* state);
+
+	/**
+	 * @brief Pushes the Generic object onto the Lua stack
+	 * This method assumes a lua table is at the top of the stack
+	 */
+	static ErrorCode toStack(const Generic& generic, State& state);
+	static ErrorCode toStack(const Generic& generic, lua_State* state);
 
 	bool isInteger() const;
 	bool isDouble() const;
