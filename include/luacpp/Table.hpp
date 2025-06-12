@@ -4,6 +4,7 @@
 #include "TypeMismatchException.hpp"
 #include "Basics.hpp"
 #include "Generic.hpp"
+#include "Stack.hpp"
 
 #include <string_view>
 #include <functional>
