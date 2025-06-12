@@ -1,11 +1,7 @@
 #ifndef LUACPP_TYPEMISMATCHEXCEPTION_HPP
 #define LUACPP_TYPEMISMATCHEXCEPTION_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Type;
-#else
 #include "Type.hpp"
-#endif
 
 #include <exception>
 #include <string>

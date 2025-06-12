@@ -1,5 +1,8 @@
 #include <Generic.hpp>
 
+#include <Table.hpp>
+#include <State.hpp>
+
 namespace {
 
 struct Comparator {
@@ -40,7 +43,7 @@ std::string Generic::toString() const {
 				return std::to_string(std::get<double>(m_value));
 			}
 		case Type::String: return std::get<std::string>(m_value);
-		case Type::Nil:
+		case Type::Nil: return "nil";
 		case Type::Table:
 		case Type::Function:
 		case Type::UserData:
@@ -49,6 +52,10 @@ std::string Generic::toString() const {
 			break;
 	}
 	return Lua::toString(m_type);
+}
+
+Generic Generic::fromStack(int index, State& state) {
+	return fromStack(index, state.getState());
 }
 
 Generic Generic::fromStack(int index, lua_State* state) {
@@ -76,7 +83,11 @@ Generic Generic::fromStack(int index, lua_State* state) {
 		case Type::LightUserData: 
 			generic.set(Basics::asUserData(state, index));
 			break;
-		case Type::Table:
+		case Type::Table: {
+			Table table(state, index);
+			generic.set(table.readGeneric());
+			break;
+		}
 		case Type::Function:
 		case Type::UserData:
 		case Type::Thread:
@@ -86,8 +97,39 @@ Generic Generic::fromStack(int index, lua_State* state) {
 	return generic;
 }
 
+Generic::ErrorCode Generic::toStack(const Generic& generic, State& state) {
+	return toStack(generic, state.getState());
+}
+Generic::ErrorCode Generic::toStack(const Generic& generic, lua_State* state) {
+	switch (generic.getType()) {
+		case Type::Nil:	Basics::pushNil(state);	break;
+		case Type::Boolean: Basics::pushBoolean(state, generic.get<bool>()); break;
+		case Type::Number:
+			if (generic.isInteger()) {
+				Basics::pushInteger(state, generic.get<int64_t>());
+			} else {
+				Basics::pushNumber(state, generic.get<double>());
+			}
+			break;
+		case Type::String: Basics::pushString(state, generic.get<std::string>().c_str()); break;
+		case Type::LightUserData: Basics::pushLightUserData(state, generic.get<void*>()); break;
+		case Type::Table: {
+			Table table(state);
+			table.writeGeneric(generic.get<std::map<Generic, Generic>>());
+			break;
+		}
+		case Type::Function:
+		case Type::UserData:
+		case Type::Thread:
+		case Type::None:
+			return ErrorCode::TypeNotSupported;
+	}
+	return ErrorCode::NoError;
+}
+
 bool Generic::isInteger() const { return std::holds_alternative<int64_t>(m_value); }
 bool Generic::isDouble() const { return std::holds_alternative<double>(m_value); }
+bool Generic::isTable() const { return std::holds_alternative<std::map<Generic, Generic>>(m_value); }
 
 bool Generic::operator==(const Generic& other) const {
 	return m_type == other.m_type && m_value == other.m_value;

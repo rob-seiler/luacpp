@@ -1,19 +1,12 @@
 #ifndef LUACPP_STATE_HPP
 #define LUACPP_STATE_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-import luacpp.Registry;
-import luacpp.Table;
-import luacpp.Generic;
-import luacpp.Debug;
-#else
 #include "Basics.hpp"
 #include "Table.hpp"
 #include "Registry.hpp"
 #include "Generic.hpp"
 #include "Debug.hpp"
-#endif
+#include "Stack.hpp"
 
 #include <string>
 #include <vector>
@@ -95,7 +88,7 @@ public:
 	T readVariable(const char* variableName) {
 		pushGlobalToStack(variableName);
 
-		T val = Basics::getStackValue<T>(m_state, -1);
+		T val = Stack<T>::get(m_state, -1);
 		popStack(1);
 		return val;
 	}
@@ -339,9 +332,9 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getStackValue(int index) const { return Basics::getStackValue<T>(m_state, index); }
+	T getStackValue(int index) const { return Stack<T>::get(m_state, index); }
 	template <typename T>
-	T getArgument(int index) const { return Basics::getStackValue<T>(m_state, index); }
+	T getArgument(int index) const { return Stack<T>::get(m_state, index); }
 
 	/**
 	 * @brief Get a value from the upvalue list
@@ -349,7 +342,7 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getUpValue(int index) const { return Basics::getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
+	T getUpValue(int index) const { return getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
 
 	/**
 	 * @brief check if the value on the stack is of the given type
@@ -403,7 +396,7 @@ public:
 	 * @param value The value to push
 	*/
 	template <typename T>
-	void pushToStack(T value) { return Basics::pushToStack(m_state, value); }
+	void pushToStack(T value) { return Stack<T>::push(m_state, value); }
 
 
 	/**
@@ -430,6 +423,7 @@ public:
 	/**
 	 * \brief returns the internal lua state
 	*/
+
 	lua_State* getState() const { return m_state; }
 
 private:

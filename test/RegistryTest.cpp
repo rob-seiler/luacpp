@@ -28,13 +28,13 @@ TEST_F(RegistryTest, setElement_getElement) {
 	m_registry.setElement(43.0, true);
 
 	EXPECT_EQ(m_registry.getElement("test"), Type::Number);
-	EXPECT_EQ(Basics::getStackValue<int>(m_state, -1), 42);
+	EXPECT_EQ(Stack<int>::get(m_state, -1), 42);
 	
 	EXPECT_EQ(m_registry.getElement(42), Type::String);
-	EXPECT_EQ(Basics::getStackValue<std::string>(m_state, -1), "test");
-	
+	EXPECT_EQ(Stack<std::string>::get(m_state, -1), "test");
+
 	EXPECT_EQ(m_registry.getElement(43.0), Type::Boolean);
-	EXPECT_EQ(Basics::getStackValue<bool>(m_state, -1), true);
+	EXPECT_EQ(Stack<bool>::get(m_state, -1), true);
 }
 
 TEST_F(RegistryTest, loadScript) {
@@ -69,19 +69,19 @@ TEST_F(RegistryTest, copyContent) {
 	cpy.copyContent(m_registry);
 
 	EXPECT_EQ(m_registry.getElement("test"), Type::Number);
-	EXPECT_EQ(Basics::getStackValue<int>(m_state, -1), 42);
+	EXPECT_EQ(Stack<int>::get(m_state, -1), 42);
 	EXPECT_EQ(cpy.getElement("test"), Type::Number);
-	EXPECT_EQ(Basics::getStackValue<int>(otherState, -1), 42);
+	EXPECT_EQ(Stack<int>::get(otherState, -1), 42);
 
 	EXPECT_EQ(m_registry.getElement(42), Type::String);
-	EXPECT_EQ(Basics::getStackValue<std::string>(m_state, -1), "test");
+	EXPECT_EQ(Stack<std::string>::get(m_state, -1), "test");
 	EXPECT_EQ(cpy.getElement(42), Type::String);
-	EXPECT_EQ(Basics::getStackValue<std::string>(otherState, -1), "test");
+	EXPECT_EQ(Stack<std::string>::get(otherState, -1), "test");
 
 	EXPECT_EQ(m_registry.getElement(43.0), Type::Boolean);
-	EXPECT_EQ(Basics::getStackValue<bool>(m_state, -1), true);
+	EXPECT_EQ(Stack<bool>::get(m_state, -1), true);
 	EXPECT_EQ(cpy.getElement(43.0), Type::Boolean);
-	EXPECT_EQ(Basics::getStackValue<bool>(otherState, -1), true);
+	EXPECT_EQ(Stack<bool>::get(otherState, -1), true);
 
 	lua_close(otherState);
 }

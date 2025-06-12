@@ -1,9 +1,6 @@
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-#else
 #include <Table.hpp>
 #include <Basics.hpp>
-#endif
+#include <Stack.hpp>
 
 #include <lua/lua.hpp>
 #include <stdexcept>
@@ -15,6 +12,38 @@ Table::Table(lua_State* state, int index, bool triggerMetaMethods)
 {
 	if (!Basics::isOfType(state, Type::Table, index)) {
 		throw std::runtime_error("Not implemented");
+	}
+}
+
+std::map<Generic, Generic> Table::readGeneric() {
+	std::map<Generic, Generic> result;
+
+	Basics::pushNil(m_state);  // Push a nil key to start the iteration
+	while (getNext() != 0) {
+		try {
+			Generic k = Generic::fromStack(-2, m_state);
+			result[k] = Generic::fromStack(-1, m_state);
+		} catch (...) {
+			Basics::popStack(m_state, 2);  // Pop the key and value from the stack
+			throw;  // Rethrow the exception
+		}
+
+		Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
+	}
+
+	// No need to pop the table; it remains at the top of the stack
+	return result;
+}
+
+void Table::writeGeneric(const std::map<Generic, Generic>& map) {
+	for (const auto& [key, value] : map) {
+		pushToStack(m_state, key);
+		pushToStack(m_state, value);
+		if (m_triggerMetaMethods) {
+			setTable(m_state, m_tableIndex);
+		} else {
+			setTableRaw(m_state, m_tableIndex);
+		}
 	}
 }
 

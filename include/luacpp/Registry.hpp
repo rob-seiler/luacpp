@@ -1,15 +1,10 @@
 #ifndef LUACPP_REGISTRY_HPP
 #define LUACPP_REGISTRY_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Basics;
-import luacpp.Generic;
-import luacpp.Table;
-#else
 #include "Basics.hpp"
 #include "Generic.hpp"
 #include "Table.hpp"
-#endif
+#include "Stack.hpp"
 
 #include <string>
 #include <map>
@@ -37,7 +32,7 @@ public:
 	ErrorCode loadScript(T key, const char* src) {
 		ErrorCode res = loadString(m_state, src);
 		if (res == ErrorCode::Ok) {
-			Basics::pushToStack(m_state, key);
+			Stack<T>::push(m_state, key);
 			Basics::insert(m_state, -2);
 			setTableRaw(m_state, m_tableIndex);
 		}

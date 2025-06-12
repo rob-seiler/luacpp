@@ -1,16 +1,10 @@
 #ifndef LUACPP_LUATABLE_HPP
 #define LUACPP_LUATABLE_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Type;
-import luacpp.TypeMismatchException;
-import luacpp.Basics;
-import luacpp.Generic;
-#else
 #include "TypeMismatchException.hpp"
 #include "Basics.hpp"
 #include "Generic.hpp"
-#endif
+#include "Stack.hpp"
 
 #include <string_view>
 #include <functional>
@@ -26,8 +20,8 @@ public:
 
 	template <typename Key, typename Value>
 	void setElement(Key key, Value value) {
-		Basics::pushToStack<Key>(m_state, key);
-		Basics::pushToStack<Value>(m_state, value);
+		Stack<Key>::push(m_state, key);
+		Stack<Value>::push(m_state, value);
 		if (m_triggerMetaMethods) {
 			setTable(m_state, m_tableIndex);
 		} else {
@@ -37,7 +31,7 @@ public:
 
 	template <typename T>
 	Type getElement(T key) {
-		Basics::pushToStack(m_state, key);
+		Stack<T>::push(m_state, key);
 		return m_triggerMetaMethods ? getTable(m_state, m_tableIndex) : getTableRaw(m_state, m_tableIndex);
 	}
 
@@ -46,33 +40,13 @@ public:
 		Type valType = getField(m_state, m_tableIndex, key.data());
 		const bool retVal = Basics::getTypeFor<T>() == valType;
 		if (retVal) {
-			value = Basics::getStackValue<T>(m_state, -1);
+			value = Stack<T>::get(m_state, -1);
 		}
 		Basics::popStack(m_state, 1);
 		return retVal;
 	}
 
-	std::map<Generic, Generic> readGeneric() {
-		std::map<Generic, Generic> result;
-
-		Basics::pushNil(m_state);  // Push a nil key to start the iteration
-		while (getNext() != 0) {
-			try {
-				Generic k = Generic::fromStack(-2, m_state);
-				result[k] = Generic::fromStack(-1, m_state);
-			} catch (...) {
-				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
-				throw;  // Rethrow the exception
-			}
-
-			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
-		}
-
-		// No need to pop the table; it remains at the top of the stack
-		return result;
-	
-	}
-
+	std::map<Generic, Generic> readGeneric();
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> read() {
@@ -88,8 +62,8 @@ public:
 					throw TypeMismatchException(Basics::getTypeFor<Value>(), Basics::getType(m_state, -1), "Value");
 				}
 
-				Key k = Basics::getStackValue<Key>(m_state, -2);
-				Value v = Basics::getStackValue<Value>(m_state, -1);
+				Key k = Stack<Key>::get(m_state, -2);
+				Value v = Stack<Value>::get(m_state, -1);
 				result[k] = v;
 			} catch (...) {
 				Basics::popStack(m_state, 2);  // Pop the key and value from the stack
@@ -114,8 +88,8 @@ public:
 				continue;
 			}
 
-			Key k = Basics::getStackValue<Key>(m_state, -2);
-			Value v = Basics::getStackValue<Value>(m_state, -1);
+			Key k = Stack<Key>::get(m_state, -2);
+			Value v = Stack<Value>::get(m_state, -1);
 			result[k] = v;
 
 			Basics::popStack(m_state, 1);  // Pop the value, keep the key for the next iteration
@@ -131,6 +105,8 @@ public:
 			setElement(key, value);
         }
     }
+
+	void writeGeneric(const std::map<Generic, Generic>& map);
 
 	/**
 	 * \brief work on the nested table with the given name

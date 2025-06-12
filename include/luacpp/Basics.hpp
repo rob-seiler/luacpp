@@ -1,14 +1,17 @@
 #ifndef LUACPP_BASICS_HPP
 #define LUACPP_BASICS_HPP
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Type;
-#else
 #include "Type.hpp"
-#endif
 
 #include <cstdint>
 #include <string>
+#include <map>
+
+template<typename T>
+struct is_map : std::false_type {};
+
+template<typename Key, typename Value, typename... Args>
+struct is_map<std::map<Key, Value, Args...>> : std::true_type {};
 
 struct lua_State;
 
@@ -37,6 +40,8 @@ public:
 			return Type::String;
 		} else if constexpr (std::is_same_v<T, NativeFunction>) {
 			return Type::Function;
+		} else if constexpr (is_map<T>::value) {
+			return Type::Table;
 		} else {
 			return Type::None;
 		}
@@ -52,54 +57,6 @@ public:
 	static bool isFunction(lua_State* state, int index);
 
 	static Type getType(lua_State* state, int index);
-
-	template <typename T>
-	static void pushToStack(lua_State* state, T value) {
-		if constexpr (std::is_same_v<T, bool>) {
-			pushBoolean(state, value);
-		} else if constexpr (std::is_floating_point_v<T>) {
-			pushNumber(state, value);
-		} else if constexpr (std::is_integral_v<T>) {
-			pushInteger(state, value);
-		} else if constexpr (std::is_same_v<T, const char*>) {
-			pushString(state, value);
-		} else if constexpr (std::is_same_v<T, std::string_view>) {
-			pushString(state, value.data(), value.length());
-		} else if constexpr (std::is_same_v<T, std::string>) {
-			pushString(state, value.c_str(), value.length());
-		} else if constexpr (std::is_same_v<T, NativeFunction>) {
-			pushCFunction(state, value);
-		} else if constexpr (std::is_pointer_v<T>) {
-			pushLightUserData(state, value);
-		} else {
-			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
-		}
-	}
-
-	template <typename T>
-	static T getStackValue(lua_State* state, int index) {
-		if constexpr (std::is_pointer_v<T>) {
-			return static_cast<T>(asUserData(state, index));
-		} else if constexpr (std::is_same_v<T, bool>) {
-			return asBoolean(state, index);
-		} else if constexpr (std::is_floating_point_v<T>) {
-			return static_cast<T>(asNumber(state, index));
-		} else if constexpr (std::is_integral_v<T>) {
-			return static_cast<T>(asInteger(state, index));
-		} else if constexpr (std::is_same_v<T, const char*>) {
-			return asString(state, index);
-		} else if constexpr (std::is_same_v<T, std::string_view>) {
-			size_t len;
-			const char* str = asString(state, index, &len);
-			return std::string_view(str, len);
-		} else if constexpr (std::is_same_v<T, std::string>) {
-			size_t len;
-			const char* str = asString(state, index, &len);
-			return std::string(str, len);
-		} else {
-			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
-		}
-	}
 
 	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);
@@ -126,10 +83,8 @@ public:
 	static int calcUpValueIndex(int index);
 };
 
-template <>
-inline void Basics::pushToStack<const std::string&>(lua_State* state, const std::string& value) {
-	pushString(state, value.c_str(), value.length());
-}
+// Stack trait struct for push/get
+
 
 } //namespace Lua
 
