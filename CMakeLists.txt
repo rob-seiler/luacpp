@@ -5,7 +5,6 @@ project(luacpp)
 add_library(${PROJECT_NAME} STATIC)
 
 # Use C++17
-set(USE_CPP20_MODULES OFF)
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_17)
 file(
 	GLOB_RECURSE
