@@ -285,17 +285,17 @@ public:
 
 	/**
 	 * @brief Create a new userdata object managed by lua
-	 * 
 	 * The userdata object is allocated on the lua stack and can be accessed by the script. It is automatically freed when it
 	 * is not used anymore (garbage collection).
 	 * 
 	 * @tparam T The type of the userdata object
+	 * @tparam Args Constructor argument types
 	 * @return The userdata object
 	*/
-	template <class T>
-	T* createUserData() {
+	template <class T, typename... Args>
+	T* createUserData(Args&&... args) {
 		void* userData = Basics::allocateUserData(m_state, sizeof(T)); //allocate the userdata on the lua stack
-		return new (userData) T(); //call constructor via placement new
+		return new (userData) T(std::forward<Args>(args)...); //call constructor via placement new
 	}
 
 	/**
