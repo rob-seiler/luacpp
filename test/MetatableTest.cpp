@@ -88,4 +88,102 @@ TEST(MetatableTest, VectorOtherOps) {
     EXPECT_TRUE(eqRes);
 }
 
+TEST(MetatableTest, ErrorHandling_NilOperand) {
+    State lua(State::LibBase);
+    Metatable<Vector>::registerMetatable(lua);
+    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
+        State L(lvm);
+        float x = static_cast<float>(L.getArgument<double>(1));
+        float y = static_cast<float>(L.getArgument<double>(2));
+        Metatable<Vector>::create(L, x, y);
+        return 1;
+    });
+
+    // Test with nil operand - should error, not crash
+    const char* src = "v1 = createVector(1,2); result = v1 + nil";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);  // Should fail with error
+}
+
+TEST(MetatableTest, ErrorHandling_WrongType) {
+    State lua(State::LibBase);
+    Metatable<Vector>::registerMetatable(lua);
+    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
+        State L(lvm);
+        float x = static_cast<float>(L.getArgument<double>(1));
+        float y = static_cast<float>(L.getArgument<double>(2));
+        Metatable<Vector>::create(L, x, y);
+        return 1;
+    });
+
+    // Test with wrong type (number) - should error, not crash
+    const char* src = "v1 = createVector(1,2); result = v1 + 5";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);  // Should fail with error
+}
+
+TEST(MetatableTest, ErrorHandling_StringOperand) {
+    State lua(State::LibBase);
+    Metatable<Vector>::registerMetatable(lua);
+    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
+        State L(lvm);
+        float x = static_cast<float>(L.getArgument<double>(1));
+        float y = static_cast<float>(L.getArgument<double>(2));
+        Metatable<Vector>::create(L, x, y);
+        return 1;
+    });
+
+    // Test with string operand - should error, not crash
+    const char* src = "v1 = createVector(1,2); result = v1 * 'hello'";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);  // Should fail with error
+}
+
+TEST(MetatableTest, ErrorHandling_TypeConfusion) {
+    State lua(State::LibBase);
+    Metatable<Vector>::registerMetatable(lua);
+    Metatable<IntBox>::registerMetatable(lua);
+
+    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
+        State L(lvm);
+        float x = static_cast<float>(L.getArgument<double>(1));
+        float y = static_cast<float>(L.getArgument<double>(2));
+        Metatable<Vector>::create(L, x, y);
+        return 1;
+    });
+
+    lua.registerNativeFunction("createBox", [](lua_State* lvm) -> int {
+        State L(lvm);
+        int val = static_cast<int>(L.getArgument<int>(1));
+        Metatable<IntBox>::create(L, val);
+        return 1;
+    });
+
+    // Test mixing different userdata types - should error, not corrupt memory
+    const char* src = "v1 = createVector(1,2); b1 = createBox(5); result = v1 + b1";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);  // Should fail with error due to type mismatch
+}
+
+TEST(MetatableTest, DivisionByZero) {
+    State lua(State::LibBase);
+    Metatable<Vector>::registerMetatable(lua);
+    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
+        State L(lvm);
+        float x = static_cast<float>(L.getArgument<double>(1));
+        float y = static_cast<float>(L.getArgument<double>(2));
+        Metatable<Vector>::create(L, x, y);
+        return 1;
+    });
+
+    // Test division by zero - for floats this produces inf/nan (not ideal but doesn't crash)
+    const char* src = "v1 = createVector(10,20); v2 = createVector(0,0); result = v1 / v2";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_EQ(status, 0);  // Floats allow division by zero (produces inf/nan)
+
+    Vector* res = lua.readVariable<Vector*>("result");
+    ASSERT_NE(res, nullptr);
+    // Result will be inf, which is not ideal but at least doesn't crash
+}
+
 } // namespace Lua

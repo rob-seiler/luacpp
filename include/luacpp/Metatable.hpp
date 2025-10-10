@@ -3,6 +3,7 @@
 
 #include "State.hpp"
 #include "Table.hpp"
+#include "Basics.hpp"
 
 #include <type_traits>
 #include <typeinfo>
@@ -13,13 +14,20 @@ namespace Lua {
 
 
 namespace detail {
+        // Helper to safely get typed userdata with validation
+        template <typename T>
+        T* checkUserData(lua_State* lvm, int index) {
+                void* ud = Basics::checkUserData(lvm, index, Metatable<T>::metatableName());
+                return static_cast<T*>(ud);
+        }
+
         template <typename T>
         void registerAdd(Table& mt) {
                 if constexpr (has_add_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* lhs = L.getArgument<T*>(1);
-                                T* rhs = L.getArgument<T*>(2);
+                                T* lhs = checkUserData<T>(lvm, 1);
+                                T* rhs = checkUserData<T>(lvm, 2);
                                 T result = *lhs + *rhs;
                                 Metatable<T>::create(L, result);
                                 return 1;
@@ -33,8 +41,8 @@ namespace detail {
                 if constexpr (has_sub_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* lhs = L.getArgument<T*>(1);
-                                T* rhs = L.getArgument<T*>(2);
+                                T* lhs = checkUserData<T>(lvm, 1);
+                                T* rhs = checkUserData<T>(lvm, 2);
                                 T result = *lhs - *rhs;
                                 Metatable<T>::create(L, result);
                                 return 1;
@@ -48,8 +56,8 @@ namespace detail {
                 if constexpr (has_mul_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* lhs = L.getArgument<T*>(1);
-                                T* rhs = L.getArgument<T*>(2);
+                                T* lhs = checkUserData<T>(lvm, 1);
+                                T* rhs = checkUserData<T>(lvm, 2);
                                 T result = *lhs * *rhs;
                                 Metatable<T>::create(L, result);
                                 return 1;
@@ -63,8 +71,8 @@ namespace detail {
                 if constexpr (has_div_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* lhs = L.getArgument<T*>(1);
-                                T* rhs = L.getArgument<T*>(2);
+                                T* lhs = checkUserData<T>(lvm, 1);
+                                T* rhs = checkUserData<T>(lvm, 2);
                                 T result = *lhs / *rhs;
                                 Metatable<T>::create(L, result);
                                 return 1;
@@ -78,7 +86,7 @@ namespace detail {
                 if constexpr (has_unary_minus_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* obj = L.getArgument<T*>(1);
+                                T* obj = checkUserData<T>(lvm, 1);
                                 T result = -(*obj);
                                 Metatable<T>::create(L, result);
                                 return 1;
@@ -92,8 +100,8 @@ namespace detail {
                 if constexpr (has_eq_operator<T>::value) {
                         int (*func)(lua_State*) = [](lua_State* lvm) -> int {
                                 State L(lvm);
-                                T* lhs = L.getArgument<T*>(1);
-                                T* rhs = L.getArgument<T*>(2);
+                                T* lhs = checkUserData<T>(lvm, 1);
+                                T* rhs = checkUserData<T>(lvm, 2);
                                 bool result = *lhs == *rhs;
                                 L.pushToStack(result);
                                 return 1;

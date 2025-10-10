@@ -73,6 +73,7 @@ public:
 	static bool isInteger(lua_State* state, int index);
 
 	static void* asUserData(lua_State* state, int index);
+	static void* checkUserData(lua_State* state, int index, const char* tname);
 	static bool asBoolean(lua_State* state, int index);
 	static double asNumber(lua_State* state, int index);
 	static int64_t asInteger(lua_State* state, int index);
