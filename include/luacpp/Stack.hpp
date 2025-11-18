@@ -34,15 +34,7 @@ struct Stack {
 	}
 
 	static T get(lua_State* state, int index) {
-		if constexpr (std::is_pointer_v<T>) {
-			return static_cast<T>(Basics::asUserData(state, index));
-		} else if constexpr (std::is_same_v<T, bool>) {
-			return Basics::asBoolean(state, index);
-		} else if constexpr (std::is_floating_point_v<T>) {
-			return static_cast<T>(Basics::asNumber(state, index));
-		} else if constexpr (std::is_integral_v<T>) {
-			return static_cast<T>(Basics::asInteger(state, index));
-		} else if constexpr (std::is_same_v<T, const char*>) {
+		if constexpr (std::is_same_v<T, const char*>) {
 			return Basics::asString(state, index);
 		} else if constexpr (std::is_same_v<T, std::string_view>) {
 			size_t len;
@@ -52,6 +44,14 @@ struct Stack {
 			size_t len;
 			const char* str = Basics::asString(state, index, &len);
 			return std::string(str, len);
+		} else if constexpr (std::is_pointer_v<T>) {
+			return static_cast<T>(Basics::asUserData(state, index));
+		} else if constexpr (std::is_same_v<T, bool>) {
+			return Basics::asBoolean(state, index);
+		} else if constexpr (std::is_floating_point_v<T>) {
+			return static_cast<T>(Basics::asNumber(state, index));
+		} else if constexpr (std::is_integral_v<T>) {
+			return static_cast<T>(Basics::asInteger(state, index));
 		} else {
 			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
 		}
