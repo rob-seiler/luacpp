@@ -2,6 +2,7 @@
 #define LUACPP_EXAMPLES_TRANSFORM2D_HPP
 
 #include "Vector2D.hpp"
+#include <typeinfo>
 
 class Transform2D {
 public:
@@ -51,5 +52,58 @@ public:
     }
 };
 
+// ============================================================================
+// Lua Metatable Specialization
+// ============================================================================
+
+// Forward declarations for Lua binding
+namespace Lua {
+	template <typename T> struct Metatable;
+	class State;
+	namespace detail { template <typename T> void registerDefaultMetatable(State&); }
+}
+
+namespace Lua {
+
+template <>
+struct Metatable<::Transform2D> {
+	static const char* metatableName() {
+		return typeid(::Transform2D).name();
+	}
+
+	static void registerMetatable(State& state) {
+		detail::registerDefaultMetatable<::Transform2D>(state);
+		registerConstructor(state);
+	}
+
+	template <typename... Args>
+	static ::Transform2D* create(State& state, Args&&... args);
+
+	static ::Transform2D* create(State& state, const ::Transform2D& obj);
+
+	static void registerConstructor(State& state);
+};
+
+} // namespace Lua
+
+// Include template implementations when State is fully defined
+#ifdef LUACPP_STATE_HPP
+namespace Lua {
+
+template <typename... Args>
+inline ::Transform2D* Metatable<::Transform2D>::create(State& state, Args&&... args) {
+	::Transform2D* obj = state.createUserData<::Transform2D>(std::forward<Args>(args)...);
+	state.assignMetaTable(metatableName());
+	return obj;
+}
+
+inline ::Transform2D* Metatable<::Transform2D>::create(State& state, const ::Transform2D& obj) {
+	::Transform2D* userdata = state.createUserData<::Transform2D>(obj);
+	state.assignMetaTable(metatableName());
+	return userdata;
+}
+
+} // namespace Lua
+#endif
 
 #endif // LUACPP_EXAMPLES_TRANSFORM2D_HPP
