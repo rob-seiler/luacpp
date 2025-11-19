@@ -14,118 +14,118 @@ namespace Lua {
 
 
 namespace detail {
-        // Helper to safely get typed userdata with validation
-        template <typename T>
-        T* checkUserData(lua_State* lvm, int index) {
-                void* ud = Basics::checkUserData(lvm, index, Metatable<T>::metatableName());
-                return static_cast<T*>(ud);
-        }
+// Helper to safely get typed userdata with validation
+template <typename T>
+T* checkUserData(lua_State* lvm, int index) {
+	void* ud = Basics::checkUserData(lvm, index, Metatable<T>::metatableName());
+	return static_cast<T*>(ud);
+}
 
-        template <typename T>
-        void registerAdd(Table& mt) {
-                if constexpr (has_add_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* lhs = checkUserData<T>(lvm, 1);
-                                T* rhs = checkUserData<T>(lvm, 2);
-                                T result = *lhs + *rhs;
-                                Metatable<T>::create(L, result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::Addition, func);
-                }
-        }
+template <typename T>
+void registerAdd(Table& mt) {
+	if constexpr (has_add_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			T result = *lhs + *rhs;
+			Metatable<T>::create(L, result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Addition, func);
+	}
+}
 
-        template <typename T>
-        void registerSub(Table& mt) {
-                if constexpr (has_sub_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* lhs = checkUserData<T>(lvm, 1);
-                                T* rhs = checkUserData<T>(lvm, 2);
-                                T result = *lhs - *rhs;
-                                Metatable<T>::create(L, result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::Substraction, func);
-                }
-        }
+template <typename T>
+void registerSub(Table& mt) {
+	if constexpr (has_sub_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			T result = *lhs - *rhs;
+			Metatable<T>::create(L, result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Substraction, func);
+	}
+}
 
-        template <typename T>
-        void registerMul(Table& mt) {
-                if constexpr (has_mul_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* lhs = checkUserData<T>(lvm, 1);
-                                T* rhs = checkUserData<T>(lvm, 2);
-                                T result = *lhs * *rhs;
-                                Metatable<T>::create(L, result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::Multiplication, func);
-                }
-        }
+template <typename T>
+void registerMul(Table& mt) {
+	if constexpr (has_mul_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			T result = *lhs * *rhs;
+			Metatable<T>::create(L, result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Multiplication, func);
+	}
+}
 
-        template <typename T>
-        void registerDiv(Table& mt) {
-                if constexpr (has_div_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* lhs = checkUserData<T>(lvm, 1);
-                                T* rhs = checkUserData<T>(lvm, 2);
-                                T result = *lhs / *rhs;
-                                Metatable<T>::create(L, result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::Division, func);
-                }
-        }
+template <typename T>
+void registerDiv(Table& mt) {
+	if constexpr (has_div_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			T result = *lhs / *rhs;
+			Metatable<T>::create(L, result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Division, func);
+	}
+}
 
-        template <typename T>
-        void registerUnaryMinus(Table& mt) {
-                if constexpr (has_unary_minus_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* obj = checkUserData<T>(lvm, 1);
-                                T result = -(*obj);
-                                Metatable<T>::create(L, result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::UnaryMinus, func);
-                }
-        }
+template <typename T>
+void registerUnaryMinus(Table& mt) {
+	if constexpr (has_unary_minus_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* obj = checkUserData<T>(lvm, 1);
+			T result = -(*obj);
+			Metatable<T>::create(L, result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::UnaryMinus, func);
+	}
+}
 
-        template <typename T>
-        void registerEqual(Table& mt) {
-                if constexpr (has_eq_operator<T>::value) {
-                        int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-                                State L(lvm);
-                                T* lhs = checkUserData<T>(lvm, 1);
-                                T* rhs = checkUserData<T>(lvm, 2);
-                                bool result = *lhs == *rhs;
-                                L.pushToStack(result);
-                                return 1;
-                        };
-                        mt.setElement(State::MetaTable::Equal, func);
-                }
-        }
+template <typename T>
+void registerEqual(Table& mt) {
+	if constexpr (has_eq_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			bool result = *lhs == *rhs;
+			L.pushToStack(result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Equal, func);
+	}
+}
 
-        template <typename T>
-        void registerOperators(Table& mt) {
-                registerAdd<T>(mt);
-                registerSub<T>(mt);
-                registerMul<T>(mt);
-                registerDiv<T>(mt);
-                registerUnaryMinus<T>(mt);
-                registerEqual<T>(mt);
-        }
+template <typename T>
+void registerOperators(Table& mt) {
+	registerAdd<T>(mt);
+	registerSub<T>(mt);
+	registerMul<T>(mt);
+	registerDiv<T>(mt);
+	registerUnaryMinus<T>(mt);
+	registerEqual<T>(mt);
+}
 
-        template <typename T>
-        void registerDefaultMetatable(State& state) {
-                state.createMetaTable(Metatable<T>::metatableName(), [](Table& mt) {
-                        registerOperators<T>(mt);
-                });
-        }
+template <typename T>
+void registerDefaultMetatable(State& state) {
+	state.createMetaTable(Metatable<T>::metatableName(), [](Table& mt) {
+		registerOperators<T>(mt);
+	});
+}
 } // namespace detail
 
 /**
