@@ -7,6 +7,7 @@
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
+#include "ConstructorRegistry.hpp"
 
 #include <string>
 #include <vector>
@@ -425,6 +426,22 @@ public:
 	*/
 
 	lua_State* getState() const { return m_state; }
+
+	/**
+	 * \brief Register a constructor for a C++ type to be callable from Lua
+	 * \tparam T The type to register a constructor for
+	 * \tparam Args The argument types for the constructor
+	 * \param name The name of the constructor function in Lua
+	 */
+	template <typename T, typename... Args>
+	void registerConstructor(const char* name) {
+		ConstructorRegistry::registerConstructor<T, Args...>(*this, name);
+	}
+
+	/**
+	 * \brief Get the registry for direct access
+	 */
+	Registry& getRegistry() { return m_registry; }
 
 private:
 	constexpr static const char* const HandleName = "StateHandle";

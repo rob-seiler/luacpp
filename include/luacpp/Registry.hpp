@@ -55,7 +55,7 @@ public:
 private:
 	static ErrorCode loadString(lua_State* state, const char* src);
 	static bool isUserDefinedEntry(const Registry& registry);
-	static void copyEntry(lua_State* src, lua_State* dst);	
+	static void copyEntry(lua_State* src, lua_State* dst);
 };
 
 } // namespace Lua

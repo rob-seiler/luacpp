@@ -56,32 +56,21 @@ int main() {
     std::cout << "=== Metatable Example: Vector2D and Transform2D ===" << std::endl;
     std::cout << std::endl;
 
-    // Register metatables
+    // Register metatables and constructors
     std::cout << "Registering metatables..." << std::endl;
     Metatable<Vector2D>::registerMetatable(lua);
     Metatable<Transform2D>::registerMetatable(lua);
     std::cout << "Metatables registered successfully!" << std::endl;
     std::cout << std::endl;
 
-    // Register factory functions
-    std::cout << "Registering factory functions..." << std::endl;
+    std::cout << "Registering constructors..." << std::endl;
+    lua.registerConstructor<Vector2D, float, float>("Vector");
+    lua.registerConstructor<Transform2D, Vector2D, float, Vector2D>("Transform");
+    std::cout << "Constructors registered!" << std::endl;
+    std::cout << std::endl;
 
-    lua.registerNativeFunction("createVector", [](lua_State* lvm) -> int {
-        State L(lvm);
-        float x = static_cast<float>(L.getArgument<double>(1));
-        float y = static_cast<float>(L.getArgument<double>(2));
-        Metatable<Vector2D>::create(L, x, y);
-        return 1;
-    });
-
-    lua.registerNativeFunction("createTransform", [](lua_State* lvm) -> int {
-        State L(lvm);
-        Vector2D* pos = getUserData<Vector2D>(lvm, 1);
-        float rotation = static_cast<float>(L.getArgument<double>(2));
-        Vector2D* scale = getUserData<Vector2D>(lvm, 3);
-        Metatable<Transform2D>::create(L, *pos, rotation, *scale);
-        return 1;
-    });
+    // Register helper functions
+    std::cout << "Registering helper functions..." << std::endl;
 
     lua.registerNativeFunction("printVec", [](lua_State* lvm) -> int {
         State L(lvm);
@@ -103,7 +92,7 @@ int main() {
         return 0;
     });
 
-    std::cout << "Factory functions registered!" << std::endl;
+    std::cout << "Helper functions registered!" << std::endl;
     std::cout << std::endl;
 
     // Load and execute Lua script
