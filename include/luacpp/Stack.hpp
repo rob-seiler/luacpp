@@ -4,10 +4,15 @@
 #include "Basics.hpp"
 
 #include <string>
+#include <type_traits>
 
 struct lua_State;
 
 namespace Lua {
+
+// Forward declaration for Metatable
+template <typename T>
+struct Metatable;
 
 template <typename T>
 struct Stack {
@@ -45,7 +50,16 @@ struct Stack {
 			const char* str = Basics::asString(state, index, &len);
 			return std::string(str, len);
 		} else if constexpr (std::is_pointer_v<T>) {
-			return static_cast<T>(Basics::asUserData(state, index));
+			using PointeeType = std::remove_pointer_t<T>;
+			// For class types, use type-safe checkUserData
+			if constexpr (std::is_class_v<PointeeType>) {
+				const char* tname = Metatable<PointeeType>::metatableName();
+				void* ud = Basics::checkUserData(state, index, tname);
+				return static_cast<T>(ud);
+			} else {
+				// For non-class pointers (e.g., void*), use asUserData
+				return static_cast<T>(Basics::asUserData(state, index));
+			}
 		} else if constexpr (std::is_same_v<T, bool>) {
 			return Basics::asBoolean(state, index);
 		} else if constexpr (std::is_floating_point_v<T>) {

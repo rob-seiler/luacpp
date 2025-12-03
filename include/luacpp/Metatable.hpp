@@ -14,11 +14,46 @@ namespace Lua {
 
 
 namespace detail {
-// Helper to safely get typed userdata with validation
+/**
+ * @brief Safely retrieves and validates typed userdata from the Lua stack
+ * @tparam T The expected userdata type
+ * @param lvm The Lua state
+ * @param index Stack index of the value to check
+ * @return Pointer to the validated userdata of type T
+ *
+ * @note This function uses luaL_checkudata internally, which:
+ *       - Validates the value is userdata with matching metatable
+ *       - On success: returns a valid pointer (NEVER nullptr)
+ *       - On failure: throws a Lua error via longjmp (NEVER returns)
+ *
+ * @note Therefore, nullptr checks after calling this function are unnecessary.
+ *       If the function returns, the pointer is guaranteed to be valid.
+ *
+ * @note Error Handling: Type mismatches automatically generate Lua errors with
+ *       descriptive messages. These errors propagate through Lua's error handling
+ *       system and can be caught at the script level with pcall() or will be
+ *       returned as error codes from State::loadAndExecuteScript().
+ *
+ * Example:
+ * @code
+ * // In C++ callback:
+ * T* obj = checkUserData<T>(lvm, 1);
+ * // No null check needed - if we reach here, obj is valid
+ * obj->doSomething();
+ *
+ * // In Lua (error handling):
+ * local success, err = pcall(function()
+ *     myCppFunction(wrongType) -- Will error if types don't match
+ * end)
+ * if not success then
+ *     print("Type error: " .. err)
+ * end
+ * @endcode
+ */
 template <typename T>
 T* checkUserData(lua_State* lvm, int index) {
 	void* ud = Basics::checkUserData(lvm, index, Metatable<T>::metatableName());
-	return static_cast<T*>(ud);
+	return static_cast<T*>(ud); // Safe cast - ud is never nullptr here
 }
 
 template <typename T>

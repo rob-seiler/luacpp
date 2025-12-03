@@ -72,8 +72,27 @@ public:
 
 	static bool isInteger(lua_State* state, int index);
 
+	/**
+	 * @brief Get userdata pointer without type validation
+	 * @param state The Lua state
+	 * @param index Stack index
+	 * @return Pointer to userdata if value is userdata, nullptr otherwise
+	 * @note Does NOT validate metatable type. Use for checking if value is userdata.
+	 */
 	static void* asUserData(lua_State* state, int index);
+
+	/**
+	 * @brief Get userdata pointer with type validation (throws on mismatch)
+	 * @param state The Lua state
+	 * @param index Stack index
+	 * @param tname Metatable name to check against
+	 * @return Pointer to validated userdata (NEVER nullptr)
+	 * @throws Lua error via longjmp if type doesn't match or value isn't userdata
+	 * @note Uses luaL_checkudata which NEVER returns nullptr - it throws instead
+	 * @note If this function returns, the pointer is guaranteed valid (no null check needed)
+	 */
 	static void* checkUserData(lua_State* state, int index, const char* tname);
+
 	static bool asBoolean(lua_State* state, int index);
 	static double asNumber(lua_State* state, int index);
 	static int64_t asInteger(lua_State* state, int index);
