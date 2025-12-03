@@ -145,6 +145,33 @@ void registerEqual(Table& mt) {
 	}
 }
 
+/**
+ * @brief Register __gc metamethod for types with non-trivial destructors
+ * @tparam T The type to register destructor for
+ * @param mt The metatable to register in
+ *
+ * This function automatically registers a garbage collection handler that
+ * properly calls the C++ destructor when Lua's garbage collector runs.
+ * Only registers for types that need explicit destruction.
+ */
+template <typename T>
+void registerGC(Table& mt) {
+	// Only register __gc for types with non-trivial destructors
+	if constexpr (!std::is_trivially_destructible_v<T>) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			// Get the userdata - we use asUserData here because __gc is called
+			// by Lua's GC, not from user code, so type is guaranteed
+			T* obj = static_cast<T*>(Basics::asUserData(lvm, 1));
+			if (obj != nullptr) {
+				// Explicitly call destructor (placement delete)
+				obj->~T();
+			}
+			return 0;
+		};
+		mt.setElement(State::MetaTable::GC, func);
+	}
+}
+
 template <typename T>
 void registerOperators(Table& mt) {
 	registerAdd<T>(mt);
@@ -159,6 +186,7 @@ template <typename T>
 void registerDefaultMetatable(State& state) {
 	state.createMetaTable(Metatable<T>::metatableName(), [](Table& mt) {
 		registerOperators<T>(mt);
+		registerGC<T>(mt);
 	});
 }
 } // namespace detail
