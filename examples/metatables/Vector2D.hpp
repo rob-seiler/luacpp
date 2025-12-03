@@ -6,6 +6,10 @@
 
 class Vector2D {
 public:
+	// Configurable epsilon for floating-point comparisons
+	// Users can adjust this based on their precision requirements
+	static constexpr float EPSILON = 0.0001f;
+
 	float x, y;
 
 	Vector2D(float x = 0.0f, float y = 0.0f) : x(x), y(y) {}
@@ -28,7 +32,7 @@ public:
 	}
 
 	bool operator==(const Vector2D& other) const {
-		return std::abs(x - other.x) < 0.0001f && std::abs(y - other.y) < 0.0001f;
+		return std::abs(x - other.x) < EPSILON && std::abs(y - other.y) < EPSILON;
 	}
 
 	// Methods for future Lua exposure
@@ -38,7 +42,7 @@ public:
 
 	Vector2D normalize() const {
 		float len = length();
-		if (len > 0.0001f) {
+		if (len > EPSILON) {
 			return Vector2D(x / len, y / len);
 		}
 		return Vector2D(0, 0);

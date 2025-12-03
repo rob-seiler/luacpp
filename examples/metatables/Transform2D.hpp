@@ -6,6 +6,10 @@
 
 class Transform2D {
 public:
+    // Configurable epsilon for floating-point comparisons
+    // Users can adjust this based on their precision requirements
+    static constexpr float EPSILON = 0.0001f;
+
     Vector2D position;
     float rotation;  // in radians
     Vector2D scale;
@@ -30,7 +34,7 @@ public:
 
     bool operator==(const Transform2D& other) const {
         return position == other.position &&
-               std::abs(rotation - other.rotation) < 0.0001f &&
+               std::abs(rotation - other.rotation) < EPSILON &&
                scale == other.scale;
     }
 
