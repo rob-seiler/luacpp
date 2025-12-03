@@ -35,13 +35,13 @@ struct ArgumentExtractor<Arg, std::enable_if_t<is_class_type<Arg>::value>> {
 };
 
 template <typename T, typename... Args, size_t... I>
-T* createFromArgsImpl(State& state, int startIdx, std::index_sequence<I...>) {
-	return new T(ArgumentExtractor<Args>::extract(state, startIdx + I)...);
+T* createInUserdataImpl(State& state, int startIdx, std::index_sequence<I...>) {
+	return state.createUserData<T>(ArgumentExtractor<Args>::extract(state, startIdx + I)...);
 }
 
 template <typename T, typename... Args>
-T* createFromArgs(State& state, int startIdx) {
-	return createFromArgsImpl<T, Args...>(state, startIdx, std::index_sequence_for<Args...>{});
+T* createInUserdata(State& state, int startIdx) {
+	return createInUserdataImpl<T, Args...>(state, startIdx, std::index_sequence_for<Args...>{});
 }
 
 } // namespace detail
@@ -53,9 +53,9 @@ void ConstructorRegistry::registerConstructor(State& state, const char* name) {
 		state.createMetaTable(mtName.c_str(), [](Table& mt) {
 			int (*callFunc)(lua_State*) = [](lua_State* lvm) -> int {
 				State L(lvm);
-				T* obj = detail::createFromArgs<T, Args...>(L, 2);
-				Metatable<T>::create(L, *obj);
-				delete obj;
+				// Construct directly in Lua userdata (no heap allocation + copy)
+				T* obj = detail::createInUserdata<T, Args...>(L, 2);
+				L.assignMetaTable(Metatable<T>::metatableName());
 				return 1;
 			};
 			mt.setElement(State::MetaTable::Call, callFunc);
