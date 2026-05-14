@@ -8,6 +8,7 @@
 #include "Debug.hpp"
 #include "Stack.hpp"
 #include "ConstructorRegistry.hpp"
+#include "MethodRegistry.hpp"
 
 #include <string>
 #include <vector>
@@ -436,6 +437,19 @@ public:
 	template <typename T, typename... Args>
 	void registerConstructor(const char* name) {
 		ConstructorRegistry::registerConstructor<T, Args...>(*this, name);
+	}
+
+	/**
+	 * \brief Bind a C++ member function as a Lua method on T's metatable
+	 * \tparam T The class whose metatable receives the method
+	 * \tparam Method Non-type template parameter: pointer-to-member-function
+	 * \param name Name of the method in Lua
+	 *
+	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
+	 */
+	template <typename T, auto Method>
+	void bindMethod(const char* name) {
+		MethodRegistry::registerMethod<T, Method>(*this, name);
 	}
 
 	/**

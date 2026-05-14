@@ -69,6 +69,14 @@ int main() {
     std::cout << "Constructors registered!" << std::endl;
     std::cout << std::endl;
 
+    std::cout << "Binding methods..." << std::endl;
+    lua.bindMethod<Vector2D, &Vector2D::length>("length");
+    lua.bindMethod<Vector2D, &Vector2D::normalize>("normalize");
+    lua.bindMethod<Vector2D, &Vector2D::dot>("dot");
+    lua.bindMethod<Vector2D, &Vector2D::rotate>("rotate");
+    std::cout << "Methods bound!" << std::endl;
+    std::cout << std::endl;
+
     // Register helper functions
     std::cout << "Registering helper functions..." << std::endl;
 

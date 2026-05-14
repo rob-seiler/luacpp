@@ -80,4 +80,19 @@ result = (v1 + v2) * half - v1
 printVec(result, "result")
 print()
 
+print("--- Vector2D Methods ---")
+print()
+
+print("v1:length() = " .. tostring(v1:length()))
+print("v1:dot(v2) = " .. tostring(v1:dot(v2)))
+
+normalized = v1:normalize()
+printVec(normalized, "v1 normalized")
+print("normalized:length() = " .. tostring(normalized:length()))
+print()
+
+rotated = v1:rotate(1.5708)  -- ~90 degrees
+printVec(rotated, "v1 rotated 90deg")
+print()
+
 print("=== Script completed successfully! ===")
