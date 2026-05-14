@@ -89,6 +89,12 @@ if(BUILD_EXAMPLES)
 					PRIVATE
 					${PROJECT_NAME}
 				)
+				file(GLOB lua_files "${EXAMPLEDIR}/${child}/*.lua")
+				foreach(lf ${lua_files})
+					add_custom_command(TARGET ${EXENAME} POST_BUILD
+						COMMAND ${CMAKE_COMMAND} -E copy_if_different
+						${lf} $<TARGET_FILE_DIR:${EXENAME}>)
+				endforeach()
 			endif()
 		endif()
 	endforeach()
