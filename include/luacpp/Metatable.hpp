@@ -8,6 +8,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
+#include <string>
 #include "detail/OperatorTraits.hpp"
 
 namespace Lua {
@@ -145,6 +146,20 @@ void registerEqual(Table& mt) {
 	}
 }
 
+template <typename T>
+void registerToString(Table& mt) {
+	if constexpr (has_to_string<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* obj = checkUserData<T>(lvm, 1);
+			std::string result = obj->toString();
+			L.pushToStack(result.c_str());
+			return 1;
+		};
+		mt.setElement(State::MetaTable::Tostring, func);
+	}
+}
+
 /**
  * @brief Register __gc metamethod for types with non-trivial destructors
  * @tparam T The type to register destructor for
@@ -180,6 +195,7 @@ void registerOperators(Table& mt) {
 	registerDiv<T>(mt);
 	registerUnaryMinus<T>(mt);
 	registerEqual<T>(mt);
+	registerToString<T>(mt);
 }
 
 template <typename T>

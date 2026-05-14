@@ -5,6 +5,7 @@
 #include <luacpp/Metatable.hpp>
 
 #include <cmath>
+#include <string>
 
 namespace Lua {
 
@@ -69,6 +70,12 @@ struct Other {
     int value;
     explicit Other(int v = 0) : value(v) {}
     int doubled() const { return value * 2; }
+};
+
+struct Stringable {
+    int value;
+    explicit Stringable(int v) : value(v) {}
+    std::string toString() const { return "Stringable(" + std::to_string(value) + ")"; }
 };
 
 // ============================================================================
@@ -549,6 +556,49 @@ TEST(BindMethodTest, MethodOnDifferentTypes) {
 
     EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("vLen")), 5.0f);
     EXPECT_EQ(lua.readVariable<int>("oDbl"), 42);
+}
+
+// ============================================================================
+// __tostring Tests
+// ============================================================================
+
+TEST(BindToStringTest, AutoRegisteredForTypesWithToString) {
+    State lua(State::LibBase);
+    Metatable<Stringable>::registerMetatable(lua);
+    lua.bindConstructor<Stringable, int>("Stringable");
+
+    const char* src = "s = Stringable(42); result = tostring(s)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    std::string result = lua.readVariable<std::string>("result");
+    EXPECT_EQ(result, "Stringable(42)");
+}
+
+TEST(BindToStringTest, NotRegisteredForTypesWithoutToString) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+
+    const char* src = "v = Vec(1, 2); result = tostring(v)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    // Without toString(), Lua falls back to the default "<__name>: <address>" format
+    // (luaL_newmetatable auto-sets __name to the registered metatable name).
+    std::string result = lua.readVariable<std::string>("result");
+    EXPECT_FALSE(result.empty());
+    EXPECT_NE(result.find(": "), std::string::npos);
+}
+
+TEST(BindToStringTest, UsedByLuaConcatenation) {
+    State lua(State::LibBase);
+    Metatable<Stringable>::registerMetatable(lua);
+    lua.bindConstructor<Stringable, int>("Stringable");
+
+    const char* src = "s = Stringable(7); result = '' .. tostring(s)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    std::string result = lua.readVariable<std::string>("result");
+    EXPECT_EQ(result, "Stringable(7)");
 }
 
 } // namespace Lua

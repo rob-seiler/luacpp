@@ -80,6 +80,13 @@ result = (v1 + v2) * half - v1
 printVec(result, "result")
 print()
 
+print("--- Vector2D Tostring ---")
+print()
+
+print("tostring(v1) = " .. tostring(v1))
+print("Vector printed directly: " .. tostring(Vector(7, 8)))
+print()
+
 print("--- Vector2D Methods ---")
 print()
 

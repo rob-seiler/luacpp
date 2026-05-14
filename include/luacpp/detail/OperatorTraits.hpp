@@ -3,6 +3,7 @@
 
 #include <type_traits>
 #include <utility>
+#include <string>
 
 namespace Lua {
 
@@ -41,6 +42,12 @@ struct has_eq_operator : std::false_type { };
 
 template <typename T>
 struct has_eq_operator<T, std::void_t<decltype(std::declval<T>() == std::declval<T>())>> : std::true_type { };
+
+template <typename, typename = void>
+struct has_to_string : std::false_type { };
+
+template <typename T>
+struct has_to_string<T, std::void_t<decltype(std::string(std::declval<const T&>().toString()))>> : std::true_type { };
 
 } // namespace Lua
 

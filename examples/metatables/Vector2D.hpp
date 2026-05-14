@@ -2,6 +2,7 @@
 #define LUACPP_EXAMPLES_VECTOR2D_HPP
 
 #include <cmath>
+#include <string>
 #include <typeinfo>
 
 class Vector2D {
@@ -59,6 +60,10 @@ public:
 			x * cosA - y * sinA,
 			x * sinA + y * cosA
 		);
+	}
+
+	std::string toString() const {
+		return "Vector2D(" + std::to_string(x) + ", " + std::to_string(y) + ")";
 	}
 };
 
