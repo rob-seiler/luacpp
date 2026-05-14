@@ -64,8 +64,8 @@ int main() {
     std::cout << std::endl;
 
     std::cout << "Registering constructors..." << std::endl;
-    lua.registerConstructor<Vector2D, float, float>("Vector");
-    lua.registerConstructor<Transform2D, Vector2D, float, Vector2D>("Transform");
+    lua.bindConstructor<Vector2D, float, float>("Vector");
+    lua.bindConstructor<Transform2D, Vector2D, float, Vector2D>("Transform");
     std::cout << "Constructors registered!" << std::endl;
     std::cout << std::endl;
 

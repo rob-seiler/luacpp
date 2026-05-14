@@ -75,7 +75,7 @@ TEST(DestructorTest, NonTrivialDestructor_IsCalled) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.registerConstructor<ResourceHolder, int>("Resource");
+        lua.bindConstructor<ResourceHolder, int>("Resource");
 
         // Create objects in Lua
         const char* src = R"(
@@ -101,7 +101,7 @@ TEST(DestructorTest, ForceGarbageCollection) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.registerConstructor<ResourceHolder, int>("Resource");
+    lua.bindConstructor<ResourceHolder, int>("Resource");
 
     // Create and immediately discard objects
     const char* src = R"(
@@ -127,7 +127,7 @@ TEST(DestructorTest, PartialGarbageCollection) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.registerConstructor<ResourceHolder, int>("Resource");
+    lua.bindConstructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         -- Create 3 objects, keep 2 referenced globally
@@ -164,7 +164,7 @@ TEST(DestructorTest, ComplexResourceManagement) {
     {
         State lua(State::LibBase);
         Metatable<FileHandle>::registerMetatable(lua);
-        lua.registerConstructor<FileHandle, int>("FileHandle");
+        lua.bindConstructor<FileHandle, int>("FileHandle");
 
         const char* src = R"(
             -- Simulate opening multiple files
@@ -197,7 +197,7 @@ TEST(DestructorTest, TrivialType_NoGCRegistered) {
 
     State lua(State::LibBase);
     Metatable<TrivialType>::registerMetatable(lua);
-    lua.registerConstructor<TrivialType, int>("Trivial");
+    lua.bindConstructor<TrivialType, int>("Trivial");
 
     const char* src = R"(
         t = Trivial(42)
@@ -216,7 +216,7 @@ TEST(DestructorTest, NestedScopes) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.registerConstructor<ResourceHolder, int>("Resource");
+    lua.bindConstructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         function createResource()
@@ -249,7 +249,7 @@ TEST(DestructorTest, TableWithUserdata) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.registerConstructor<ResourceHolder, int>("Resource");
+    lua.bindConstructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         objects = {
@@ -277,7 +277,7 @@ TEST(DestructorTest, ReplacingReferences) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.registerConstructor<ResourceHolder, int>("Resource");
+    lua.bindConstructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         r = Resource(100)
@@ -306,7 +306,7 @@ TEST(DestructorTest, EmptyState) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.registerConstructor<ResourceHolder, int>("Resource");
+        lua.bindConstructor<ResourceHolder, int>("Resource");
 
         // Register but don't create any objects
         lua.loadAndExecuteScript("collectgarbage('collect')");
@@ -324,7 +324,7 @@ TEST(DestructorTest, ManyObjects) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.registerConstructor<ResourceHolder, int>("Resource");
+        lua.bindConstructor<ResourceHolder, int>("Resource");
 
         const char* src = R"(
             objects = {}

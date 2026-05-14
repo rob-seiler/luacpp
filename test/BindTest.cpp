@@ -4,30 +4,26 @@
 #include <luacpp/Table.hpp>
 #include <luacpp/Metatable.hpp>
 
+#include <cmath>
+
 namespace Lua {
 
 // ============================================================================
 // Test Types
 // ============================================================================
 
-// Simple type for basic constructor tests
 struct Point {
     Point(float x_, float y_) : x(x_), y(y_) {}
     Point operator+(const Point& rhs) const { return Point(x + rhs.x, y + rhs.y); }
     float x, y;
 };
 
-// Non-copyable type to verify direct construction (no heap allocation + copy)
 struct Resource {
-    explicit Resource(int id_) : id(id_), moveCount(0) {
-        // Track construction
-    }
+    explicit Resource(int id_) : id(id_), moveCount(0) {}
 
-    // Delete copy constructor and assignment
     Resource(const Resource&) = delete;
     Resource& operator=(const Resource&) = delete;
 
-    // Allow move operations
     Resource(Resource&& other) noexcept : id(other.id), moveCount(other.moveCount + 1) {
         other.id = -1;
     }
@@ -42,31 +38,47 @@ struct Resource {
     }
 
     int id;
-    int moveCount; // Track how many times it was moved
+    int moveCount;
 };
 
-// Type with multiple constructor arguments including userdata
 struct Line {
     Line(Point start_, Point end_) : start(start_), end(end_) {}
     Point start;
     Point end;
 };
 
-// Type with single int argument
 struct Counter {
     explicit Counter(int value_) : value(value_) {}
     Counter operator+(const Counter& rhs) const { return Counter(value + rhs.value); }
     int value;
 };
 
+struct Vec {
+    float x, y;
+    Vec(float ax = 0, float ay = 0) : x(ax), y(ay) {}
+    Vec operator+(const Vec& rhs) const { return Vec(x + rhs.x, y + rhs.y); }
+
+    float length() const { return std::sqrt(x * x + y * y); }
+    Vec scaled(float s) const { return Vec(x * s, y * s); }
+    float dot(const Vec& o) const { return x * o.x + y * o.y; }
+    void reset() { x = 0; y = 0; }
+    int count(int a, int b, int c) const { return a + b + c; }
+};
+
+struct Other {
+    int value;
+    explicit Other(int v = 0) : value(v) {}
+    int doubled() const { return value * 2; }
+};
+
 // ============================================================================
-// Basic Constructor Tests
+// Constructor Binding Tests
 // ============================================================================
 
-TEST(ConstructorRegistryTest, BasicConstructor) {
+TEST(BindConstructorTest, BasicConstructor) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "p = Point(3.5, 4.5)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -77,10 +89,10 @@ TEST(ConstructorRegistryTest, BasicConstructor) {
     EXPECT_FLOAT_EQ(p->y, 4.5f);
 }
 
-TEST(ConstructorRegistryTest, SingleArgumentConstructor) {
+TEST(BindConstructorTest, SingleArgumentConstructor) {
     State lua(State::LibBase);
     Metatable<Counter>::registerMetatable(lua);
-    lua.registerConstructor<Counter, int>("Counter");
+    lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(42)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -90,10 +102,10 @@ TEST(ConstructorRegistryTest, SingleArgumentConstructor) {
     EXPECT_EQ(c->value, 42);
 }
 
-TEST(ConstructorRegistryTest, ConstructorWithOperators) {
+TEST(BindConstructorTest, ConstructorWithOperators) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "p1 = Point(1, 2); p2 = Point(3, 4); result = p1 + p2";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -104,13 +116,13 @@ TEST(ConstructorRegistryTest, ConstructorWithOperators) {
     EXPECT_FLOAT_EQ(result->y, 6.0f);
 }
 
-TEST(ConstructorRegistryTest, MultipleConstructors) {
+TEST(BindConstructorTest, MultipleConstructors) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
 
-    lua.registerConstructor<Point, float, float>("Point");
-    lua.registerConstructor<Counter, int>("Counter");
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "p = Point(1.5, 2.5); c = Counter(42)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -125,17 +137,13 @@ TEST(ConstructorRegistryTest, MultipleConstructors) {
     EXPECT_EQ(c->value, 42);
 }
 
-// ============================================================================
-// Advanced Constructor Tests
-// ============================================================================
-
-TEST(ConstructorRegistryTest, ConstructorWithUserdataArgs) {
+TEST(BindConstructorTest, ConstructorWithUserdataArgs) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Line>::registerMetatable(lua);
 
-    lua.registerConstructor<Point, float, float>("Point");
-    lua.registerConstructor<Line, Point, Point>("Line");
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Line, Point, Point>("Line");
 
     const char* src = "start = Point(0, 0); finish = Point(10, 20); line = Line(start, finish)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -148,15 +156,14 @@ TEST(ConstructorRegistryTest, ConstructorWithUserdataArgs) {
     EXPECT_FLOAT_EQ(line->end.y, 20.0f);
 }
 
-TEST(ConstructorRegistryTest, ConstructorWithInlineUserdataArgs) {
+TEST(BindConstructorTest, ConstructorWithInlineUserdataArgs) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Line>::registerMetatable(lua);
 
-    lua.registerConstructor<Point, float, float>("Point");
-    lua.registerConstructor<Line, Point, Point>("Line");
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Line, Point, Point>("Line");
 
-    // Pass constructed points directly without storing in variables
     const char* src = "line = Line(Point(1, 2), Point(3, 4))";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
 
@@ -168,16 +175,11 @@ TEST(ConstructorRegistryTest, ConstructorWithInlineUserdataArgs) {
     EXPECT_FLOAT_EQ(line->end.y, 4.0f);
 }
 
-// ============================================================================
-// Non-Copyable Type Tests (verifies fix for Issue #1)
-// ============================================================================
-
-TEST(ConstructorRegistryTest, NonCopyableType) {
+TEST(BindConstructorTest, NonCopyableType) {
     State lua(State::LibBase);
     Metatable<Resource>::registerMetatable(lua);
-    lua.registerConstructor<Resource, int>("Resource");
+    lua.bindConstructor<Resource, int>("Resource");
 
-    // Register getter to verify the resource ID
     lua.registerNativeFunction("getId", [](lua_State* lvm) -> int {
         State L(lvm);
         Resource* res = L.getArgument<Resource*>(1);
@@ -191,19 +193,16 @@ TEST(ConstructorRegistryTest, NonCopyableType) {
     int id = lua.readVariable<int>("id");
     EXPECT_EQ(id, 123);
 
-    // Verify the resource was constructed directly (not copied)
     Resource* r = lua.readVariable<Resource*>("r");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->id, 123);
-    // If our fix is correct, moveCount should be 0 (constructed in place)
-    // If the old code ran, this would fail to compile or have moves
-    EXPECT_EQ(r->moveCount, 0);
+    EXPECT_EQ(r->moveCount, 0); // constructed in place, never moved
 }
 
-TEST(ConstructorRegistryTest, MultipleNonCopyableInstances) {
+TEST(BindConstructorTest, MultipleNonCopyableInstances) {
     State lua(State::LibBase);
     Metatable<Resource>::registerMetatable(lua);
-    lua.registerConstructor<Resource, int>("Resource");
+    lua.bindConstructor<Resource, int>("Resource");
 
     const char* src = R"(
         r1 = Resource(100)
@@ -224,22 +223,16 @@ TEST(ConstructorRegistryTest, MultipleNonCopyableInstances) {
     EXPECT_EQ(r2->id, 200);
     EXPECT_EQ(r3->id, 300);
 
-    // All should be constructed in place (0 moves)
     EXPECT_EQ(r1->moveCount, 0);
     EXPECT_EQ(r2->moveCount, 0);
     EXPECT_EQ(r3->moveCount, 0);
 }
 
-// ============================================================================
-// Usage Pattern Tests
-// ============================================================================
-
-TEST(ConstructorRegistryTest, ConstructorCallSemantics) {
+TEST(BindConstructorTest, ConstructorCallSemantics) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
-    // Verify we can call it multiple ways
     const char* src = R"(
         p1 = Point(1, 2)
         local p2 = Point(3, 4)
@@ -261,12 +254,11 @@ TEST(ConstructorRegistryTest, ConstructorCallSemantics) {
     EXPECT_FLOAT_EQ(p3->y, 6.0f);
 }
 
-TEST(ConstructorRegistryTest, ComplexExpression) {
+TEST(BindConstructorTest, ComplexExpression) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
-    // Use constructor in complex expression
     const char* src = "result = Point(1, 2) + Point(3, 4) + Point(5, 6)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
 
@@ -276,12 +268,11 @@ TEST(ConstructorRegistryTest, ComplexExpression) {
     EXPECT_FLOAT_EQ(result->y, 12.0f);
 }
 
-TEST(ConstructorRegistryTest, ConstructorInTable) {
+TEST(BindConstructorTest, ConstructorInTable) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
-    // Store constructed objects in table
     const char* src = R"(
         points = {
             Point(1, 2),
@@ -291,7 +282,6 @@ TEST(ConstructorRegistryTest, ConstructorInTable) {
     )";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
 
-    // Access table entry
     lua.loadAndExecuteScript("first = points[1]");
     Point* first = lua.readVariable<Point*>("first");
     ASSERT_NE(first, nullptr);
@@ -299,10 +289,10 @@ TEST(ConstructorRegistryTest, ConstructorInTable) {
     EXPECT_FLOAT_EQ(first->y, 2.0f);
 }
 
-TEST(ConstructorRegistryTest, ConstructorInLoop) {
+TEST(BindConstructorTest, ConstructorInLoop) {
     State lua(State::LibBase);
     Metatable<Counter>::registerMetatable(lua);
-    lua.registerConstructor<Counter, int>("Counter");
+    lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = R"(
         sum = Counter(0)
@@ -314,30 +304,23 @@ TEST(ConstructorRegistryTest, ConstructorInLoop) {
 
     Counter* sum = lua.readVariable<Counter*>("sum");
     ASSERT_NE(sum, nullptr);
-    EXPECT_EQ(sum->value, 15); // 0 + 1 + 2 + 3 + 4 + 5
+    EXPECT_EQ(sum->value, 15);
 }
 
-// ============================================================================
-// Error Handling Tests
-// ============================================================================
-
-TEST(ConstructorRegistryTest, ErrorHandling_WrongArgCount) {
+TEST(BindConstructorTest, ErrorHandling_WrongArgCount) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
-    // Too few arguments - Lua will pass nil/0 for missing args
-    // This doesn't error, just results in default values (0)
     const char* src1 = "p = Point(1)";
     int status1 = lua.loadAndExecuteScript(src1);
-    EXPECT_EQ(status1, 0); // Succeeds with nil converted to 0
+    EXPECT_EQ(status1, 0);
 
     Point* p1 = lua.readVariable<Point*>("p");
     ASSERT_NE(p1, nullptr);
     EXPECT_FLOAT_EQ(p1->x, 1.0f);
-    EXPECT_FLOAT_EQ(p1->y, 0.0f); // Missing arg becomes 0
+    EXPECT_FLOAT_EQ(p1->y, 0.0f);
 
-    // Too many arguments is OK in Lua (extras are ignored)
     const char* src2 = "p = Point(1, 2, 3, 4)";
     int status2 = lua.loadAndExecuteScript(src2);
     EXPECT_EQ(status2, 0);
@@ -348,46 +331,39 @@ TEST(ConstructorRegistryTest, ErrorHandling_WrongArgCount) {
     EXPECT_FLOAT_EQ(p2->y, 2.0f);
 }
 
-TEST(ConstructorRegistryTest, ErrorHandling_WrongUserdataType) {
+TEST(BindConstructorTest, ErrorHandling_WrongUserdataType) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Line>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
 
-    lua.registerConstructor<Point, float, float>("Point");
-    lua.registerConstructor<Line, Point, Point>("Line");
-    lua.registerConstructor<Counter, int>("Counter");
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Line, Point, Point>("Line");
+    lua.bindConstructor<Counter, int>("Counter");
 
-    // Try to pass Counter where Point is expected
     const char* src = "c = Counter(5); line = Line(c, c)";
     int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0); // Should fail with type error
+    EXPECT_NE(status, 0);
 }
 
-TEST(ConstructorRegistryTest, ErrorHandling_NilArgument) {
+TEST(BindConstructorTest, ErrorHandling_NilArgument) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.registerConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Point, float, float>("Point");
 
-    // Nil argument should error or result in 0
     const char* src = "p = Point(nil, 2)";
-    int status = lua.loadAndExecuteScript(src);
-    // Behavior depends on getArgument implementation
-    // Just verify it doesn't crash
+    lua.loadAndExecuteScript(src);
+    // Just verify it doesn't crash; behavior depends on getArgument implementation
 }
 
-// ============================================================================
-// Edge Cases
-// ============================================================================
-
-TEST(ConstructorRegistryTest, ZeroSizedType) {
+TEST(BindConstructorTest, ZeroSizedType) {
     struct Empty {
         Empty() = default;
     };
 
     State lua(State::LibBase);
     Metatable<Empty>::registerMetatable(lua);
-    lua.registerConstructor<Empty>("Empty");
+    lua.bindConstructor<Empty>("Empty");
 
     const char* src = "e = Empty()";
     int status = lua.loadAndExecuteScript(src);
@@ -397,7 +373,7 @@ TEST(ConstructorRegistryTest, ZeroSizedType) {
     EXPECT_NE(e, nullptr);
 }
 
-TEST(ConstructorRegistryTest, LargeType) {
+TEST(BindConstructorTest, LargeType) {
     struct Large {
         Large(int val) {
             for (int i = 0; i < 1000; ++i) {
@@ -409,7 +385,7 @@ TEST(ConstructorRegistryTest, LargeType) {
 
     State lua(State::LibBase);
     Metatable<Large>::registerMetatable(lua);
-    lua.registerConstructor<Large, int>("Large");
+    lua.bindConstructor<Large, int>("Large");
 
     const char* src = "big = Large(42)";
     EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
@@ -418,6 +394,161 @@ TEST(ConstructorRegistryTest, LargeType) {
     ASSERT_NE(big, nullptr);
     EXPECT_EQ(big->data[0], 42);
     EXPECT_EQ(big->data[999], 42);
+}
+
+// ============================================================================
+// Method Binding Tests
+// ============================================================================
+
+TEST(BindMethodTest, PrimitiveReturn) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    const char* src = "v = Vec(3, 4); result = v:length()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    float result = static_cast<float>(lua.readVariable<double>("result"));
+    EXPECT_FLOAT_EQ(result, 5.0f);
+}
+
+TEST(BindMethodTest, UserdataReturn) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::scaled>("scaled");
+
+    const char* src = "v = Vec(2, 3); result = v:scaled(2.5)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    Vec* result = lua.readVariable<Vec*>("result");
+    ASSERT_NE(result, nullptr);
+    EXPECT_FLOAT_EQ(result->x, 5.0f);
+    EXPECT_FLOAT_EQ(result->y, 7.5f);
+}
+
+TEST(BindMethodTest, UserdataArg) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::dot>("dot");
+
+    const char* src = "v1 = Vec(3, 4); v2 = Vec(1, 2); result = v1:dot(v2)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    float result = static_cast<float>(lua.readVariable<double>("result"));
+    EXPECT_FLOAT_EQ(result, 11.0f);
+}
+
+TEST(BindMethodTest, VoidReturn) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::reset>("reset");
+
+    const char* src = "v = Vec(7, 8); v:reset()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    Vec* v = lua.readVariable<Vec*>("v");
+    ASSERT_NE(v, nullptr);
+    EXPECT_FLOAT_EQ(v->x, 0.0f);
+    EXPECT_FLOAT_EQ(v->y, 0.0f);
+}
+
+TEST(BindMethodTest, MultipleArgs) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::count>("count");
+
+    const char* src = "v = Vec(0, 0); result = v:count(1, 2, 3)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    int result = lua.readVariable<int>("result");
+    EXPECT_EQ(result, 6);
+}
+
+TEST(BindMethodTest, WrongSelfType_Errors) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<Other>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindConstructor<Other, int>("Other");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    const char* src = "o = Other(42); result = Vec.length(o)";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);
+}
+
+TEST(BindMethodTest, WrongArgType_Errors) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::dot>("dot");
+
+    const char* src = "v = Vec(1, 2); result = v:dot(42)";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);
+}
+
+TEST(BindMethodTest, MethodAndOperatorsCoexist) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    const char* src = "v1 = Vec(3, 0); v2 = Vec(0, 4); result = (v1 + v2):length()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    float result = static_cast<float>(lua.readVariable<double>("result"));
+    EXPECT_FLOAT_EQ(result, 5.0f);
+}
+
+TEST(BindMethodTest, MultipleMethods) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.bindMethod<Vec, &Vec::scaled>("scaled");
+    lua.bindMethod<Vec, &Vec::dot>("dot");
+
+    const char* src =
+        "v1 = Vec(3, 4);"
+        "v2 = Vec(1, 0);"
+        "len = v1:length();"
+        "sc = v1:scaled(0.5);"
+        "d = v1:dot(v2)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("len")), 5.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("d")), 3.0f);
+
+    Vec* sc = lua.readVariable<Vec*>("sc");
+    ASSERT_NE(sc, nullptr);
+    EXPECT_FLOAT_EQ(sc->x, 1.5f);
+    EXPECT_FLOAT_EQ(sc->y, 2.0f);
+}
+
+TEST(BindMethodTest, MethodOnDifferentTypes) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<Other>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindConstructor<Other, int>("Other");
+    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.bindMethod<Other, &Other::doubled>("doubled");
+
+    const char* src =
+        "v = Vec(3, 4);"
+        "o = Other(21);"
+        "vLen = v:length();"
+        "oDbl = o:doubled()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("vLen")), 5.0f);
+    EXPECT_EQ(lua.readVariable<int>("oDbl"), 42);
 }
 
 } // namespace Lua

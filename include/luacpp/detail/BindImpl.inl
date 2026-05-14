@@ -1,8 +1,9 @@
-#ifndef LUACPP_DETAIL_METHOD_REGISTRY_IMPL_INL
-#define LUACPP_DETAIL_METHOD_REGISTRY_IMPL_INL
+#ifndef LUACPP_DETAIL_BIND_IMPL_INL
+#define LUACPP_DETAIL_BIND_IMPL_INL
 
 #include "../State.hpp"
 #include "../Metatable.hpp"
+#include "../Table.hpp"
 #include "../Basics.hpp"
 #include "ArgumentExtractor.hpp"
 
@@ -11,10 +12,21 @@
 #include <type_traits>
 #include <tuple>
 #include <utility>
+#include <string>
 #include <cstddef>
 
 namespace Lua {
 namespace detail {
+
+template <typename T, typename... Args, std::size_t... I>
+T* createInUserdataImpl(State& state, int startIdx, std::index_sequence<I...>) {
+	return state.createUserData<T>(ArgumentExtractor<Args>::extract(state, startIdx + static_cast<int>(I))...);
+}
+
+template <typename T, typename... Args>
+T* createInUserdata(State& state, int startIdx) {
+	return createInUserdataImpl<T, Args...>(state, startIdx, std::index_sequence_for<Args...>{});
+}
 
 template <typename M> struct MethodTraits;
 
@@ -98,8 +110,25 @@ inline void addMethodToMetatable(lua_State* L,
 
 } // namespace detail
 
+template <typename T, typename... Args>
+void Bind::constructor(State& state, const char* name) {
+	state.createTable(name, [&state, name](Table& ctorTable) {
+		std::string mtName = std::string(name) + "ConstructorMT";
+		state.createMetaTable(mtName.c_str(), [](Table& mt) {
+			int (*callFunc)(lua_State*) = [](lua_State* lvm) -> int {
+				State L(lvm);
+				detail::createInUserdata<T, Args...>(L, 2);
+				L.assignMetaTable(Metatable<T>::metatableName());
+				return 1;
+			};
+			mt.setElement(State::MetaTable::Call, callFunc);
+		});
+		ctorTable.assignMetaTable(mtName.c_str());
+	});
+}
+
 template <typename T, auto Method>
-void MethodRegistry::registerMethod(State& state, const char* name) {
+void Bind::method(State& state, const char* name) {
 	using Traits = detail::MethodTraits<decltype(Method)>;
 	static_assert(std::is_same_v<typename Traits::ClassType, T>,
 	              "Method must be a member function of T");
@@ -112,4 +141,4 @@ void MethodRegistry::registerMethod(State& state, const char* name) {
 
 } // namespace Lua
 
-#endif // LUACPP_DETAIL_METHOD_REGISTRY_IMPL_INL
+#endif // LUACPP_DETAIL_BIND_IMPL_INL

@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <typeinfo>
 #include <utility>
-#include "OperatorTraits.hpp"
+#include "detail/OperatorTraits.hpp"
 
 namespace Lua {
 

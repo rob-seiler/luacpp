@@ -7,8 +7,7 @@
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
-#include "ConstructorRegistry.hpp"
-#include "MethodRegistry.hpp"
+#include "detail/Bind.hpp"
 
 #include <string>
 #include <vector>
@@ -429,14 +428,14 @@ public:
 	lua_State* getState() const { return m_state; }
 
 	/**
-	 * \brief Register a constructor for a C++ type to be callable from Lua
-	 * \tparam T The type to register a constructor for
+	 * \brief Bind a C++ constructor for type T as a callable Lua function
+	 * \tparam T The type to bind a constructor for
 	 * \tparam Args The argument types for the constructor
 	 * \param name The name of the constructor function in Lua
 	 */
 	template <typename T, typename... Args>
-	void registerConstructor(const char* name) {
-		ConstructorRegistry::registerConstructor<T, Args...>(*this, name);
+	void bindConstructor(const char* name) {
+		Bind::constructor<T, Args...>(*this, name);
 	}
 
 	/**
@@ -449,7 +448,7 @@ public:
 	 */
 	template <typename T, auto Method>
 	void bindMethod(const char* name) {
-		MethodRegistry::registerMethod<T, Method>(*this, name);
+		Bind::method<T, Method>(*this, name);
 	}
 
 	/**
