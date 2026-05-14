@@ -44,6 +44,21 @@ public:
 	 */
 	template <typename T, auto Method>
 	static void method(State& state, const char* name);
+
+	/**
+	 * @brief Bind a C++ data member as a Lua property on T's metatable
+	 *
+	 * Field is exposed as a read/write property: `v.name` reads it, `v.name = x`
+	 * writes it. Uses __index/__newindex dispatchers; Lua errors on assignment to
+	 * unknown properties.
+	 *
+	 * @code
+	 * Bind::property<Vec, &Vec::x>(lua, "x");
+	 * // Lua: print(v.x); v.x = 10
+	 * @endcode
+	 */
+	template <typename T, auto Field>
+	static void property(State& state, const char* name);
 };
 
 } // namespace Lua

@@ -147,6 +147,36 @@ void registerEqual(Table& mt) {
 }
 
 template <typename T>
+void registerLessThan(Table& mt) {
+	if constexpr (has_lt_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			bool result = *lhs < *rhs;
+			L.pushToStack(result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::LessThan, func);
+	}
+}
+
+template <typename T>
+void registerLessEqual(Table& mt) {
+	if constexpr (has_le_operator<T>::value) {
+		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
+			State L(lvm);
+			T* lhs = checkUserData<T>(lvm, 1);
+			T* rhs = checkUserData<T>(lvm, 2);
+			bool result = *lhs <= *rhs;
+			L.pushToStack(result);
+			return 1;
+		};
+		mt.setElement(State::MetaTable::LessThanOrEqual, func);
+	}
+}
+
+template <typename T>
 void registerToString(Table& mt) {
 	if constexpr (has_to_string<T>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
@@ -195,6 +225,8 @@ void registerOperators(Table& mt) {
 	registerDiv<T>(mt);
 	registerUnaryMinus<T>(mt);
 	registerEqual<T>(mt);
+	registerLessThan<T>(mt);
+	registerLessEqual<T>(mt);
 	registerToString<T>(mt);
 }
 

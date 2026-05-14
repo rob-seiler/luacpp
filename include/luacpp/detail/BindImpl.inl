@@ -44,6 +44,14 @@ struct MethodTraits<R (T::*)(Args...) const> {
 	using ArgsTuple  = std::tuple<Args...>;
 };
 
+template <typename P> struct PropertyTraits;
+
+template <typename T, typename F>
+struct PropertyTraits<F T::*> {
+	using ClassType = T;
+	using FieldType = F;
+};
+
 template <auto Method, std::size_t... I>
 int invokeMethod(lua_State* lvm, std::index_sequence<I...>) {
 	using Traits    = MethodTraits<decltype(Method)>;
@@ -66,7 +74,7 @@ int invokeMethod(lua_State* lvm, std::index_sequence<I...>) {
 				::extract(L, 2 + static_cast<int>(I))...);
 
 		using CleanR = std::remove_cv_t<std::remove_reference_t<R>>;
-		if constexpr (std::is_class_v<CleanR>) {
+		if constexpr (Basics::getTypeFor<CleanR>() == Type::None) {
 			Metatable<CleanR>::create(L, std::move(result));
 		} else {
 			L.pushToStack(result);
@@ -82,6 +90,122 @@ int methodWrapper(lua_State* lvm) {
 	return invokeMethod<Method>(lvm, std::make_index_sequence<N>{});
 }
 
+template <auto Field>
+int propertyGetter(lua_State* lvm) {
+	using Traits    = PropertyTraits<decltype(Field)>;
+	using T         = typename Traits::ClassType;
+	using FieldType = typename Traits::FieldType;
+
+	State L(lvm);
+	T* self = static_cast<T*>(
+		Basics::checkUserData(lvm, 1, Metatable<T>::metatableName()));
+
+	using CleanField = std::remove_cv_t<FieldType>;
+	if constexpr (Basics::getTypeFor<CleanField>() == Type::None) {
+		Metatable<CleanField>::create(L, self->*Field);
+	} else {
+		L.pushToStack(self->*Field);
+	}
+	return 1;
+}
+
+template <auto Field>
+int propertySetter(lua_State* lvm) {
+	using Traits    = PropertyTraits<decltype(Field)>;
+	using T         = typename Traits::ClassType;
+	using FieldType = typename Traits::FieldType;
+
+	State L(lvm);
+	T* self = static_cast<T*>(
+		Basics::checkUserData(lvm, 1, Metatable<T>::metatableName()));
+
+	self->*Field = ArgumentExtractor<FieldType>::extract(L, 2);
+	return 0;
+}
+
+inline int propertyIndexDispatcher(lua_State* L) {
+	// Stack: [self, key]
+	if (!lua_getmetatable(L, 1)) {
+		lua_pushnil(L);
+		return 1;
+	}
+	// Stack: [self, key, metatable]
+
+	lua_getfield(L, -1, "__methods");
+	if (lua_istable(L, -1)) {
+		lua_pushvalue(L, 2);
+		lua_rawget(L, -2);
+		if (!lua_isnil(L, -1)) {
+			return 1;
+		}
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 1);
+
+	lua_getfield(L, -1, "__getters");
+	if (lua_istable(L, -1)) {
+		lua_pushvalue(L, 2);
+		lua_rawget(L, -2);
+		if (lua_isfunction(L, -1)) {
+			lua_pushvalue(L, 1);
+			lua_call(L, 1, 1);
+			return 1;
+		}
+		lua_pop(L, 1);
+	}
+	lua_pop(L, 1);
+
+	lua_pushnil(L);
+	return 1;
+}
+
+inline int propertyNewindexDispatcher(lua_State* L) {
+	// Stack: [self, key, value]
+	if (!lua_getmetatable(L, 1)) {
+		return luaL_error(L, "userdata has no metatable");
+	}
+
+	lua_getfield(L, -1, "__setters");
+	if (lua_istable(L, -1)) {
+		lua_pushvalue(L, 2);
+		lua_rawget(L, -2);
+		if (lua_isfunction(L, -1)) {
+			lua_pushvalue(L, 1);
+			lua_pushvalue(L, 3);
+			lua_call(L, 2, 0);
+			return 0;
+		}
+		lua_pop(L, 1);
+	}
+
+	return luaL_error(L, "attempt to set unknown property '%s'",
+	                  luaL_optstring(L, 2, "?"));
+}
+
+// Installs the __index/__newindex dispatchers and the three sub-tables
+// (__methods, __getters, __setters) on the metatable currently at top of stack.
+// Idempotent: only installs once per metatable. Leaves the metatable on the stack.
+inline void ensureDispatchersInstalled(lua_State* L) {
+	lua_getfield(L, -1, "__methods");
+	bool alreadyInstalled = lua_istable(L, -1);
+	lua_pop(L, 1);
+	if (alreadyInstalled) {
+		return;
+	}
+
+	lua_newtable(L);
+	lua_setfield(L, -2, "__methods");
+	lua_newtable(L);
+	lua_setfield(L, -2, "__getters");
+	lua_newtable(L);
+	lua_setfield(L, -2, "__setters");
+
+	lua_pushcfunction(L, propertyIndexDispatcher);
+	lua_setfield(L, -2, "__index");
+	lua_pushcfunction(L, propertyNewindexDispatcher);
+	lua_setfield(L, -2, "__newindex");
+}
+
 inline void addMethodToMetatable(lua_State* L,
                                  const char* metatableName,
                                  const char* methodName,
@@ -90,22 +214,36 @@ inline void addMethodToMetatable(lua_State* L,
 		lua_pop(L, 1);
 		return;
 	}
+	ensureDispatchersInstalled(L);
 
-	int idxType = lua_getfield(L, -1, "__index");
-	if (idxType == LUA_TNIL) {
-		lua_pop(L, 1);
-		lua_newtable(L);
-		lua_pushvalue(L, -1);
-		lua_setfield(L, -3, "__index");
-	} else if (idxType != LUA_TTABLE) {
-		lua_pop(L, 2);
-		return;
-	}
-
+	lua_getfield(L, -1, "__methods");
 	lua_pushcfunction(L, func);
 	lua_setfield(L, -2, methodName);
+	lua_pop(L, 2); // __methods + metatable
+}
 
-	lua_pop(L, 2);
+inline void addPropertyToMetatable(lua_State* L,
+                                   const char* metatableName,
+                                   const char* propertyName,
+                                   Basics::NativeFunction getter,
+                                   Basics::NativeFunction setter) {
+	if (luaL_getmetatable(L, metatableName) != LUA_TTABLE) {
+		lua_pop(L, 1);
+		return;
+	}
+	ensureDispatchersInstalled(L);
+
+	lua_getfield(L, -1, "__getters");
+	lua_pushcfunction(L, getter);
+	lua_setfield(L, -2, propertyName);
+	lua_pop(L, 1);
+
+	lua_getfield(L, -1, "__setters");
+	lua_pushcfunction(L, setter);
+	lua_setfield(L, -2, propertyName);
+	lua_pop(L, 1);
+
+	lua_pop(L, 1); // metatable
 }
 
 } // namespace detail
@@ -137,6 +275,19 @@ void Bind::method(State& state, const char* name) {
 		Metatable<T>::metatableName(),
 		name,
 		&detail::methodWrapper<Method>);
+}
+
+template <typename T, auto Field>
+void Bind::property(State& state, const char* name) {
+	using Traits = detail::PropertyTraits<decltype(Field)>;
+	static_assert(std::is_same_v<typename Traits::ClassType, T>,
+	              "Field must be a member of T");
+	detail::addPropertyToMetatable(
+		state.getState(),
+		Metatable<T>::metatableName(),
+		name,
+		&detail::propertyGetter<Field>,
+		&detail::propertySetter<Field>);
 }
 
 } // namespace Lua

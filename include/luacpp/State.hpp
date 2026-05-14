@@ -452,6 +452,19 @@ public:
 	}
 
 	/**
+	 * \brief Bind a C++ data member as a Lua property on T's metatable
+	 * \tparam T The class whose metatable receives the property
+	 * \tparam Field Non-type template parameter: pointer-to-member-data
+	 * \param name Name of the property in Lua
+	 *
+	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
+	 */
+	template <typename T, auto Field>
+	void bindProperty(const char* name) {
+		Bind::property<T, Field>(*this, name);
+	}
+
+	/**
 	 * \brief Get the registry for direct access
 	 */
 	Registry& getRegistry() { return m_registry; }

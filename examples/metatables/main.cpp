@@ -77,6 +77,12 @@ int main() {
     std::cout << "Methods bound!" << std::endl;
     std::cout << std::endl;
 
+    std::cout << "Binding properties..." << std::endl;
+    lua.bindProperty<Vector2D, &Vector2D::x>("x");
+    lua.bindProperty<Vector2D, &Vector2D::y>("y");
+    std::cout << "Properties bound!" << std::endl;
+    std::cout << std::endl;
+
     // Register helper functions
     std::cout << "Registering helper functions..." << std::endl;
 

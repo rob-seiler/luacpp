@@ -78,6 +78,24 @@ struct Stringable {
     std::string toString() const { return "Stringable(" + std::to_string(value) + ")"; }
 };
 
+struct Comparable {
+    int value;
+    explicit Comparable(int v) : value(v) {}
+    bool operator<(const Comparable& rhs) const { return value < rhs.value; }
+    bool operator<=(const Comparable& rhs) const { return value <= rhs.value; }
+    bool operator==(const Comparable& rhs) const { return value == rhs.value; }
+};
+
+struct Particle {
+    float x, y;
+    int health;
+    std::string name;
+    Vec velocity;
+
+    Particle(float ax, float ay, int h)
+        : x(ax), y(ay), health(h), name("particle"), velocity(0, 0) {}
+};
+
 // ============================================================================
 // Constructor Binding Tests
 // ============================================================================
@@ -599,6 +617,197 @@ TEST(BindToStringTest, UsedByLuaConcatenation) {
 
     std::string result = lua.readVariable<std::string>("result");
     EXPECT_EQ(result, "Stringable(7)");
+}
+
+// ============================================================================
+// Comparison Operator Auto-Registration Tests (__lt, __le)
+// ============================================================================
+
+TEST(BindComparisonTest, LessThan) {
+    State lua(State::LibBase);
+    Metatable<Comparable>::registerMetatable(lua);
+    lua.bindConstructor<Comparable, int>("Cmp");
+
+    const char* src = R"(
+        a = Cmp(3); b = Cmp(5)
+        ltTrue  = a < b
+        ltFalse = b < a
+        ltSelf  = a < a
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("ltTrue"));
+    EXPECT_FALSE(lua.readVariable<bool>("ltFalse"));
+    EXPECT_FALSE(lua.readVariable<bool>("ltSelf"));
+}
+
+TEST(BindComparisonTest, LessEqual) {
+    State lua(State::LibBase);
+    Metatable<Comparable>::registerMetatable(lua);
+    lua.bindConstructor<Comparable, int>("Cmp");
+
+    const char* src = R"(
+        a = Cmp(3); b = Cmp(5); c = Cmp(3)
+        leLess  = a <= b
+        leEqual = a <= c
+        leMore  = b <= a
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("leLess"));
+    EXPECT_TRUE(lua.readVariable<bool>("leEqual"));
+    EXPECT_FALSE(lua.readVariable<bool>("leMore"));
+}
+
+TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
+    State lua(State::LibBase);
+    Metatable<Comparable>::registerMetatable(lua);
+    lua.bindConstructor<Comparable, int>("Cmp");
+
+    // Lua maps a > b to b < a, so __lt is sufficient for >
+    const char* src = "a = Cmp(7); b = Cmp(3); result = a > b";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("result"));
+}
+
+TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+
+    // Vec has no operator< / operator<= -- Lua should error on comparison
+    const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a < b";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);
+}
+
+// ============================================================================
+// Property Binding Tests
+// ============================================================================
+
+TEST(BindPropertyTest, ReadPrimitiveField) {
+    State lua(State::LibBase);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::x>("x");
+    lua.bindProperty<Particle, &Particle::y>("y");
+    lua.bindProperty<Particle, &Particle::health>("health");
+
+    const char* src = R"(
+        p = Particle(3, 4, 100)
+        rx = p.x; ry = p.y; rh = p.health
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("rx")), 3.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("ry")), 4.0f);
+    EXPECT_EQ(lua.readVariable<int>("rh"), 100);
+}
+
+TEST(BindPropertyTest, WritePrimitiveField) {
+    State lua(State::LibBase);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::x>("x");
+    lua.bindProperty<Particle, &Particle::health>("health");
+
+    const char* src = R"(
+        p = Particle(1, 1, 50)
+        p.x = 99.5
+        p.health = 25
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    Particle* p = lua.readVariable<Particle*>("p");
+    ASSERT_NE(p, nullptr);
+    EXPECT_FLOAT_EQ(p->x, 99.5f);
+    EXPECT_EQ(p->health, 25);
+}
+
+TEST(BindPropertyTest, ReadStringField) {
+    State lua(State::LibBase);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::name>("name");
+
+    const char* src = "p = Particle(0, 0, 1); n = p.name";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_EQ(lua.readVariable<std::string>("n"), "particle");
+}
+
+TEST(BindPropertyTest, ReadUserdataField) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::velocity>("velocity");
+
+    const char* src = "p = Particle(0, 0, 1); v = p.velocity";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    Vec* v = lua.readVariable<Vec*>("v");
+    ASSERT_NE(v, nullptr);
+    EXPECT_FLOAT_EQ(v->x, 0.0f);
+    EXPECT_FLOAT_EQ(v->y, 0.0f);
+}
+
+TEST(BindPropertyTest, WriteUserdataField) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::velocity>("velocity");
+
+    const char* src = "p = Particle(0, 0, 1); p.velocity = Vec(7, 8)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+
+    Particle* p = lua.readVariable<Particle*>("p");
+    ASSERT_NE(p, nullptr);
+    EXPECT_FLOAT_EQ(p->velocity.x, 7.0f);
+    EXPECT_FLOAT_EQ(p->velocity.y, 8.0f);
+}
+
+TEST(BindPropertyTest, UnknownPropertyRead_ReturnsNil) {
+    State lua(State::LibBase);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::x>("x");
+
+    const char* src = "p = Particle(1, 2, 3); result = (p.nonExistent == nil)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("result"));
+}
+
+TEST(BindPropertyTest, UnknownPropertyWrite_Errors) {
+    State lua(State::LibBase);
+    Metatable<Particle>::registerMetatable(lua);
+    lua.bindConstructor<Particle, float, float, int>("Particle");
+    lua.bindProperty<Particle, &Particle::x>("x");
+
+    const char* src = "p = Particle(1, 2, 3); p.nonExistent = 5";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);
+}
+
+TEST(BindPropertyTest, PropertyAndMethodCoexist) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.bindProperty<Vec, &Vec::x>("x");
+    lua.bindProperty<Vec, &Vec::y>("y");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    const char* src = R"(
+        v = Vec(3, 4)
+        readX = v.x
+        readY = v.y
+        len = v:length()
+        v.x = 6
+        afterX = v.x
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("readX")), 3.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("readY")), 4.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("len")), 5.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("afterX")), 6.0f);
 }
 
 } // namespace Lua

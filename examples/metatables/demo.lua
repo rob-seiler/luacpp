@@ -102,4 +102,14 @@ rotated = v1:rotate(1.5708)  -- ~90 degrees
 printVec(rotated, "v1 rotated 90deg")
 print()
 
+print("--- Vector2D Properties ---")
+print()
+
+print("v1.x = " .. tostring(v1.x))
+print("v1.y = " .. tostring(v1.y))
+v1.x = 99
+v1.y = 88
+print("after writing: v1.x = " .. tostring(v1.x) .. ", v1.y = " .. tostring(v1.y))
+print()
+
 print("=== Script completed successfully! ===")

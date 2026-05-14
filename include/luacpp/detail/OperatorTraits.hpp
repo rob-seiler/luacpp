@@ -44,6 +44,18 @@ template <typename T>
 struct has_eq_operator<T, std::void_t<decltype(std::declval<T>() == std::declval<T>())>> : std::true_type { };
 
 template <typename, typename = void>
+struct has_lt_operator : std::false_type { };
+
+template <typename T>
+struct has_lt_operator<T, std::void_t<decltype(std::declval<T>() < std::declval<T>())>> : std::true_type { };
+
+template <typename, typename = void>
+struct has_le_operator : std::false_type { };
+
+template <typename T>
+struct has_le_operator<T, std::void_t<decltype(std::declval<T>() <= std::declval<T>())>> : std::true_type { };
+
+template <typename, typename = void>
 struct has_to_string : std::false_type { };
 
 template <typename T>
