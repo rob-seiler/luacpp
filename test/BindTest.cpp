@@ -964,4 +964,41 @@ TEST(BindPropertyTest, PropertyAndMethodCoexist) {
     EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("afterX")), 6.0f);
 }
 
+// ============================================================================
+// Prerequisite-violation tests: misuse must throw, not silently no-op.
+// ============================================================================
+
+TEST(BindPrerequisiteTest, MethodWithoutMetatable_Throws) {
+    State lua(State::LibBase);
+    // Intentionally skip Metatable<Point>::registerMetatable.
+    EXPECT_THROW(
+        (lua.bindMethod<Point, &Point::operator+>("plus")),
+        std::runtime_error);
+}
+
+TEST(BindPrerequisiteTest, PropertyWithoutMetatable_Throws) {
+    State lua(State::LibBase);
+    // Intentionally skip Metatable<Point>::registerMetatable.
+    EXPECT_THROW(
+        (lua.bindProperty<Point, &Point::x>("x")),
+        std::runtime_error);
+}
+
+TEST(BindPrerequisiteTest, StaticFieldWithoutConstructor_Throws) {
+    State lua(State::LibBase);
+    // No bindConstructor → "Point" is not a global table.
+    EXPECT_THROW(
+        lua.bindStaticField("Point", "EPSILON", 0.001f),
+        std::runtime_error);
+}
+
+static int prereqAnswerFn() { return 42; }
+
+TEST(BindPrerequisiteTest, StaticFunctionWithoutConstructor_Throws) {
+    State lua(State::LibBase);
+    EXPECT_THROW(
+        lua.bindStaticFunction<&prereqAnswerFn>("Point", "answer"),
+        std::runtime_error);
+}
+
 } // namespace Lua

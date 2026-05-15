@@ -37,6 +37,8 @@ public:
 	 * Method goes into the metatable's __index table, dispatched via Lua's
 	 * colon syntax. Prerequisite: Metatable<T>::registerMetatable(state).
 	 *
+	 * @throws std::runtime_error if T's metatable has not been registered.
+	 *
 	 * @code
 	 * Bind::method<Vector2D, &Vector2D::length>(lua, "length");
 	 * // Lua: v:length()
@@ -52,6 +54,8 @@ public:
 	 * writes it. Uses __index/__newindex dispatchers; Lua errors on assignment to
 	 * unknown properties.
 	 *
+	 * @throws std::runtime_error if T's metatable has not been registered.
+	 *
 	 * @code
 	 * Bind::property<Vec, &Vec::x>(lua, "x");
 	 * // Lua: print(v.x); v.x = 10
@@ -65,6 +69,8 @@ public:
 	 *
 	 * The table @p tableName must already exist (typically created by
 	 * Bind::constructor). The value is pushed and assigned as a field on it.
+	 *
+	 * @throws std::runtime_error if @p tableName is not a global table.
 	 *
 	 * @code
 	 * Bind::constructor<Vec, float, float>(lua, "Vec");
@@ -81,6 +87,8 @@ public:
 	 * The function is called without a self argument; Lua arguments start at index 1.
 	 * Return values are pushed via Metatable<R>::create when R is a user type,
 	 * or as a Lua primitive when R is known to Stack.
+	 *
+	 * @throws std::runtime_error if @p tableName is not a global table.
 	 *
 	 * @code
 	 * Bind::constructor<Vec, float, float>(lua, "Vec");

@@ -3,6 +3,9 @@
 
 #include <lua/lua.hpp>
 
+#include <stdexcept>
+#include <string>
+
 namespace Lua {
 namespace detail {
 
@@ -99,7 +102,10 @@ void addMethodToMetatable(lua_State* L,
                           Basics::NativeFunction func) {
 	if (luaL_getmetatable(L, metatableName) != LUA_TTABLE) {
 		lua_pop(L, 1);
-		return;
+		throw std::runtime_error(
+			std::string("Bind::method('") + methodName +
+			"'): metatable '" + metatableName +
+			"' not found. Call Metatable<T>::registerMetatable(state) first.");
 	}
 	ensureDispatchersInstalled(L);
 
@@ -116,7 +122,10 @@ void addPropertyToMetatable(lua_State* L,
                             Basics::NativeFunction setter) {
 	if (luaL_getmetatable(L, metatableName) != LUA_TTABLE) {
 		lua_pop(L, 1);
-		return;
+		throw std::runtime_error(
+			std::string("Bind::property('") + propertyName +
+			"'): metatable '" + metatableName +
+			"' not found. Call Metatable<T>::registerMetatable(state) first.");
 	}
 	ensureDispatchersInstalled(L);
 
@@ -139,7 +148,11 @@ void assignTopToTableField(lua_State* L,
 	// Stack on entry: [..., value]
 	if (lua_getglobal(L, tableName) != LUA_TTABLE) {
 		lua_pop(L, 2); // discard non-table and the value
-		return;
+		throw std::runtime_error(
+			std::string("Bind: cannot assign field '") + fieldName +
+			"' — global '" + tableName +
+			"' is not a table. Call Bind::constructor<T,...>(state, \"" +
+			tableName + "\") first.");
 	}
 	// Stack: [..., value, table]
 	lua_insert(L, -2); // [..., table, value]
