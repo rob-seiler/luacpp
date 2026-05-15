@@ -521,4 +521,10 @@ private:
 
 } // namespace Lua
 
+// Template implementations for Bind::method, Bind::property, etc.
+// Included here — after the State class is fully defined — so BindImpl.inl
+// can freely use State's interface. This also lets users include Bind.hpp
+// directly without depending on include order.
+#include "detail/BindImpl.inl"
+
 #endif // LUACPP_STATE_HPP

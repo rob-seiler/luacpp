@@ -102,8 +102,8 @@ public:
 
 } // namespace Lua
 
-#ifdef LUACPP_STATE_HPP
-#include "BindImpl.inl"
-#endif
+// Implementations live in BindImpl.inl. It is included by State.hpp at the
+// point where the State class is fully defined, so there is no ordering
+// constraint on includers of this header.
 
 #endif // LUACPP_DETAIL_BIND_HPP
