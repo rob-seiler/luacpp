@@ -28,6 +28,13 @@ void addPropertyToMetatable(lua_State* L,
                             Basics::NativeFunction getter,
                             Basics::NativeFunction setter);
 
+// Pops the value from the top of the stack and assigns it as a field on the
+// global table @p tableName. If @p tableName does not exist or is not a table,
+// the value is popped without effect.
+void assignTopToTableField(lua_State* L,
+                           const char* tableName,
+                           const char* fieldName);
+
 template <typename T, typename... Args, std::size_t... I>
 T* createInUserdataImpl(State& state, int startIdx, std::index_sequence<I...>) {
 	return state.createUserData<T>(ArgumentExtractor<Args>::extract(state, startIdx + static_cast<int>(I))...);
@@ -133,6 +140,41 @@ int propertySetter(lua_State* lvm) {
 	return 0;
 }
 
+template <typename F> struct FreeFunctionTraits;
+
+template <typename R, typename... Args>
+struct FreeFunctionTraits<R (*)(Args...)> {
+	using ReturnType = R;
+	using ArgsTuple  = std::tuple<Args...>;
+};
+
+template <auto Fn, std::size_t... I>
+int invokeFreeFunction(lua_State* lvm, std::index_sequence<I...>) {
+	using Traits    = FreeFunctionTraits<decltype(Fn)>;
+	using R         = typename Traits::ReturnType;
+	using ArgsTuple = typename Traits::ArgsTuple;
+
+	State L(lvm);
+
+	if constexpr (std::is_void_v<R>) {
+		Fn(ArgumentExtractor<std::tuple_element_t<I, ArgsTuple>>
+			   ::extract(L, 1 + static_cast<int>(I))...);
+		return 0;
+	} else {
+		R result = Fn(ArgumentExtractor<std::tuple_element_t<I, ArgsTuple>>
+		                  ::extract(L, 1 + static_cast<int>(I))...);
+		pushResult(L, std::move(result));
+		return 1;
+	}
+}
+
+template <auto Fn>
+int freeFunctionWrapper(lua_State* lvm) {
+	using Traits = FreeFunctionTraits<decltype(Fn)>;
+	constexpr std::size_t N = std::tuple_size_v<typename Traits::ArgsTuple>;
+	return invokeFreeFunction<Fn>(lvm, std::make_index_sequence<N>{});
+}
+
 } // namespace detail
 
 template <typename T, typename... Args>
@@ -175,6 +217,18 @@ void Bind::property(State& state, const char* name) {
 		name,
 		&detail::propertyGetter<Field>,
 		&detail::propertySetter<Field>);
+}
+
+template <typename V>
+void Bind::staticField(State& state, const char* tableName, const char* fieldName, V value) {
+	detail::pushResult(state, std::forward<V>(value));
+	detail::assignTopToTableField(state.getState(), tableName, fieldName);
+}
+
+template <auto Fn>
+void Bind::staticFunction(State& state, const char* tableName, const char* funcName) {
+	Basics::pushCFunction(state.getState(), &detail::freeFunctionWrapper<Fn>);
+	detail::assignTopToTableField(state.getState(), tableName, funcName);
 }
 
 } // namespace Lua

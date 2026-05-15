@@ -59,6 +59,37 @@ public:
 	 */
 	template <typename T, auto Field>
 	static void property(State& state, const char* name);
+
+	/**
+	 * @brief Attach a value as a static field on a constructor table.
+	 *
+	 * The table @p tableName must already exist (typically created by
+	 * Bind::constructor). The value is pushed and assigned as a field on it.
+	 *
+	 * @code
+	 * Bind::constructor<Vec, float, float>(lua, "Vec");
+	 * Bind::staticField(lua, "Vec", "EPSILON", 0.001f);
+	 * // Lua: print(Vec.EPSILON)
+	 * @endcode
+	 */
+	template <typename V>
+	static void staticField(State& state, const char* tableName, const char* fieldName, V value);
+
+	/**
+	 * @brief Attach a free (or static member) function as a static method on a constructor table.
+	 *
+	 * The function is called without a self argument; Lua arguments start at index 1.
+	 * Return values are pushed via Metatable<R>::create when R is a user type,
+	 * or as a Lua primitive when R is known to Stack.
+	 *
+	 * @code
+	 * Bind::constructor<Vec, float, float>(lua, "Vec");
+	 * Bind::staticFunction<&Vec::fromAngle>(lua, "Vec", "fromAngle");
+	 * // Lua: v = Vec.fromAngle(3.14)
+	 * @endcode
+	 */
+	template <auto Fn>
+	static void staticFunction(State& state, const char* tableName, const char* funcName);
 };
 
 } // namespace Lua

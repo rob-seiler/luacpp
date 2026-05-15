@@ -99,8 +99,17 @@ public:
 	static const char* asString(lua_State* state, int index, size_t* len = nullptr);
 
 	static void* allocateUserData(lua_State* state, size_t size, int userValues = 0);
-	
+
 	static int calcUpValueIndex(int index);
+
+	/**
+	 * @brief Raise a Lua error from C++ code (never returns)
+	 * @param state The Lua state
+	 * @param message Error message
+	 * @return int Declared as int for use in `return Basics::error(...)` patterns;
+	 *             the function does not actually return (uses longjmp internally).
+	 */
+	static int error(lua_State* state, const char* message);
 };
 
 // Stack trait struct for push/get

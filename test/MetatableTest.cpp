@@ -116,8 +116,10 @@ TEST(MetatableTest, ErrorHandling_WrongType) {
         return 1;
     });
 
-    // Test with wrong type (number) - should error, not crash
-    const char* src = "v1 = createVector(1,2); result = v1 + 5";
+    // Boolean is not convertible to Vector or double — should error.
+    // (Note: Vector + 5 IS valid via Vector's implicit float ctor — mixed-type
+    // scalar ops are supported when conversion is possible.)
+    const char* src = "v1 = createVector(1,2); result = v1 + true";
     int status = lua.loadAndExecuteScript(src);
     EXPECT_NE(status, 0);  // Should fail with error
 }

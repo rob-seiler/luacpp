@@ -465,6 +465,26 @@ public:
 	}
 
 	/**
+	 * \brief Attach a value as a static field on a constructor table.
+	 * \param tableName Name of the constructor table (must already exist)
+	 * \param fieldName Field key
+	 * \param value Value (primitive, string, or user type with Metatable)
+	 */
+	template <typename V>
+	void bindStaticField(const char* tableName, const char* fieldName, V value) {
+		Bind::staticField(*this, tableName, fieldName, std::forward<V>(value));
+	}
+
+	/**
+	 * \brief Attach a free function as a static method on a constructor table.
+	 * \tparam Fn Non-type template parameter: pointer-to-function
+	 */
+	template <auto Fn>
+	void bindStaticFunction(const char* tableName, const char* funcName) {
+		Bind::staticFunction<Fn>(*this, tableName, funcName);
+	}
+
+	/**
 	 * \brief Get the registry for direct access
 	 */
 	Registry& getRegistry() { return m_registry; }

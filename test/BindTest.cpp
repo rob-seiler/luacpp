@@ -657,6 +657,160 @@ TEST(BindComparisonTest, LessEqual) {
     EXPECT_FALSE(lua.readVariable<bool>("leMore"));
 }
 
+// ============================================================================
+// Mixed-Type Operator Tests
+// ============================================================================
+
+struct ScalarVec {
+    float x, y;
+    explicit ScalarVec(float ax = 0, float ay = 0) : x(ax), y(ay) {}
+    ScalarVec operator+(const ScalarVec& rhs) const { return ScalarVec(x + rhs.x, y + rhs.y); }
+    ScalarVec operator-(const ScalarVec& rhs) const { return ScalarVec(x - rhs.x, y - rhs.y); }
+    ScalarVec operator*(double s) const { return ScalarVec(static_cast<float>(x * s), static_cast<float>(y * s)); }
+    ScalarVec operator/(double s) const { return ScalarVec(static_cast<float>(x / s), static_cast<float>(y / s)); }
+};
+
+inline ScalarVec operator*(double s, const ScalarVec& v) {
+    return ScalarVec(static_cast<float>(s * v.x), static_cast<float>(s * v.y));
+}
+
+TEST(BindMixedOpTest, VecMulScalar) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+
+    const char* src = "v = Vec(2, 3); result = v * 2.5";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 5.0f);
+    EXPECT_FLOAT_EQ(r->y, 7.5f);
+}
+
+TEST(BindMixedOpTest, ScalarMulVec) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+
+    const char* src = "v = Vec(2, 3); result = 2.5 * v";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 5.0f);
+    EXPECT_FLOAT_EQ(r->y, 7.5f);
+}
+
+TEST(BindMixedOpTest, VecDivScalar) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+
+    const char* src = "v = Vec(10, 20); result = v / 4";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 2.5f);
+    EXPECT_FLOAT_EQ(r->y, 5.0f);
+}
+
+TEST(BindMixedOpTest, SameTypeStillWorks) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+
+    const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a + b";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 4.0f);
+    EXPECT_FLOAT_EQ(r->y, 6.0f);
+}
+
+TEST(BindMixedOpTest, UnsupportedScalarErrors) {
+    // ScalarVec has no operator+(double) — only T+T. Mixed should error.
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+
+    const char* src = "v = Vec(1, 2); result = v + 5";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);  // Vec has no operator+(double)
+}
+
+// ============================================================================
+// Static Field / Static Function Tests
+// ============================================================================
+
+namespace {
+ScalarVec makeUnitX() { return ScalarVec(1, 0); }
+ScalarVec makeFromAngle(double radians) {
+    return ScalarVec(static_cast<float>(std::cos(radians)),
+                     static_cast<float>(std::sin(radians)));
+}
+int addThree(int a, int b, int c) { return a + b + c; }
+}
+
+TEST(BindStaticTest, StaticNumberField) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    Bind::staticField(lua, "Vec", "EPSILON", 0.001);
+
+    const char* src = "result = Vec.EPSILON";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_DOUBLE_EQ(lua.readVariable<double>("result"), 0.001);
+}
+
+TEST(BindStaticTest, StaticStringField) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    Bind::staticField(lua, "Vec", "TYPENAME", "ScalarVec");
+
+    const char* src = "result = Vec.TYPENAME";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_EQ(lua.readVariable<std::string>("result"), "ScalarVec");
+}
+
+TEST(BindStaticTest, StaticFunctionNoArgs) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    Bind::staticFunction<&makeUnitX>(lua, "Vec", "unitX");
+
+    const char* src = "result = Vec.unitX()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 1.0f);
+    EXPECT_FLOAT_EQ(r->y, 0.0f);
+}
+
+TEST(BindStaticTest, StaticFunctionWithArgs) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    Bind::staticFunction<&makeFromAngle>(lua, "Vec", "fromAngle");
+
+    const char* src = "result = Vec.fromAngle(0)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->x, 1.0f);
+    EXPECT_FLOAT_EQ(r->y, 0.0f);
+}
+
+TEST(BindStaticTest, StaticFunctionPrimitiveReturn) {
+    State lua(State::LibBase);
+    Metatable<ScalarVec>::registerMetatable(lua);
+    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    Bind::staticFunction<&addThree>(lua, "Vec", "sum");
+
+    const char* src = "result = Vec.sum(1, 2, 3)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_EQ(lua.readVariable<int>("result"), 6);
+}
+
 TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
     State lua(State::LibBase);
     Metatable<Comparable>::registerMetatable(lua);

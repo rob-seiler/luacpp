@@ -62,4 +62,8 @@ void* Basics::allocateUserData(lua_State* state, size_t size, int userValues) {
 
 int Basics::calcUpValueIndex(int index) { return lua_upvalueindex(index); }
 
+int Basics::error(lua_State* state, const char* message) {
+	return luaL_error(state, "%s", message);
+}
+
 } //namespace Lua

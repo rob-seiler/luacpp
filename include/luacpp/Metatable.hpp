@@ -57,16 +57,54 @@ T* checkUserData(lua_State* lvm, int index) {
 	return static_cast<T*>(ud); // Safe cast - ud is never nullptr here
 }
 
+/**
+ * @brief Push a C++ value onto the Lua stack.
+ *
+ * If the value is a known Lua primitive (number, bool, string), it is pushed
+ * directly. Otherwise it is wrapped as userdata via Metatable<R>::create.
+ */
+template <typename R>
+void pushResult(State& state, R&& result) {
+	using Clean = std::remove_cv_t<std::remove_reference_t<R>>;
+	if constexpr (Basics::getTypeFor<Clean>() == Type::None) {
+		Metatable<Clean>::create(state, std::forward<R>(result));
+	} else {
+		state.pushToStack(std::forward<R>(result));
+	}
+}
+
 template <typename T>
 void registerAdd(Table& mt) {
-	if constexpr (has_add_operator<T>::value) {
+	if constexpr (has_add<T, T>::value || has_add<T, double>::value || has_add<double, T>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			T result = *lhs + *rhs;
-			Metatable<T>::create(L, result);
-			return 1;
+			Type t1 = Basics::getType(lvm, 1);
+			Type t2 = Basics::getType(lvm, 2);
+			if constexpr (has_add<T, T>::value) {
+				if (t1 == Type::UserData && t2 == Type::UserData) {
+					T* a = checkUserData<T>(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, *a + *b);
+					return 1;
+				}
+			}
+			if constexpr (has_add<T, double>::value) {
+				if (t1 == Type::UserData && t2 == Type::Number) {
+					T* a = checkUserData<T>(lvm, 1);
+					double b = Basics::asNumber(lvm, 2);
+					pushResult(L, *a + b);
+					return 1;
+				}
+			}
+			if constexpr (has_add<double, T>::value) {
+				if (t1 == Type::Number && t2 == Type::UserData) {
+					double a = Basics::asNumber(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, a + *b);
+					return 1;
+				}
+			}
+			return Basics::error(lvm, "operator+: invalid operand types");
 		};
 		mt.setElement(State::MetaTable::Addition, func);
 	}
@@ -74,14 +112,36 @@ void registerAdd(Table& mt) {
 
 template <typename T>
 void registerSub(Table& mt) {
-	if constexpr (has_sub_operator<T>::value) {
+	if constexpr (has_sub<T, T>::value || has_sub<T, double>::value || has_sub<double, T>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			T result = *lhs - *rhs;
-			Metatable<T>::create(L, result);
-			return 1;
+			Type t1 = Basics::getType(lvm, 1);
+			Type t2 = Basics::getType(lvm, 2);
+			if constexpr (has_sub<T, T>::value) {
+				if (t1 == Type::UserData && t2 == Type::UserData) {
+					T* a = checkUserData<T>(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, *a - *b);
+					return 1;
+				}
+			}
+			if constexpr (has_sub<T, double>::value) {
+				if (t1 == Type::UserData && t2 == Type::Number) {
+					T* a = checkUserData<T>(lvm, 1);
+					double b = Basics::asNumber(lvm, 2);
+					pushResult(L, *a - b);
+					return 1;
+				}
+			}
+			if constexpr (has_sub<double, T>::value) {
+				if (t1 == Type::Number && t2 == Type::UserData) {
+					double a = Basics::asNumber(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, a - *b);
+					return 1;
+				}
+			}
+			return Basics::error(lvm, "operator-: invalid operand types");
 		};
 		mt.setElement(State::MetaTable::Substraction, func);
 	}
@@ -89,14 +149,36 @@ void registerSub(Table& mt) {
 
 template <typename T>
 void registerMul(Table& mt) {
-	if constexpr (has_mul_operator<T>::value) {
+	if constexpr (has_mul<T, T>::value || has_mul<T, double>::value || has_mul<double, T>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			T result = *lhs * *rhs;
-			Metatable<T>::create(L, result);
-			return 1;
+			Type t1 = Basics::getType(lvm, 1);
+			Type t2 = Basics::getType(lvm, 2);
+			if constexpr (has_mul<T, T>::value) {
+				if (t1 == Type::UserData && t2 == Type::UserData) {
+					T* a = checkUserData<T>(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, *a * *b);
+					return 1;
+				}
+			}
+			if constexpr (has_mul<T, double>::value) {
+				if (t1 == Type::UserData && t2 == Type::Number) {
+					T* a = checkUserData<T>(lvm, 1);
+					double b = Basics::asNumber(lvm, 2);
+					pushResult(L, *a * b);
+					return 1;
+				}
+			}
+			if constexpr (has_mul<double, T>::value) {
+				if (t1 == Type::Number && t2 == Type::UserData) {
+					double a = Basics::asNumber(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, a * *b);
+					return 1;
+				}
+			}
+			return Basics::error(lvm, "operator*: invalid operand types");
 		};
 		mt.setElement(State::MetaTable::Multiplication, func);
 	}
@@ -104,14 +186,36 @@ void registerMul(Table& mt) {
 
 template <typename T>
 void registerDiv(Table& mt) {
-	if constexpr (has_div_operator<T>::value) {
+	if constexpr (has_div<T, T>::value || has_div<T, double>::value || has_div<double, T>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			T result = *lhs / *rhs;
-			Metatable<T>::create(L, result);
-			return 1;
+			Type t1 = Basics::getType(lvm, 1);
+			Type t2 = Basics::getType(lvm, 2);
+			if constexpr (has_div<T, T>::value) {
+				if (t1 == Type::UserData && t2 == Type::UserData) {
+					T* a = checkUserData<T>(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, *a / *b);
+					return 1;
+				}
+			}
+			if constexpr (has_div<T, double>::value) {
+				if (t1 == Type::UserData && t2 == Type::Number) {
+					T* a = checkUserData<T>(lvm, 1);
+					double b = Basics::asNumber(lvm, 2);
+					pushResult(L, *a / b);
+					return 1;
+				}
+			}
+			if constexpr (has_div<double, T>::value) {
+				if (t1 == Type::Number && t2 == Type::UserData) {
+					double a = Basics::asNumber(lvm, 1);
+					T* b = checkUserData<T>(lvm, 2);
+					pushResult(L, a / *b);
+					return 1;
+				}
+			}
+			return Basics::error(lvm, "operator/: invalid operand types");
 		};
 		mt.setElement(State::MetaTable::Division, func);
 	}

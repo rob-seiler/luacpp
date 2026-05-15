@@ -133,5 +133,19 @@ void addPropertyToMetatable(lua_State* L,
 	lua_pop(L, 1); // metatable
 }
 
+void assignTopToTableField(lua_State* L,
+                           const char* tableName,
+                           const char* fieldName) {
+	// Stack on entry: [..., value]
+	if (lua_getglobal(L, tableName) != LUA_TTABLE) {
+		lua_pop(L, 2); // discard non-table and the value
+		return;
+	}
+	// Stack: [..., value, table]
+	lua_insert(L, -2); // [..., table, value]
+	lua_setfield(L, -2, fieldName); // pops the value; sets table[field]=value
+	lua_pop(L, 1); // pop the table
+}
+
 } // namespace detail
 } // namespace Lua
