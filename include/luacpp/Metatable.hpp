@@ -73,151 +73,91 @@ void pushResult(State& state, R&& result) {
 	}
 }
 
-template <typename T>
-void registerAdd(Table& mt) {
-	if constexpr (has_add<T, T>::value || has_add<T, double>::value || has_add<double, T>::value) {
-		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-			State L(lvm);
-			Type t1 = Basics::getType(lvm, 1);
-			Type t2 = Basics::getType(lvm, 2);
-			if constexpr (has_add<T, T>::value) {
-				if (t1 == Type::UserData && t2 == Type::UserData) {
-					T* a = checkUserData<T>(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, *a + *b);
-					return 1;
-				}
-			}
-			if constexpr (has_add<T, double>::value) {
-				if (t1 == Type::UserData && t2 == Type::Number) {
-					T* a = checkUserData<T>(lvm, 1);
-					double b = Basics::asNumber(lvm, 2);
-					pushResult(L, *a + b);
-					return 1;
-				}
-			}
-			if constexpr (has_add<double, T>::value) {
-				if (t1 == Type::Number && t2 == Type::UserData) {
-					double a = Basics::asNumber(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, a + *b);
-					return 1;
-				}
-			}
-			return Basics::error(lvm, "operator+: invalid operand types");
-		};
-		mt.setElement(State::MetaTable::Addition, func);
-	}
-}
+// ----------------------------------------------------------------------------
+// Binary arithmetic operator dispatch
+// ----------------------------------------------------------------------------
+// Each Op tag bundles three pieces:
+//   - a SFINAE-friendly templated apply(a, b),
+//   - the metatable slot to register on,
+//   - the error message for "no matching operand types".
+//
+// registerBinaryOp<T, Op> generates a single lua_CFunction that dispatches
+// among the three runtime operand-type combinations (T,T / T,double /
+// double,T), enabling each branch only if the corresponding C++ expression
+// is well-formed at compile time.
 
-template <typename T>
-void registerSub(Table& mt) {
-	if constexpr (has_sub<T, T>::value || has_sub<T, double>::value || has_sub<double, T>::value) {
-		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-			State L(lvm);
-			Type t1 = Basics::getType(lvm, 1);
-			Type t2 = Basics::getType(lvm, 2);
-			if constexpr (has_sub<T, T>::value) {
-				if (t1 == Type::UserData && t2 == Type::UserData) {
-					T* a = checkUserData<T>(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, *a - *b);
-					return 1;
-				}
-			}
-			if constexpr (has_sub<T, double>::value) {
-				if (t1 == Type::UserData && t2 == Type::Number) {
-					T* a = checkUserData<T>(lvm, 1);
-					double b = Basics::asNumber(lvm, 2);
-					pushResult(L, *a - b);
-					return 1;
-				}
-			}
-			if constexpr (has_sub<double, T>::value) {
-				if (t1 == Type::Number && t2 == Type::UserData) {
-					double a = Basics::asNumber(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, a - *b);
-					return 1;
-				}
-			}
-			return Basics::error(lvm, "operator-: invalid operand types");
-		};
-		mt.setElement(State::MetaTable::Substraction, func);
-	}
-}
+struct AddOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a + b) { return a + b; }
+	static constexpr const char* slot = State::MetaTable::Addition;
+	static constexpr const char* errorMsg = "operator+: invalid operand types";
+};
 
-template <typename T>
-void registerMul(Table& mt) {
-	if constexpr (has_mul<T, T>::value || has_mul<T, double>::value || has_mul<double, T>::value) {
-		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-			State L(lvm);
-			Type t1 = Basics::getType(lvm, 1);
-			Type t2 = Basics::getType(lvm, 2);
-			if constexpr (has_mul<T, T>::value) {
-				if (t1 == Type::UserData && t2 == Type::UserData) {
-					T* a = checkUserData<T>(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, *a * *b);
-					return 1;
-				}
-			}
-			if constexpr (has_mul<T, double>::value) {
-				if (t1 == Type::UserData && t2 == Type::Number) {
-					T* a = checkUserData<T>(lvm, 1);
-					double b = Basics::asNumber(lvm, 2);
-					pushResult(L, *a * b);
-					return 1;
-				}
-			}
-			if constexpr (has_mul<double, T>::value) {
-				if (t1 == Type::Number && t2 == Type::UserData) {
-					double a = Basics::asNumber(lvm, 1);
-					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, a * *b);
-					return 1;
-				}
-			}
-			return Basics::error(lvm, "operator*: invalid operand types");
-		};
-		mt.setElement(State::MetaTable::Multiplication, func);
-	}
-}
+struct SubOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a - b) { return a - b; }
+	static constexpr const char* slot = State::MetaTable::Substraction;
+	static constexpr const char* errorMsg = "operator-: invalid operand types";
+};
 
-template <typename T>
-void registerDiv(Table& mt) {
-	if constexpr (has_div<T, T>::value || has_div<T, double>::value || has_div<double, T>::value) {
+struct MulOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a * b) { return a * b; }
+	static constexpr const char* slot = State::MetaTable::Multiplication;
+	static constexpr const char* errorMsg = "operator*: invalid operand types";
+};
+
+struct DivOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a / b) { return a / b; }
+	static constexpr const char* slot = State::MetaTable::Division;
+	static constexpr const char* errorMsg = "operator/: invalid operand types";
+};
+
+template <typename A, typename B, typename Op, typename = void>
+struct can_apply : std::false_type { };
+
+template <typename A, typename B, typename Op>
+struct can_apply<A, B, Op,
+                 std::void_t<decltype(Op::apply(std::declval<A>(), std::declval<B>()))>>
+	: std::true_type { };
+
+template <typename T, typename Op>
+void registerBinaryOp(Table& mt) {
+	if constexpr (can_apply<T, T, Op>::value
+	           || can_apply<T, double, Op>::value
+	           || can_apply<double, T, Op>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
 			Type t1 = Basics::getType(lvm, 1);
 			Type t2 = Basics::getType(lvm, 2);
-			if constexpr (has_div<T, T>::value) {
+			if constexpr (can_apply<T, T, Op>::value) {
 				if (t1 == Type::UserData && t2 == Type::UserData) {
 					T* a = checkUserData<T>(lvm, 1);
 					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, *a / *b);
+					pushResult(L, Op::apply(*a, *b));
 					return 1;
 				}
 			}
-			if constexpr (has_div<T, double>::value) {
+			if constexpr (can_apply<T, double, Op>::value) {
 				if (t1 == Type::UserData && t2 == Type::Number) {
 					T* a = checkUserData<T>(lvm, 1);
 					double b = Basics::asNumber(lvm, 2);
-					pushResult(L, *a / b);
+					pushResult(L, Op::apply(*a, b));
 					return 1;
 				}
 			}
-			if constexpr (has_div<double, T>::value) {
+			if constexpr (can_apply<double, T, Op>::value) {
 				if (t1 == Type::Number && t2 == Type::UserData) {
 					double a = Basics::asNumber(lvm, 1);
 					T* b = checkUserData<T>(lvm, 2);
-					pushResult(L, a / *b);
+					pushResult(L, Op::apply(a, *b));
 					return 1;
 				}
 			}
-			return Basics::error(lvm, "operator/: invalid operand types");
+			return Basics::error(lvm, Op::errorMsg);
 		};
-		mt.setElement(State::MetaTable::Division, func);
+		mt.setElement(Op::slot, func);
 	}
 }
 
@@ -235,48 +175,42 @@ void registerUnaryMinus(Table& mt) {
 	}
 }
 
-template <typename T>
-void registerEqual(Table& mt) {
-	if constexpr (has_eq_operator<T>::value) {
-		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			bool result = *lhs == *rhs;
-			L.pushToStack(result);
-			return 1;
-		};
-		mt.setElement(State::MetaTable::Equal, func);
-	}
-}
+// ----------------------------------------------------------------------------
+// Comparison operator dispatch
+// ----------------------------------------------------------------------------
+// Same Op-tag pattern as the binary arithmetic ops, but the result is always
+// pushed as a Lua boolean and only the (T, T) operand combination is dispatched
+// (Lua's __eq/__lt/__le are only invoked when both operands share a type).
 
-template <typename T>
-void registerLessThan(Table& mt) {
-	if constexpr (has_lt_operator<T>::value) {
-		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
-			State L(lvm);
-			T* lhs = checkUserData<T>(lvm, 1);
-			T* rhs = checkUserData<T>(lvm, 2);
-			bool result = *lhs < *rhs;
-			L.pushToStack(result);
-			return 1;
-		};
-		mt.setElement(State::MetaTable::LessThan, func);
-	}
-}
+struct EqOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a == b) { return a == b; }
+	static constexpr const char* slot = State::MetaTable::Equal;
+};
 
-template <typename T>
-void registerLessEqual(Table& mt) {
-	if constexpr (has_le_operator<T>::value) {
+struct LtOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a < b) { return a < b; }
+	static constexpr const char* slot = State::MetaTable::LessThan;
+};
+
+struct LeOp {
+	template <typename A, typename B>
+	static auto apply(const A& a, const B& b) -> decltype(a <= b) { return a <= b; }
+	static constexpr const char* slot = State::MetaTable::LessThanOrEqual;
+};
+
+template <typename T, typename Op>
+void registerComparison(Table& mt) {
+	if constexpr (can_apply<T, T, Op>::value) {
 		int (*func)(lua_State*) = [](lua_State* lvm) -> int {
 			State L(lvm);
 			T* lhs = checkUserData<T>(lvm, 1);
 			T* rhs = checkUserData<T>(lvm, 2);
-			bool result = *lhs <= *rhs;
-			L.pushToStack(result);
+			L.pushToStack(static_cast<bool>(Op::apply(*lhs, *rhs)));
 			return 1;
 		};
-		mt.setElement(State::MetaTable::LessThanOrEqual, func);
+		mt.setElement(Op::slot, func);
 	}
 }
 
@@ -323,14 +257,14 @@ void registerGC(Table& mt) {
 
 template <typename T>
 void registerOperators(Table& mt) {
-	registerAdd<T>(mt);
-	registerSub<T>(mt);
-	registerMul<T>(mt);
-	registerDiv<T>(mt);
+	registerBinaryOp<T, AddOp>(mt);
+	registerBinaryOp<T, SubOp>(mt);
+	registerBinaryOp<T, MulOp>(mt);
+	registerBinaryOp<T, DivOp>(mt);
 	registerUnaryMinus<T>(mt);
-	registerEqual<T>(mt);
-	registerLessThan<T>(mt);
-	registerLessEqual<T>(mt);
+	registerComparison<T, EqOp>(mt);
+	registerComparison<T, LtOp>(mt);
+	registerComparison<T, LeOp>(mt);
 	registerToString<T>(mt);
 }
 
