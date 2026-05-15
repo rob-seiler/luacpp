@@ -737,6 +737,71 @@ TEST(BindMixedOpTest, UnsupportedScalarErrors) {
     EXPECT_NE(status, 0);  // Vec has no operator+(double)
 }
 
+// A type with the full set of mixed-type arithmetic operators, used to
+// exercise the AddOp T+double / double+T and DivOp double/T paths that
+// ScalarVec does not cover.
+struct ArithVec {
+    float v;
+    explicit ArithVec(float val = 0) : v(val) {}
+    ArithVec operator+(double s) const { return ArithVec(static_cast<float>(v + s)); }
+    ArithVec operator/(double s) const { return ArithVec(static_cast<float>(v / s)); }
+};
+
+inline ArithVec operator+(double s, const ArithVec& a) {
+    return ArithVec(static_cast<float>(s + a.v));
+}
+inline ArithVec operator/(double s, const ArithVec& a) {
+    return ArithVec(static_cast<float>(s / a.v));
+}
+
+TEST(BindMixedOpTest, VecPlusScalar) {
+    State lua(State::LibBase);
+    Metatable<ArithVec>::registerMetatable(lua);
+    lua.bindConstructor<ArithVec, float>("Vec");
+
+    const char* src = "v = Vec(10); result = v + 5";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->v, 15.0f);
+}
+
+TEST(BindMixedOpTest, ScalarPlusVec) {
+    State lua(State::LibBase);
+    Metatable<ArithVec>::registerMetatable(lua);
+    lua.bindConstructor<ArithVec, float>("Vec");
+
+    const char* src = "v = Vec(10); result = 5 + v";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->v, 15.0f);
+}
+
+TEST(BindMixedOpTest, ScalarDivVec) {
+    State lua(State::LibBase);
+    Metatable<ArithVec>::registerMetatable(lua);
+    lua.bindConstructor<ArithVec, float>("Vec");
+
+    const char* src = "v = Vec(2); result = 10 / v";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    ASSERT_NE(r, nullptr);
+    EXPECT_FLOAT_EQ(r->v, 5.0f);
+}
+
+TEST(BindMixedOpTest, UnaryMinusNotRegisteredForTypesWithoutIt) {
+    // Vec has no operator-() (unary). Lua's __unm should be omitted,
+    // and `-v` should error rather than silently succeed.
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+
+    const char* src = "v = Vec(1, 2); result = -v";
+    int status = lua.loadAndExecuteScript(src);
+    EXPECT_NE(status, 0);
+}
+
 // ============================================================================
 // Static Field / Static Function Tests
 // ============================================================================
@@ -831,6 +896,22 @@ TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a < b";
     int status = lua.loadAndExecuteScript(src);
     EXPECT_NE(status, 0);
+}
+
+TEST(BindComparisonTest, EqualNotRegisteredForTypesWithoutOp) {
+    // Vec has no operator==. Without __eq, Lua falls back to raw identity
+    // comparison: two distinct userdata objects compare unequal even when
+    // their contents match.
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    lua.bindConstructor<Vec, float, float>("Vec");
+
+    const char* src =
+        "a = Vec(1, 2); b = Vec(1, 2);"
+        " sameRef = (a == a); diffRef = (a == b)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("sameRef"));   // identity → equal
+    EXPECT_FALSE(lua.readVariable<bool>("diffRef"));  // distinct objects → unequal
 }
 
 // ============================================================================

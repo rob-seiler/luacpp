@@ -68,7 +68,14 @@ TEST(MetatableTest, VectorOtherOps) {
         return 1;
     });
 
-    const char* mulSrc = "v1 = createVector(2,3); v2 = createVector(3,4); result = v1 * v2"; 
+    const char* subSrc = "v1 = createVector(5,7); v2 = createVector(2,3); result = v1 - v2";
+    EXPECT_EQ(lua.loadAndExecuteScript(subSrc), 0);
+    Vector* subRes = lua.readVariable<Vector*>("result");
+    ASSERT_NE(subRes, nullptr);
+    EXPECT_FLOAT_EQ(subRes->x, 3.0f);
+    EXPECT_FLOAT_EQ(subRes->y, 4.0f);
+
+    const char* mulSrc = "v1 = createVector(2,3); v2 = createVector(3,4); result = v1 * v2";
     EXPECT_EQ(lua.loadAndExecuteScript(mulSrc), 0);
     Vector* mulRes = lua.readVariable<Vector*>("result");
     ASSERT_NE(mulRes, nullptr);
