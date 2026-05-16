@@ -35,6 +35,14 @@ void assignTopToTableField(lua_State* L,
                            const char* tableName,
                            const char* fieldName);
 
+// Attaches an anonymous metatable carrying a single __call entry to the
+// global table @p tableName. The metatable is never registered by name, so
+// no entry is added to the Lua registry — keeping the registry clean of
+// per-constructor scaffolding metatables.
+void setCallMetatableOnGlobal(lua_State* L,
+                              const char* tableName,
+                              Basics::NativeFunction callFn);
+
 template <typename T, typename... Args, std::size_t... I>
 T* createInUserdataImpl(State& state, int startIdx, std::index_sequence<I...>) {
 	return state.createUserData<T>(ArgumentExtractor<Args>::extract(state, startIdx + static_cast<int>(I))...);
@@ -179,19 +187,14 @@ int freeFunctionWrapper(lua_State* lvm) {
 
 template <typename T, typename... Args>
 void Bind::constructor(State& state, const char* name) {
-	state.createTable(name, [&state, name](Table& ctorTable) {
-		std::string mtName = std::string(name) + "ConstructorMT";
-		state.createMetaTable(mtName.c_str(), [](Table& mt) {
-			int (*callFunc)(lua_State*) = [](lua_State* lvm) -> int {
-				State L(lvm);
-				detail::createInUserdata<T, Args...>(L, 2);
-				L.assignMetaTable(Metatable<T>::metatableName());
-				return 1;
-			};
-			mt.setElement(State::MetaTable::Call, callFunc);
-		});
-		ctorTable.assignMetaTable(mtName.c_str());
-	});
+	state.createTable(name, [](Table&) { /* empty constructor table */ });
+	int (*callFunc)(lua_State*) = [](lua_State* lvm) -> int {
+		State L(lvm);
+		detail::createInUserdata<T, Args...>(L, 2);
+		L.assignMetaTable(Metatable<T>::metatableName());
+		return 1;
+	};
+	detail::setCallMetatableOnGlobal(state.getState(), name, callFunc);
 }
 
 template <typename T, auto Method>

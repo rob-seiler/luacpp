@@ -182,22 +182,31 @@ void registerUnaryMinus(Table& mt) {
 // pushed as a Lua boolean and only the (T, T) operand combination is dispatched
 // (Lua's __eq/__lt/__le are only invoked when both operands share a type).
 
+// Comparison op tags carry an `errorMsg` for symmetry with the arithmetic
+// tags, even though `registerComparison` does not currently surface it:
+// Lua only invokes __eq/__lt/__le when both operands share a metatable, so
+// `checkUserData<T>` handles the mismatch path before any fallback would
+// run. The field documents the intended message and keeps the tag shape
+// uniform across the file.
 struct EqOp {
 	template <typename A, typename B>
 	static auto apply(const A& a, const B& b) -> decltype(a == b) { return a == b; }
 	static constexpr const char* slot = State::MetaTable::Equal;
+	static constexpr const char* errorMsg = "operator==: invalid operand types";
 };
 
 struct LtOp {
 	template <typename A, typename B>
 	static auto apply(const A& a, const B& b) -> decltype(a < b) { return a < b; }
 	static constexpr const char* slot = State::MetaTable::LessThan;
+	static constexpr const char* errorMsg = "operator<: invalid operand types";
 };
 
 struct LeOp {
 	template <typename A, typename B>
 	static auto apply(const A& a, const B& b) -> decltype(a <= b) { return a <= b; }
 	static constexpr const char* slot = State::MetaTable::LessThanOrEqual;
+	static constexpr const char* errorMsg = "operator<=: invalid operand types";
 };
 
 template <typename T, typename Op>
@@ -298,13 +307,19 @@ struct Metatable {
 		state.assignMetaTable(metatableName());
 		return obj;
 	}
-
-	static T* create(State& state, const T& obj) {
-		T* userdata = state.createUserData<T>(obj);
-		state.assignMetaTable(metatableName());
-		return userdata;
-	}
 };
+
+namespace detail {
+
+// Specialization that satisfies the marker trait declared in Stack.hpp.
+// Visible only in translation units that have included Metatable.hpp, so
+// the static_assert in Stack<T*>::get fires with a precise message when
+// the include is missing.
+template <typename T>
+struct metatable_visible<T, std::void_t<decltype(Metatable<T>::metatableName())>>
+	: std::true_type {};
+
+} // namespace detail
 
 } // namespace Lua
 

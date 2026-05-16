@@ -160,5 +160,22 @@ void assignTopToTableField(lua_State* L,
 	lua_pop(L, 1); // pop the table
 }
 
+void setCallMetatableOnGlobal(lua_State* L,
+                              const char* tableName,
+                              Basics::NativeFunction callFn) {
+	if (lua_getglobal(L, tableName) != LUA_TTABLE) {
+		lua_pop(L, 1);
+		throw std::runtime_error(
+			std::string("Bind: cannot attach __call metatable — global '") +
+			tableName + "' is not a table.");
+	}
+	// Stack: [..., table]
+	lua_newtable(L); // anonymous metatable, not registered by name
+	lua_pushcfunction(L, callFn);
+	lua_setfield(L, -2, "__call");
+	lua_setmetatable(L, -2); // pops metatable, attaches to table
+	lua_pop(L, 1); // pop the table
+}
+
 } // namespace detail
 } // namespace Lua
