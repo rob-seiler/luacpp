@@ -37,6 +37,15 @@ public:
 	 * Method goes into the metatable's __index table, dispatched via Lua's
 	 * colon syntax. Prerequisite: Metatable<T>::registerMetatable(state).
 	 *
+	 * Return value handling:
+	 *   - Primitives are pushed as Lua values.
+	 *   - Class-type returns (by value, reference, or pointer) are wrapped as
+	 *     a fresh userdata holding a *copy* of the returned object. Aliasing
+	 *     is not preserved: if the method returns U& or U* into internal
+	 *     state, mutations on the Lua side will not propagate back to the C++
+	 *     owner. Pointer nullptr becomes Lua nil. To expose live state, bind
+	 *     explicit getters/setters instead of returning U& / U*.
+	 *
 	 * @throws std::runtime_error if T's metatable has not been registered.
 	 *
 	 * @code

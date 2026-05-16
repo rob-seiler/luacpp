@@ -60,13 +60,38 @@ T* checkUserData(lua_State* lvm, int index) {
 /**
  * @brief Push a C++ value onto the Lua stack.
  *
- * If the value is a known Lua primitive (number, bool, string), it is pushed
- * directly. Otherwise it is wrapped as userdata via Metatable<R>::create.
+ * Dispatch:
+ *   - Primitive (number, bool, string): pushed directly.
+ *   - Class type by value / rvalue: wrapped as userdata via
+ *     Metatable<Clean>::create, moving the value into the userdata.
+ *   - Class type by reference (T&, const T&): copied into a freshly
+ *     constructed userdata. Aliasing is NOT preserved: the Lua-side userdata
+ *     is an independent copy of the referenced object, and mutations on
+ *     either side do not propagate to the other. Forwarding ensures the
+ *     source is copied, never moved-from.
+ *   - Class pointer (T*): dereferenced and copied into a userdata, same as
+ *     the reference case — pointer identity is lost, mutations do not
+ *     propagate back to the C++ object the pointer referred to. nullptr
+ *     becomes Lua nil.
+ *
+ * Rationale: Lua userdata owns its storage and is collected by Lua's GC, so
+ * the binding cannot safely hand out aliasing handles to C++-owned memory.
+ * To expose live state, bind explicit accessor methods rather than returning
+ * raw T& / T*.
  */
 template <typename R>
 void pushResult(State& state, R&& result) {
 	using Clean = std::remove_cv_t<std::remove_reference_t<R>>;
-	if constexpr (Basics::getTypeFor<Clean>() == Type::None) {
+
+	if constexpr (std::is_pointer_v<Clean> &&
+	              std::is_class_v<std::remove_pointer_t<Clean>>) {
+		using Pointee = std::remove_cv_t<std::remove_pointer_t<Clean>>;
+		if (result == nullptr) {
+			Basics::pushNil(state.getState());
+		} else {
+			Metatable<Pointee>::create(state, *result);
+		}
+	} else if constexpr (Basics::getTypeFor<Clean>() == Type::None) {
 		Metatable<Clean>::create(state, std::forward<R>(result));
 	} else {
 		state.pushToStack(std::forward<R>(result));

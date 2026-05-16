@@ -94,16 +94,13 @@ int invokeMethod(lua_State* lvm, std::index_sequence<I...>) {
 				::extract(L, 2 + static_cast<int>(I))...);
 		return 0;
 	} else {
+		// Declare result with type R so reference-returning methods bind
+		// to the original object; pushResult then uses std::forward<R> to
+		// pick copy (for references) vs move (for owned locals).
 		R result = (self->*Method)(
 			ArgumentExtractor<std::tuple_element_t<I, ArgsTuple>>
 				::extract(L, 2 + static_cast<int>(I))...);
-
-		using CleanR = std::remove_cv_t<std::remove_reference_t<R>>;
-		if constexpr (Basics::getTypeFor<CleanR>() == Type::None) {
-			Metatable<CleanR>::create(L, std::move(result));
-		} else {
-			L.pushToStack(result);
-		}
+		pushResult(L, std::forward<R>(result));
 		return 1;
 	}
 }
@@ -171,7 +168,7 @@ int invokeFreeFunction(lua_State* lvm, std::index_sequence<I...>) {
 	} else {
 		R result = Fn(ArgumentExtractor<std::tuple_element_t<I, ArgsTuple>>
 		                  ::extract(L, 1 + static_cast<int>(I))...);
-		pushResult(L, std::move(result));
+		pushResult(L, std::forward<R>(result));
 		return 1;
 	}
 }

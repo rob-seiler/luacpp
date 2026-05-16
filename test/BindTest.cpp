@@ -1082,4 +1082,175 @@ TEST(BindPrerequisiteTest, StaticFunctionWithoutConstructor_Throws) {
         std::runtime_error);
 }
 
+// ============================================================================
+// Return-Type Handling: T*, T&, null pointers
+// ============================================================================
+// Methods/functions that return T* or T& must yield a Lua userdata with the
+// proper metatable (not a raw lightuserdata), and must not destructively move
+// from aliased C++ objects.
+
+struct MovableTracker {
+    int value;
+    bool wasMovedFrom;
+    explicit MovableTracker(int v) : value(v), wasMovedFrom(false) {}
+    MovableTracker(const MovableTracker& o)
+        : value(o.value), wasMovedFrom(false) {}
+    MovableTracker(MovableTracker&& o) noexcept
+        : value(o.value), wasMovedFrom(false) {
+        o.wasMovedFrom = true;
+        o.value = -999;
+    }
+    MovableTracker& operator=(const MovableTracker&) = default;
+    int getValue() const { return value; }
+};
+
+struct ReturnSource {
+    Vec stored;
+    MovableTracker tracker;
+    ReturnSource() : stored(1.5f, 2.5f), tracker(42) {}
+
+    Vec* getVecPtr() { return &stored; }
+    Vec* getNullVec() { return nullptr; }
+    Vec& getVecRef() { return stored; }
+    const Vec& getVecConstRef() const { return stored; }
+
+    MovableTracker& getTrackerRef() { return tracker; }
+    bool trackerWasMoved() const { return tracker.wasMovedFrom; }
+    int trackerValue() const { return tracker.value; }
+
+    float storedX() const { return stored.x; }
+};
+
+TEST(BindReturnTest, PointerReturn_WrapsAsUserdataWithMetatable) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    lua.bindMethod<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    // If getVecPtr returned raw lightuserdata, v:length() would fail because
+    // lightuserdata has no metatable. Wrapping as userdata makes it work.
+    const char* src = "s = Source(); v = s:getVecPtr(); len = v:length()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    double len = lua.readVariable<double>("len");
+    EXPECT_NEAR(len, std::sqrt(1.5 * 1.5 + 2.5 * 2.5), 1e-5);
+}
+
+TEST(BindReturnTest, NullPointerReturn_BecomesNil) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    lua.bindMethod<ReturnSource, &ReturnSource::getNullVec>("getNullVec");
+
+    const char* src = "s = Source(); v = s:getNullVec(); isNil = (v == nil)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("isNil"));
+}
+
+TEST(BindReturnTest, PointerReturn_IsCopy_MutationDoesNotPropagate) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    lua.bindMethod<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
+    lua.bindMethod<ReturnSource, &ReturnSource::storedX>("storedX");
+    lua.bindProperty<Vec, &Vec::x>("x");
+
+    // Copy semantics: mutating the Lua-side userdata does NOT change the C++
+    // object the pointer originally referred to. Documented as intentional.
+    const char* src = R"(
+        s = Source()
+        v = s:getVecPtr()
+        v.x = 99
+        copyX = v.x
+        origX = s:storedX()
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("copyX")), 99.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("origX")), 1.5f);
+}
+
+TEST(BindReturnTest, ReferenceReturn_DoesNotMoveFromAliased) {
+    State lua(State::LibBase);
+    Metatable<MovableTracker>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    lua.bindMethod<ReturnSource, &ReturnSource::getTrackerRef>("getTrackerRef");
+    lua.bindMethod<ReturnSource, &ReturnSource::trackerWasMoved>("wasMoved");
+    lua.bindMethod<ReturnSource, &ReturnSource::trackerValue>("trackerValue");
+
+    // Previously the dispatcher did std::move(result) where result was a
+    // reference, leaving the source's tracker in moved-from state. After the
+    // fix, references copy rather than move.
+    const char* src = R"(
+        s = Source()
+        t = s:getTrackerRef()
+        movedAfter = s:wasMoved()
+        valueAfter = s:trackerValue()
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_FALSE(lua.readVariable<bool>("movedAfter"));
+    EXPECT_EQ(lua.readVariable<int>("valueAfter"), 42);
+}
+
+TEST(BindReturnTest, ConstReferenceReturn_AlsoCopies) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    lua.bindMethod<ReturnSource, &ReturnSource::getVecConstRef>("getVecConstRef");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    // Two successive const-ref returns should both yield valid Vecs with the
+    // same content — proving the source's Vec wasn't destroyed by the first
+    // call (which the old std::move-from-reference code would have done).
+    const char* src = R"(
+        s = Source()
+        v1 = s:getVecConstRef()
+        v2 = s:getVecConstRef()
+        len1 = v1:length()
+        len2 = v2:length()
+    )";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_DOUBLE_EQ(lua.readVariable<double>("len1"),
+                     lua.readVariable<double>("len2"));
+    EXPECT_NEAR(lua.readVariable<double>("len1"),
+                std::sqrt(1.5 * 1.5 + 2.5 * 2.5), 1e-5);
+}
+
+namespace {
+static Vec* freeFuncReturnsVecPtr() {
+    static Vec s(7.0f, 24.0f);
+    return &s;
+}
+static Vec* freeFuncReturnsNullVec() { return nullptr; }
+}
+
+TEST(BindReturnTest, FreeFunction_PointerReturn_WrapsAsUserdata) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    Bind::staticFunction<&freeFuncReturnsVecPtr>(lua, "Source", "globalVec");
+    lua.bindMethod<Vec, &Vec::length>("length");
+
+    const char* src = "v = Source.globalVec(); len = v:length()";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_NEAR(lua.readVariable<double>("len"), 25.0, 1e-5);
+}
+
+TEST(BindReturnTest, FreeFunction_NullPointerReturn_BecomesNil) {
+    State lua(State::LibBase);
+    Metatable<Vec>::registerMetatable(lua);
+    Metatable<ReturnSource>::registerMetatable(lua);
+    lua.bindConstructor<ReturnSource>("Source");
+    Bind::staticFunction<&freeFuncReturnsNullVec>(lua, "Source", "noVec");
+
+    const char* src = "v = Source.noVec(); isNil = (v == nil)";
+    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    EXPECT_TRUE(lua.readVariable<bool>("isNil"));
+}
+
 } // namespace Lua
