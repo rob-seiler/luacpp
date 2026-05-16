@@ -194,8 +194,69 @@ With this method you can read and write. If you only want to write a trivial tab
 	state.writeTable("map", table);
 ```
 
+### Binding C++ classes to Lua
+Luacpp can expose entire C++ classes to Lua as userdata with their own metatable. The `Metatable<T>` template inspects `T` at compile time and registers a default set of metamethods for whichever operators `T` actually provides — `+`, `-`, `*`, `/`, unary `-`, `==`, `<`, `<=`, a `toString()` method and (if `T` is not trivially destructible) a `__gc` handler that calls the destructor.
+
+A minimal class binding looks like this:
+
+```c++
+#include <luacpp/State.hpp>
+#include <luacpp/Metatable.hpp>
+
+struct Vector {
+	Vector(float ax = 0, float ay = 0) : x(ax), y(ay) {}
+	Vector operator+(const Vector& rhs) const { return Vector(x + rhs.x, y + rhs.y); }
+	Vector operator-() const { return Vector(-x, -y); }
+	bool operator==(const Vector& rhs) const { return x == rhs.x && y == rhs.y; }
+	float x; float y;
+};
+
+int main() {
+	Lua::State lua(Lua::State::LibBase);
+	Lua::Metatable<Vector>::registerMetatable(lua);
+	lua.bindConstructor<Vector, float, float>("Vector");
+
+	lua.loadAndExecuteScript("v = Vector(1, 2) + Vector(3, 4)");
+	Vector* v = lua.readVariable<Vector*>("v"); // v->x == 4, v->y == 6
+	return 0;
+}
+```
+
+`bindConstructor` creates a callable Lua table so `Vector(1, 2)` in Lua constructs the object directly into Lua-owned userdata (no extra copy, no factory function required).
+
+You can also expose member functions and data members:
+
+```c++
+struct Vec {
+	float x, y;
+	Vec(float ax, float ay) : x(ax), y(ay) {}
+	float length() const { return std::sqrt(x * x + y * y); }
+	Vec scaled(float s) const { return Vec(x * s, y * s); }
+};
+
+Lua::Metatable<Vec>::registerMetatable(lua);
+lua.bindConstructor<Vec, float, float>("Vec");
+lua.bindMethod<Vec, &Vec::length>("length");
+lua.bindMethod<Vec, &Vec::scaled>("scaled");
+lua.bindProperty<Vec, &Vec::x>("x");
+lua.bindProperty<Vec, &Vec::y>("y");
+```
+
+In Lua you can then do:
+```lua
+v = Vec(3, 4)
+print(v:length())       -- method call via colon syntax
+v2 = v:scaled(2)
+v.x = 10                -- property write
+print(v.x)              -- property read
+```
+
+`bindStaticField` and `bindStaticFunction` attach values or free functions to the constructor table, so `Vec.EPSILON` or `Vec.fromAngle(pi)` work as well.
+
+#### A note on ownership
+When a C++ value is pushed to Lua (e.g. as the return value of a bound method), it is *copied* into a fresh userdata that Lua owns and garbage-collects. Returning `T&` or `T*` from a bound method does not preserve aliasing — mutations on the Lua side will not propagate back to the original C++ object. To expose live state, bind explicit accessor methods rather than returning references or pointers.
+
 ## Roadmap
-- better support for metatables so that it's easier to support object-oriented programming.
 - support of memory allocation
 - support for coroutines
 - improvement of error handling
