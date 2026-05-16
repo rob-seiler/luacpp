@@ -262,3 +262,4 @@ When a C++ value is pushed to Lua (e.g. as the return value of a bound method), 
 - improvement of error handling
 - improvement of debug methods
 - better documentation ;)
+- reflection-based auto-binding (C++26, P2996): a single `shareInLua<T>(state)` call that registers every public data member and member function of `T` on its metatable, replacing the per-member `bindMethod` / `bindProperty` calls. Opt-out via member annotations (`[[=Lua::reflect::skip]]`, `[[=Lua::reflect::rename("...")]]`). Blocked on mainline Clang/GCC/MSVC support for P2996.
