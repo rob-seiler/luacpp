@@ -142,10 +142,20 @@ struct DivOp {
 template <typename A, typename B, typename Op, typename = void>
 struct can_apply : std::false_type { };
 
+// Cross-type guard: for A != B, require that neither operand is implicitly
+// convertible to the other. This blocks the case where a user type with an
+// implicit constructor (e.g. `Vector(float,float)`) makes `Vector + double`
+// well-formed only via `double -> Vector` conversion. Such a branch would
+// silently construct a Vector from a number and also surface as a C4244
+// narrowing warning inside the apply body. Users who want a real mixed-type
+// operator should either mark their ctor `explicit` or specialize Metatable.
 template <typename A, typename B, typename Op>
 struct can_apply<A, B, Op,
                  std::void_t<decltype(Op::apply(std::declval<A>(), std::declval<B>()))>>
-	: std::true_type { };
+	: std::bool_constant<
+		std::is_same_v<A, B>
+		|| (!std::is_convertible_v<B, A> && !std::is_convertible_v<A, B>)
+	  > { };
 
 template <typename T, typename Op>
 void registerBinaryOp(Table& mt) {

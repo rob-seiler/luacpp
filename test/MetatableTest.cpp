@@ -11,7 +11,10 @@ struct Vector {
     Vector operator+(const Vector& rhs) const { return Vector(x + rhs.x, y + rhs.y); }
     Vector operator-(const Vector& rhs) const { return Vector(x - rhs.x, y - rhs.y); }
     Vector operator*(const Vector& rhs) const { return Vector(x * rhs.x, y * rhs.y); }
-    Vector operator/(const Vector& rhs) const { return Vector(x / rhs.x, y / rhs.y); }
+    Vector operator/(const Vector& rhs) const {
+        return Vector(rhs.x != 0.0f ? x / rhs.x : 0.0f,
+                      rhs.y != 0.0f ? y / rhs.y : 0.0f);
+    }
     Vector operator-() const { return Vector(-x, -y); }
     bool operator==(const Vector& rhs) const { return x == rhs.x && y == rhs.y; }
     float x; float y;
@@ -185,14 +188,17 @@ TEST(MetatableTest, DivisionByZero) {
         return 1;
     });
 
-    // Test division by zero - for floats this produces inf/nan (not ideal but doesn't crash)
+    // Division by Vector(0,0): operator/ guards against zero divisors and
+    // returns 0 per component, so the result is deterministic and free of
+    // inf/nan.
     const char* src = "v1 = createVector(10,20); v2 = createVector(0,0); result = v1 / v2";
     int status = lua.loadAndExecuteScript(src);
-    EXPECT_EQ(status, 0);  // Floats allow division by zero (produces inf/nan)
+    EXPECT_EQ(status, 0);
 
     Vector* res = lua.readVariable<Vector*>("result");
     ASSERT_NE(res, nullptr);
-    // Result will be inf, which is not ideal but at least doesn't crash
+    EXPECT_FLOAT_EQ(res->x, 0.0f);
+    EXPECT_FLOAT_EQ(res->y, 0.0f);
 }
 
 } // namespace Lua
