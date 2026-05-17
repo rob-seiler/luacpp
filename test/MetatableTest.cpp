@@ -127,8 +127,12 @@ TEST(MetatableTest, ErrorHandling_WrongType) {
     });
 
     // Boolean is not convertible to Vector or double — should error.
-    // (Note: Vector + 5 IS valid via Vector's implicit float ctor — mixed-type
-    // scalar ops are supported when conversion is possible.)
+    // (Note: Vector + number ALSO errors here. Vector has an implicit
+    // `Vector(float, float)` ctor with defaults, so the cross-type guard in
+    // can_apply intentionally disables the T+double / double+T branches to
+    // avoid silently constructing a Vector from a scalar. Users who want a
+    // real mixed-type operator must mark their ctor `explicit` or define
+    // operator+(double) directly — see BindMixedOpTest for examples.)
     const char* src = "v1 = createVector(1,2); result = v1 + true";
     int status = lua.loadAndExecuteScript(src);
     EXPECT_NE(status, 0);  // Should fail with error

@@ -12,6 +12,12 @@ namespace Lua {
 // ============================================================================
 // Test Types
 // ============================================================================
+// Wrapped in an anonymous namespace so these test-local types do not collide
+// with same-named types in other test TUs (e.g. TypeSafetyTest.cpp also
+// defines `Point` and `Counter`). Without this, both would resolve to
+// `Lua::Point` / `Lua::Counter` and the differing definitions would violate
+// the ODR.
+namespace {
 
 struct Point {
     Point(float x_, float y_) : x(x_), y(y_) {}
@@ -95,6 +101,8 @@ struct Particle {
     Particle(float ax, float ay, int h)
         : x(ax), y(ay), health(h), name("particle"), velocity(0, 0) {}
 };
+
+} // namespace (test types)
 
 // ============================================================================
 // Constructor Binding Tests
@@ -661,6 +669,8 @@ TEST(BindComparisonTest, LessEqual) {
 // Mixed-Type Operator Tests
 // ============================================================================
 
+namespace {
+
 struct ScalarVec {
     float x, y;
     explicit ScalarVec(float ax = 0, float ay = 0) : x(ax), y(ay) {}
@@ -673,6 +683,8 @@ struct ScalarVec {
 inline ScalarVec operator*(double s, const ScalarVec& v) {
     return ScalarVec(static_cast<float>(s * v.x), static_cast<float>(s * v.y));
 }
+
+} // namespace
 
 TEST(BindMixedOpTest, VecMulScalar) {
     State lua(State::LibBase);
@@ -740,6 +752,8 @@ TEST(BindMixedOpTest, UnsupportedScalarErrors) {
 // A type with the full set of mixed-type arithmetic operators, used to
 // exercise the AddOp T+double / double+T and DivOp double/T paths that
 // ScalarVec does not cover.
+namespace {
+
 struct ArithVec {
     float v;
     explicit ArithVec(float val = 0) : v(val) {}
@@ -753,6 +767,8 @@ inline ArithVec operator+(double s, const ArithVec& a) {
 inline ArithVec operator/(double s, const ArithVec& a) {
     return ArithVec(static_cast<float>(s / a.v));
 }
+
+} // namespace
 
 TEST(BindMixedOpTest, VecPlusScalar) {
     State lua(State::LibBase);
@@ -1089,6 +1105,8 @@ TEST(BindPrerequisiteTest, StaticFunctionWithoutConstructor_Throws) {
 // proper metatable (not a raw lightuserdata), and must not destructively move
 // from aliased C++ objects.
 
+namespace {
+
 struct MovableTracker {
     int value;
     bool wasMovedFrom;
@@ -1120,6 +1138,8 @@ struct ReturnSource {
 
     float storedX() const { return stored.x; }
 };
+
+} // namespace
 
 TEST(BindReturnTest, PointerReturn_WrapsAsUserdataWithMetatable) {
     State lua(State::LibBase);

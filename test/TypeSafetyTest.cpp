@@ -10,6 +10,11 @@ namespace Lua {
 // ============================================================================
 // Test Types
 // ============================================================================
+// Wrapped in an anonymous namespace so these test-local types do not collide
+// with same-named types in other test TUs (e.g. BindTest.cpp also defines a
+// `Point` and `Counter`). Without this, both would resolve to `Lua::Point` /
+// `Lua::Counter` and the differing definitions would violate the ODR.
+namespace {
 
 struct Point {
     Point(float x_, float y_) : x(x_), y(y_) {}
@@ -20,6 +25,8 @@ struct Counter {
     explicit Counter(int value_) : value(value_) {}
     int value;
 };
+
+} // namespace
 
 // ============================================================================
 // Type Safety Tests (Issue #2 from code review)
