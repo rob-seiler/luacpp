@@ -46,6 +46,11 @@ void Basics::pushLightUserData(lua_State* state, void* value) { lua_pushlightuse
 bool Basics::isInteger(lua_State* state, int index) { return lua_isinteger(state, index); }
 
 void* Basics::asUserData(lua_State* state, int index) { return lua_touserdata(state, index); }
+
+void* Basics::checkUserData(lua_State* state, int index, const char* tname) {
+	return luaL_checkudata(state, index, tname);
+}
+
 bool Basics::asBoolean(lua_State* state, int index) { return lua_toboolean(state, index) != 0; }
 double Basics::asNumber(lua_State* state, int index) { return lua_tonumber(state, index); }
 int64_t Basics::asInteger(lua_State* state, int index) { return lua_tointeger(state, index); }
@@ -56,5 +61,9 @@ void* Basics::allocateUserData(lua_State* state, size_t size, int userValues) {
 }
 
 int Basics::calcUpValueIndex(int index) { return lua_upvalueindex(index); }
+
+int Basics::error(lua_State* state, const char* message) {
+	return luaL_error(state, "%s", message);
+}
 
 } //namespace Lua

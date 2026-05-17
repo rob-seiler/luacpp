@@ -4,10 +4,28 @@
 #include "Basics.hpp"
 
 #include <string>
+#include <type_traits>
 
 struct lua_State;
 
 namespace Lua {
+
+// Forward declaration for Metatable
+template <typename T>
+struct Metatable;
+
+namespace detail {
+
+// Marker trait: detects whether <luacpp/Metatable.hpp> is included at the
+// point where Stack<T*> is instantiated for a class type. The primary
+// template is `false`; Metatable.hpp adds a partial specialization that
+// matches once Metatable<T> is fully defined. The static_assert in
+// Stack<T*>::get below uses this to produce a precise diagnostic instead
+// of an "incomplete type" cascade when the user forgets the include.
+template <typename T, typename = void>
+struct metatable_visible : std::false_type {};
+
+} // namespace detail
 
 template <typename T>
 struct Stack {
@@ -34,15 +52,7 @@ struct Stack {
 	}
 
 	static T get(lua_State* state, int index) {
-		if constexpr (std::is_pointer_v<T>) {
-			return static_cast<T>(Basics::asUserData(state, index));
-		} else if constexpr (std::is_same_v<T, bool>) {
-			return Basics::asBoolean(state, index);
-		} else if constexpr (std::is_floating_point_v<T>) {
-			return static_cast<T>(Basics::asNumber(state, index));
-		} else if constexpr (std::is_integral_v<T>) {
-			return static_cast<T>(Basics::asInteger(state, index));
-		} else if constexpr (std::is_same_v<T, const char*>) {
+		if constexpr (std::is_same_v<T, const char*>) {
 			return Basics::asString(state, index);
 		} else if constexpr (std::is_same_v<T, std::string_view>) {
 			size_t len;
@@ -52,6 +62,27 @@ struct Stack {
 			size_t len;
 			const char* str = Basics::asString(state, index, &len);
 			return std::string(str, len);
+		} else if constexpr (std::is_pointer_v<T>) {
+			using PointeeType = std::remove_pointer_t<T>;
+			// For class types, use type-safe checkUserData
+			if constexpr (std::is_class_v<PointeeType>) {
+				static_assert(detail::metatable_visible<PointeeType>::value,
+					"Stack<T*>::get for a class type requires <luacpp/Metatable.hpp> "
+					"to be included (typically pulled in transitively via "
+					"<luacpp/State.hpp>). Add the include and retry.");
+				const char* tname = Metatable<PointeeType>::metatableName();
+				void* ud = Basics::checkUserData(state, index, tname);
+				return static_cast<T>(ud);
+			} else {
+				// For non-class pointers (e.g., void*), use asUserData
+				return static_cast<T>(Basics::asUserData(state, index));
+			}
+		} else if constexpr (std::is_same_v<T, bool>) {
+			return Basics::asBoolean(state, index);
+		} else if constexpr (std::is_floating_point_v<T>) {
+			return static_cast<T>(Basics::asNumber(state, index));
+		} else if constexpr (std::is_integral_v<T>) {
+			return static_cast<T>(Basics::asInteger(state, index));
 		} else {
 			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
 		}

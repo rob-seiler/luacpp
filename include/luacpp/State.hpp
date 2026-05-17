@@ -7,6 +7,7 @@
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
+#include "detail/Bind.hpp"
 
 #include <string>
 #include <vector>
@@ -285,17 +286,17 @@ public:
 
 	/**
 	 * @brief Create a new userdata object managed by lua
-	 * 
 	 * The userdata object is allocated on the lua stack and can be accessed by the script. It is automatically freed when it
 	 * is not used anymore (garbage collection).
 	 * 
 	 * @tparam T The type of the userdata object
+	 * @tparam Args Constructor argument types
 	 * @return The userdata object
 	*/
-	template <class T>
-	T* createUserData() {
+	template <class T, typename... Args>
+	T* createUserData(Args&&... args) {
 		void* userData = Basics::allocateUserData(m_state, sizeof(T)); //allocate the userdata on the lua stack
-		return new (userData) T(); //call constructor via placement new
+		return new (userData) T(std::forward<Args>(args)...); //call constructor via placement new
 	}
 
 	/**
@@ -426,6 +427,68 @@ public:
 
 	lua_State* getState() const { return m_state; }
 
+	/**
+	 * \brief Bind a C++ constructor for type T as a callable Lua function
+	 * \tparam T The type to bind a constructor for
+	 * \tparam Args The argument types for the constructor
+	 * \param name The name of the constructor function in Lua
+	 */
+	template <typename T, typename... Args>
+	void bindConstructor(const char* name) {
+		Bind::constructor<T, Args...>(*this, name);
+	}
+
+	/**
+	 * \brief Bind a C++ member function as a Lua method on T's metatable
+	 * \tparam T The class whose metatable receives the method
+	 * \tparam Method Non-type template parameter: pointer-to-member-function
+	 * \param name Name of the method in Lua
+	 *
+	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
+	 */
+	template <typename T, auto Method>
+	void bindMethod(const char* name) {
+		Bind::method<T, Method>(*this, name);
+	}
+
+	/**
+	 * \brief Bind a C++ data member as a Lua property on T's metatable
+	 * \tparam T The class whose metatable receives the property
+	 * \tparam Field Non-type template parameter: pointer-to-member-data
+	 * \param name Name of the property in Lua
+	 *
+	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
+	 */
+	template <typename T, auto Field>
+	void bindProperty(const char* name) {
+		Bind::property<T, Field>(*this, name);
+	}
+
+	/**
+	 * \brief Attach a value as a static field on a constructor table.
+	 * \param tableName Name of the constructor table (must already exist)
+	 * \param fieldName Field key
+	 * \param value Value (primitive, string, or user type with Metatable)
+	 */
+	template <typename V>
+	void bindStaticField(const char* tableName, const char* fieldName, V value) {
+		Bind::staticField(*this, tableName, fieldName, std::forward<V>(value));
+	}
+
+	/**
+	 * \brief Attach a free function as a static method on a constructor table.
+	 * \tparam Fn Non-type template parameter: pointer-to-function
+	 */
+	template <auto Fn>
+	void bindStaticFunction(const char* tableName, const char* funcName) {
+		Bind::staticFunction<Fn>(*this, tableName, funcName);
+	}
+
+	/**
+	 * \brief Get the registry for direct access
+	 */
+	Registry& getRegistry() { return m_registry; }
+
 private:
 	constexpr static const char* const HandleName = "StateHandle";
 	constexpr static const char* const GlobalScope = "_G";
@@ -457,5 +520,11 @@ private:
 };
 
 } // namespace Lua
+
+// Template implementations for Bind::method, Bind::property, etc.
+// Included here — after the State class is fully defined — so BindImpl.inl
+// can freely use State's interface. This also lets users include Bind.hpp
+// directly without depending on include order.
+#include "detail/BindImpl.inl"
 
 #endif // LUACPP_STATE_HPP
