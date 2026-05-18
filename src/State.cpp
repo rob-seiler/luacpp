@@ -11,6 +11,15 @@ struct LibraryLoadingFunction {
 	const char* name;
 	int (*func)(lua_State*);
 };
+
+// Detects whether s.data() points into the std::string object itself (Short
+// String Optimization). Portable across libstdc++, libc++ and MSVC. uintptr_t
+// conversion sidesteps the UB of comparing pointers from different objects.
+bool hasInlineStorage(const std::string& s) {
+	const auto data  = reinterpret_cast<std::uintptr_t>(s.data());
+	const auto begin = reinterpret_cast<std::uintptr_t>(&s);
+	return data >= begin && data < begin + sizeof(std::string);
+}
 } // namespace
 
 namespace Lua {
@@ -50,6 +59,55 @@ State::~State() {
 			s_debugHooks.erase(res);
 		}
 	}
+}
+
+void State::pushExternalString(const std::string& s) {
+	if (hasInlineStorage(s)) {
+		// SBO: bytes live inside the std::string object. Referencing them
+		// externally would tie Lua to the object's address — not safe. Have
+		// Lua make its own copy; the cost is tiny (a handful of bytes).
+		Basics::pushString(m_state, s.data(), s.size());
+	} else {
+		// Heap buffer: address is stable regardless of where the std::string
+		// header lives. Safe to reference without copying.
+		Basics::pushExternalString(m_state, s.data(), s.size(), nullptr, nullptr);
+	}
+}
+
+void State::transferStringOwnership(std::string s) {
+	// Pre-condition: caller previously pushed this string via pushExternalString.
+	// Whether that push went the SBO-copy path or the external-reference path is
+	// re-derived here from the same SBO check, so the two stay in sync.
+	if (hasInlineStorage(s)) {
+		// Lua already owns its own copy from the push. Nothing to anchor.
+		return;
+	}
+	// Long string: swap the heap buffer into a heap-allocated std::string holder.
+	// std::string swap on two long strings is a pointer swap — the buffer Lua
+	// references does not move. Then anchor the holder in the registry.
+	auto holder = std::make_unique<std::string>();
+	holder->swap(s);
+	anchorOwned(holder.get(), &State::deleteTyped<std::string>);
+	holder.release();
+}
+
+void State::anchorOwned(void* ptr, void (*deleter)(void*)) {
+	void** slot = static_cast<void**>(lua_newuserdatauv(m_state, sizeof(void*), 0));
+	*slot = ptr;
+
+	lua_createtable(m_state, 0, 1);
+	lua_pushlightuserdata(m_state, reinterpret_cast<void*>(deleter));
+	lua_pushcclosure(m_state, [](lua_State* L) -> int {
+		void** s = static_cast<void**>(lua_touserdata(L, 1));
+		auto del = reinterpret_cast<void(*)(void*)>(
+			lua_touserdata(L, lua_upvalueindex(1)));
+		del(*s);
+		return 0;
+	}, 1);
+	lua_setfield(m_state, -2, "__gc");
+	lua_setmetatable(m_state, -2);
+
+	luaL_ref(m_state, LUA_REGISTRYINDEX);
 }
 
 void State::openLibrary(Library library) {

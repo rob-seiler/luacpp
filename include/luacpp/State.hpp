@@ -399,6 +399,52 @@ public:
 	template <typename T>
 	void pushToStack(T value) { return Stack<T>::push(m_state, value); }
 
+	/**
+	 * @brief Push a string by reference, without copying its bytes.
+	 *
+	 * The caller MUST guarantee that the buffer behind @p s outlives every Lua
+	 * reference to it — i.e. either until lua_close, or until transferOwnership
+	 * has handed the holding container to Lua's GC.
+	 *
+	 * @note Available since Lua 5.5 (uses lua_pushexternalstring).
+	 * @note Mutating @p s while Lua holds a reference is undefined behavior;
+	 *       Lua relies on string immutability for hash caching and interning.
+	 */
+	void pushExternalString(const std::string& s);
+
+	/**
+	 * @brief Anchor a C++ object in this state's registry, transferring its
+	 *        lifetime to the Lua GC.
+	 *
+	 * The object is move-constructed onto the heap and held by a Lua userdata
+	 * whose __gc deletes it. The userdata is anchored in the registry so the
+	 * object survives until lua_close (or until you explicitly release the
+	 * registry reference, which this API does not currently expose).
+	 *
+	 * Intended use: keep a container alive whose elements were previously
+	 * published via pushExternalString. After this call the original is
+	 * moved-from; do not access it.
+	 *
+	 * @note @p T must be node-address-stable under move (std::map,
+	 *       std::unordered_map, std::list, std::deque, or any
+	 *       container that does not relocate its elements on move).
+	 *       std::string is supported as a special case: the SBO/heap branch
+	 *       in pushExternalString and here keeps the contract consistent
+	 *       (SBO strings are copied at push time and need no anchoring;
+	 *       heap strings are pointer-swapped into a registry-anchored holder).
+	 */
+	template <typename T>
+	void transferOwnership(T&& obj) {
+		using Owned = std::decay_t<T>;
+		if constexpr (std::is_same_v<Owned, std::string>) {
+			transferStringOwnership(std::forward<T>(obj));
+		} else {
+			auto holder = std::make_unique<Owned>(std::forward<T>(obj));
+			anchorOwned(holder.get(), &State::deleteTyped<Owned>);
+			holder.release();
+		}
+	}
+
 
 	/**
 	 * @brief reads the complete stack
@@ -494,6 +540,12 @@ private:
 	constexpr static const char* const GlobalScope = "_G";
 
 	static int dispatchMethod(lua_State* state);
+
+	void anchorOwned(void* ptr, void (*deleter)(void*));
+	void transferStringOwnership(std::string s);
+
+	template <typename U>
+	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
 
 	/**
 	 * @brief loads a function from the global scope onto the stack
