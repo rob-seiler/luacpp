@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Lua {
 namespace {
@@ -175,6 +176,63 @@ TEST_F(ExternalStringTest, transferOwnership_worksForUnorderedMap) {
 	          "externally managed string number one, long enough to be heap allocated");
 	EXPECT_EQ(lua.readVariable<std::string>("y"),
 	          "externally managed string number two, long enough to be heap allocated");
+}
+
+TEST_F(ExternalStringTest, pushExternalString_shortStringTakesCopyPath) {
+	// Proves the SBO branch: a short std::string must be copied at push time,
+	// because referencing its in-object bytes externally would tie Lua to the
+	// std::string object's stack/heap address.
+	State lua(State::LibNone);
+	std::string s = "short";
+
+	lua.pushExternalString(s);
+	const char* result = Basics::asString(lua.getState(), -1, nullptr);
+	EXPECT_NE(result, s.data())
+	    << "SBO strings must be copied into Lua, not externally referenced";
+
+	lua.popStack(1);
+}
+
+TEST_F(ExternalStringTest, transferOwnership_long_bufferStableAcrossSourceScope) {
+	// The strong proof of the heap-path transfer: capture Lua's pointer before
+	// the source goes out of scope, then re-check it after. Equal pointers
+	// prove the heap buffer was preserved at its original address — and thus
+	// that the swap-into-anchored-holder really happened.
+	State lua(State::LibNone);
+	const char* originalPtr = nullptr;
+	{
+		std::string s = "long source string that takes the external pointer path";
+		originalPtr = s.data();
+		lua.pushExternalString(s);
+		lua_setglobal(lua.getState(), "longVal");
+		lua.transferOwnership(std::move(s));
+	}
+	lua_getglobal(lua.getState(), "longVal");
+	const char* afterPtr = Basics::asString(lua.getState(), -1, nullptr);
+	EXPECT_EQ(afterPtr, originalPtr)
+	    << "transferOwnership must preserve the heap buffer Lua references";
+	lua.popStack(1);
+}
+
+TEST_F(ExternalStringTest, transferOwnership_long_dataSurvivesMemoryChurn) {
+	// Without AddressSanitizer we cannot deterministically detect a use-after-
+	// free, but heavy churn after the source's destruction makes it likely
+	// that any freed buffer gets overwritten. If transferOwnership were a
+	// no-op for long strings, the readVariable below would very likely return
+	// garbage.
+	const std::string expected = "long source string for the churn test, definitely heap";
+	State lua(State::LibNone);
+	{
+		std::string s = expected;
+		lua.pushExternalString(s);
+		lua_setglobal(lua.getState(), "longVal");
+		lua.transferOwnership(std::move(s));
+	}
+	std::vector<std::vector<char>> churn;
+	for (int i = 0; i < 100; ++i) {
+		churn.emplace_back(2048, 'Z');
+	}
+	EXPECT_EQ(lua.readVariable<std::string>("longVal"), expected);
 }
 
 TEST_F(ExternalStringTest, transferOwnership_singleStdStringShort_SBOPath) {
