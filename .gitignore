@@ -1,4 +1,5 @@
 build
+build_on
 extern/lua/include
 extern/lua/src
 /.vscode

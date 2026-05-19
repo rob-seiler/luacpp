@@ -3,7 +3,20 @@ cmake_minimum_required(VERSION 3.10)
 
 project(lua)
 set(CMAKE_CXX_STANDARD 17)
-add_library(${PROJECT_NAME} STATIC)
+
+# When the embedder enables C-module loading on Windows we need lua as a
+# DLL so that the host EXE and any LoadLibrary'd module share the same
+# Lua image. On POSIX a single static lua is enough; dlopen'd modules
+# resolve lua_* against the host executable's exported symbols.
+if(LUACPP_ENABLE_CMODULE_LOADING AND WIN32)
+	add_library(${PROJECT_NAME} SHARED)
+	target_compile_definitions(${PROJECT_NAME}
+		PRIVATE   LUA_BUILD_AS_DLL  # inside lua.dll: LUA_API -> dllexport
+		INTERFACE LUA_BUILD_AS_DLL  # consumers:     LUA_API -> dllimport
+	)
+else()
+	add_library(${PROJECT_NAME} STATIC)
+endif()
 
 if(NOT EXISTS "${PROJECT_SOURCE_DIR}/src")
 	message(STATUS "src directory not found. Extracting lua sources from package...")
@@ -90,16 +103,29 @@ file(COPY ${HEADER_FILES} DESTINATION ${PROJECT_SOURCE_DIR}/include/lua) # Copy 
 # lands), then undef/redefines LUA_API and its aliases to be extern "C". The
 # .c source's own later '#include "luaconf.h"' is then a no-op (guard hit),
 # so our overrides survive into all subsequent declarations and definitions.
+#
+# When Lua is built as a DLL (LUA_BUILD_AS_DLL), the macros also need to
+# carry __declspec(dllexport) inside the DLL build and __declspec(dllimport)
+# everywhere else. The conditional below reconstructs that logic with the
+# extra extern "C" wrap.
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/lua_cxx_extern_c.h
 "// Auto-generated. Force-included into every Lua TU when compiled as C++.
+// Applied only to the lua target's own sources (PRIVATE compile option),
+// so when LUA_BUILD_AS_DLL is set we are always on the export side.
+// Consumers receive dllimport via luaconf.h's normal flow through lua.hpp.
 #include \"luaconf.h\"
 #ifdef __cplusplus
+#  if defined(LUA_BUILD_AS_DLL)
+#    define LUACPP_API_DECL extern \"C\" __declspec(dllexport)
+#  else
+#    define LUACPP_API_DECL extern \"C\"
+#  endif
 #  undef LUA_API
-#  define LUA_API extern \"C\"
+#  define LUA_API LUACPP_API_DECL
 #  undef LUALIB_API
-#  define LUALIB_API extern \"C\"
+#  define LUALIB_API LUACPP_API_DECL
 #  undef LUAMOD_API
-#  define LUAMOD_API extern \"C\"
+#  define LUAMOD_API LUACPP_API_DECL
 #endif
 ")
 

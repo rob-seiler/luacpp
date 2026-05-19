@@ -1,4 +1,29 @@
 cmake_minimum_required(VERSION 3.10)
+
+# Off by default: favors the embedded/single-binary deployment model — no
+# shared libraries to ship, one artifact to distribute. Turn on when scripts
+# need to load C modules at runtime via require().
+#
+# Implications when ON:
+#   POSIX:   Lua stays static. The host executable gets ENABLE_EXPORTS
+#            (-rdynamic on Linux) so dlopen'd modules resolve lua_* against
+#            its exported symbols at load time.
+#   Windows: Lua is built as a SHARED library (lua.dll). The host EXE and
+#            all C modules link against the import library; the DLL must
+#            be deployed alongside the application. Windows PE/COFF has no
+#            equivalent to POSIX's prozessweite Symboltabelle, so a single
+#            shared Lua image is the only clean way to share state.
+option(LUACPP_ENABLE_CMODULE_LOADING
+       "Allow Lua scripts to require() compiled C modules at runtime" OFF)
+
+if(LUACPP_ENABLE_CMODULE_LOADING)
+	# Unify runtime artifacts in build/bin so that lua.dll, the test EXE
+	# and any plugin DLL land in the same directory — required on Windows
+	# for the loader to find lua.dll without PATH manipulation.
+	set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+	set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+endif()
+
 add_subdirectory(${CMAKE_SOURCE_DIR}/extern/lua)
 
 project(luacpp)
@@ -93,25 +118,19 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 	endif()
 
 	# Build the bundled UUID plugin used as the require()-based smoke
-	# test. The plugin owns its build settings (target name, suffix,
-	# platform link flags) in plugins/uuid/CMakeLists.txt; here we only
-	# wire its build artifact into the test executable.
-	#
-	# add_subdirectory is a no-op on Windows because the plugin's CMake
-	# file returns early there. The TARGET check handles both the
-	# platform-skipped and the file-missing case.
-	if(EXISTS ${PROJECT_SOURCE_DIR}/plugins/uuid/CMakeLists.txt)
+	# test. Only wired up when LUACPP_ENABLE_CMODULE_LOADING is ON —
+	# without it there is no plugin loading mechanism to exercise.
+	if(LUACPP_ENABLE_CMODULE_LOADING AND EXISTS ${PROJECT_SOURCE_DIR}/plugins/uuid/CMakeLists.txt)
 		add_subdirectory(plugins/uuid)
-		if(TARGET uuid_module)
-			# ENABLE_EXPORTS makes the host executable expose its lua_*
-			# symbols so dlopen'd modules can resolve against them.
-			set_target_properties(${PROJECT_NAME}_test PROPERTIES ENABLE_EXPORTS ON)
-			target_compile_definitions(${PROJECT_NAME}_test PRIVATE
-				LUACPP_UUID_MODULE_DIR="$<TARGET_FILE_DIR:uuid_module>"
-				LUACPP_HAVE_UUID_MODULE
-			)
-			add_dependencies(${PROJECT_NAME}_test uuid_module)
-		endif()
+		# On POSIX: ENABLE_EXPORTS makes the host EXE expose its lua_*
+		# symbols so dlopen'd modules can resolve against them. Harmless
+		# on Windows (where module loading goes through lua.dll instead).
+		set_target_properties(${PROJECT_NAME}_test PROPERTIES ENABLE_EXPORTS ON)
+		target_compile_definitions(${PROJECT_NAME}_test PRIVATE
+			LUACPP_UUID_MODULE_DIR="$<TARGET_FILE_DIR:uuid_module>"
+			LUACPP_HAVE_UUID_MODULE
+		)
+		add_dependencies(${PROJECT_NAME}_test uuid_module)
 	endif()
 else()
 	message("No test project configured")

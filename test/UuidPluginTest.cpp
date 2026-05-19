@@ -14,9 +14,17 @@ class UuidPluginTest : public ::testing::Test {};
 // Helper: create a state ready to require("uuid") from the build's plugin dir.
 // Defined as a function (not a fixture method) because State has no copy ctor;
 // returning by move keeps each test's state independent.
+//
+// Lua's package.cpath patterns match the platform-specific shared-library
+// extension: .dll on Windows, .so elsewhere (including macOS — Lua's default
+// cpath uses .so even on macOS).
 static State makeStateWithUuidLoadable() {
 	State lua(State::LibBase | State::LibPackage);
+#ifdef _WIN32
+	lua.addModuleSearchPath(LUACPP_UUID_MODULE_DIR "/?.dll", /*forNativeModule=*/true);
+#else
 	lua.addModuleSearchPath(LUACPP_UUID_MODULE_DIR "/?.so", /*forNativeModule=*/true);
+#endif
 	return lua;
 }
 
