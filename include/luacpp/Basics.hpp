@@ -67,6 +67,28 @@ public:
 	static void pushInteger(lua_State* state, int64_t value);
 	static void pushString(lua_State* state, const char* value);
 	static void pushString(lua_State* state, const char* value, size_t len);
+
+	/**
+	 * @brief Deallocator invoked by Lua when an externally-managed string is collected.
+	 * @note  Structurally compatible with Lua's lua_Alloc. Lua calls it with nsize==0
+	 *        to signal that the buffer is no longer referenced; osize is len+1
+	 *        (including the null terminator) and ptr is the original buffer.
+	 */
+	typedef void* (*ExternalStringDeallocator)(void* ud, void* ptr, size_t osize, size_t nsize);
+
+	/**
+	 * @brief Push a string into Lua without copying its bytes.
+	 * @param value    Buffer of size len+1; the byte at value[len] MUST be '\0'.
+	 * @param len      Length excluding the null terminator.
+	 * @param dealloc  Called when Lua releases the reference. Pass nullptr when the
+	 *                 buffer has static lifetime — Lua then never tries to free it.
+	 * @param ud       Opaque pointer forwarded to dealloc as its first argument.
+	 * @note The buffer must remain valid and unmodified until dealloc is invoked.
+	 *       Available since Lua 5.5.
+	 */
+	static void pushExternalString(lua_State* state, const char* value, size_t len,
+	                               ExternalStringDeallocator dealloc, void* ud);
+
 	static void pushCFunction(lua_State* state, NativeFunction value);
 	static void pushLightUserData(lua_State* state, void* value);
 

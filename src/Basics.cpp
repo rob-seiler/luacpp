@@ -40,6 +40,12 @@ void Basics::pushNumber(lua_State* state, double value) { lua_pushnumber(state, 
 void Basics::pushInteger(lua_State* state, int64_t value) { lua_pushinteger(state, value); }
 void Basics::pushString(lua_State* state, const char* value) { lua_pushstring(state, value); }
 void Basics::pushString(lua_State* state, const char* value, size_t len) { lua_pushlstring(state, value, len); }
+
+void Basics::pushExternalString(lua_State* state, const char* value, size_t len,
+                                ExternalStringDeallocator dealloc, void* ud) {
+	lua_pushexternalstring(state, value, len, reinterpret_cast<lua_Alloc>(dealloc), ud);
+}
+
 void Basics::pushCFunction(lua_State* state, NativeFunction value) { lua_pushcfunction(state, value); }
 void Basics::pushLightUserData(lua_State* state, void* value) { lua_pushlightuserdata(state, value); }
 
