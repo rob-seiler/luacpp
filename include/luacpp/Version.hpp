@@ -55,9 +55,7 @@ private:
 	uint8_t m_patch;
 };
 
-#ifndef USE_CPP20_MODULES
-constexpr inline static const Version LuaCppVersion{0, 1, 0};
-#endif
+constexpr inline static const Version LuaCppVersion{0, 2, 0};
 
 } // namespace Lua
 

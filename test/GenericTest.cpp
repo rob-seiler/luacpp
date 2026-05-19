@@ -1,13 +1,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Generic;
-import luacpp.State;
-#else
 #include <luacpp/Generic.hpp>
 #include <luacpp/State.hpp>
-#endif
 
 #include <lua/lua.hpp>
 

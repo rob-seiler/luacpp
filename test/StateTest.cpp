@@ -1,13 +1,8 @@
 #include <gtest/gtest.h>
 #include <string>
 
-#ifdef USE_CPP20_MODULES
-import luacpp.State;
-import luacpp.TypeMismatchException;
-#else
 #include <luacpp/State.hpp>
 #include <luacpp/TypeMismatchException.hpp>
-#endif
 
 //#include <lua/lua.hpp>
 struct lua_State;
