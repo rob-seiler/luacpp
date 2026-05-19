@@ -130,6 +130,33 @@ void State::preloadLibrary(Library library) {
 	luaL_openselectedlibs(m_state, 0, static_cast<int>(library));
 }
 
+void State::addModuleSearchPath(const std::string& pattern, bool forNativeModule) {
+	// Pop guard: ensure the package table (or the placeholder for it) is
+	// off the stack on every exit path.
+	if (lua_getglobal(m_state, "package") != LUA_TTABLE) {
+		lua_pop(m_state, 1);
+		return; // LibPackage not loaded — no package table to extend
+	}
+
+	const char* fieldName = forNativeModule ? "cpath" : "path";
+	lua_getfield(m_state, -1, fieldName);
+	size_t currentLen = 0;
+	const char* current = lua_tolstring(m_state, -1, &currentLen);
+
+	std::string combined;
+	combined.reserve(pattern.size() + 1 + currentLen);
+	combined.append(pattern);
+	if (current && currentLen > 0) {
+		combined.push_back(';');
+		combined.append(current, currentLen);
+	}
+
+	lua_pop(m_state, 1); // pop old path/cpath
+	lua_pushlstring(m_state, combined.data(), combined.size());
+	lua_setfield(m_state, -2, fieldName);
+	lua_pop(m_state, 1); // pop package table
+}
+
 int State::registerNativeFunction(const char* name, NativeFunction func, int numUpValues) {
 	lua_pushcclosure(m_state, func, numUpValues);
 	lua_setglobal(m_state, name);
