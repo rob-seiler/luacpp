@@ -2,6 +2,8 @@
 
 #include <luacpp/State.hpp>
 
+#include <string>
+
 namespace Lua {
 namespace {
 
@@ -95,6 +97,67 @@ TEST_F(LibraryLoadingTest, openLibrary_andPreloadLibrary_coexist) {
 	EXPECT_TRUE(lua.readVariable<bool>("mathReady"));
 	EXPECT_TRUE(lua.readVariable<bool>("stringInitiallyAbsent"));
 	EXPECT_TRUE(lua.readVariable<bool>("stringNowReady"));
+}
+
+TEST_F(LibraryLoadingTest, addModuleSearchPath_prependsToPackagePath) {
+	State lua(State::LibPackage);
+	lua.addModuleSearchPath("/myapp/scripts/?.lua");
+
+	EXPECT_EQ(lua.loadAndExecuteScript("p = package.path"), 0);
+	const auto path = lua.readVariable<std::string>("p");
+	EXPECT_EQ(path.substr(0, 20), "/myapp/scripts/?.lua")
+	    << "pattern must be prepended to package.path";
+	EXPECT_EQ(path[20], ';') << "and separated from existing entries by ';'";
+}
+
+TEST_F(LibraryLoadingTest, addModuleSearchPath_forNativeModuleAffectsCPath) {
+	State lua(State::LibPackage);
+	lua.addModuleSearchPath("/myapp/native/?.so", /*forNativeModule=*/true);
+
+	EXPECT_EQ(lua.loadAndExecuteScript("c = package.cpath"), 0);
+	const auto cpath = lua.readVariable<std::string>("c");
+	EXPECT_EQ(cpath.substr(0, 18), "/myapp/native/?.so")
+	    << "pattern must be prepended to package.cpath when forNativeModule=true";
+}
+
+TEST_F(LibraryLoadingTest, addModuleSearchPath_pathAndCPathStayIndependent) {
+	State lua(State::LibPackage);
+	lua.addModuleSearchPath("/lua-only/?.lua");
+
+	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+		p = package.path
+		c = package.cpath
+	)"), 0);
+	const auto path = lua.readVariable<std::string>("p");
+	const auto cpath = lua.readVariable<std::string>("c");
+
+	EXPECT_NE(path.find("/lua-only/"), std::string::npos);
+	EXPECT_EQ(cpath.find("/lua-only/"), std::string::npos)
+	    << "modifying package.path must not bleed into package.cpath";
+}
+
+TEST_F(LibraryLoadingTest, addModuleSearchPath_silentNoOpWithoutLibPackage) {
+	State lua(State::LibNone);
+	// Without LibPackage there is no package table; the call must neither
+	// throw nor leave any value behind on the Lua stack.
+	EXPECT_NO_THROW(lua.addModuleSearchPath("/somewhere/?.lua"));
+	EXPECT_EQ(lua.getStackSize(), 0);
+}
+
+TEST_F(LibraryLoadingTest, addModuleSearchPath_multipleCallsAccumulateLatestFirst) {
+	State lua(State::LibPackage);
+	lua.addModuleSearchPath("/first/?.lua");
+	lua.addModuleSearchPath("/second/?.lua");
+
+	EXPECT_EQ(lua.loadAndExecuteScript("p = package.path"), 0);
+	const auto path = lua.readVariable<std::string>("p");
+	const auto firstPos = path.find("/first/");
+	const auto secondPos = path.find("/second/");
+
+	ASSERT_NE(firstPos, std::string::npos);
+	ASSERT_NE(secondPos, std::string::npos);
+	EXPECT_LT(secondPos, firstPos)
+	    << "most recently added pattern should be searched first";
 }
 
 } // namespace

@@ -110,6 +110,27 @@ public:
 	 */
 	void preloadLibrary(Library library);
 
+	/**
+	 * @brief Prepend a search pattern to Lua's module path.
+	 *
+	 * The pattern uses Lua's '?'-substitution to locate modules. For
+	 * example, addModuleSearchPath("/opt/myapp/scripts/?.lua") makes
+	 * require("foo") look for "/opt/myapp/scripts/foo.lua". The new
+	 * pattern wins over existing ones because it is prepended.
+	 *
+	 * Typical use: extend Lua's defaults to find application-specific or
+	 * non-standard LuaRocks tree locations.
+	 *
+	 * @param pattern         Lua module-search pattern (with '?').
+	 * @param forNativeModule If true, modifies package.cpath (for native
+	 *                        .so/.dll/.dylib modules); otherwise
+	 *                        package.path (for .lua modules).
+	 *
+	 * @note Silent no-op when LibPackage is not open — without that
+	 *       library there is no package table to modify.
+	 */
+	void addModuleSearchPath(const std::string& pattern, bool forNativeModule = false);
+
 
 	template <typename T>
 	T readVariable(const char* variableName) {
