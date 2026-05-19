@@ -31,6 +31,17 @@ target_link_libraries(
 
 if(MSVC)
 	target_compile_options(${PROJECT_NAME} PRIVATE /W4)
+	# MSVC's default /EHsc implies /EHc — the compiler assumes extern "C"
+	# functions never throw and skips unwind tables at their call sites.
+	# Since Lua's public API is now declared extern "C" (so LuaRocks C
+	# modules can link against us, see extern/lua/CMakeLists.txt) yet still
+	# throws C++ exceptions on OOM under our C++-compiled Lua, those unwind
+	# tables ARE required — otherwise local C++ destructors (notably the
+	# Guard in State::anchorOwned) do not run when Lua throws.
+	#
+	# Appending /EHs after the default /EHsc makes MSVC honor the last /EH
+	# flag, dropping the /EHc assumption for this target.
+	target_compile_options(${PROJECT_NAME} PRIVATE /EHs)
 else()
 	target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
 endif()
@@ -68,6 +79,18 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 	gtest_discover_tests(${PROJECT_NAME}_test)
 
 	add_test(NAME ${PROJECT_NAME}_test COMMAND ${PROJECT_NAME}_test)
+
+	# C-linkage smoke check: a pure-C TU that includes lua.h and links
+	# against the lua target. Builds only if Lua's public API exports
+	# C-linkage symbols — the contract LuaRocks-installed C modules
+	# depend on. Regression guard for the extern "C" force-include in
+	# extern/lua/CMakeLists.txt.
+	if(EXISTS ${PROJECT_SOURCE_DIR}/test/c_linkage_check.c)
+		add_executable(${PROJECT_NAME}_c_linkage_check test/c_linkage_check.c)
+		target_link_libraries(${PROJECT_NAME}_c_linkage_check PRIVATE lua)
+		add_test(NAME LuaCApi.LinkageAndRoundtrip
+		         COMMAND ${PROJECT_NAME}_c_linkage_check)
+	endif()
 else()
 	message("No test project configured")
 endif()
