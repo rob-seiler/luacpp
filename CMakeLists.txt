@@ -91,6 +91,28 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 		add_test(NAME LuaCApi.LinkageAndRoundtrip
 		         COMMAND ${PROJECT_NAME}_c_linkage_check)
 	endif()
+
+	# Build the bundled UUID plugin used as the require()-based smoke
+	# test. The plugin owns its build settings (target name, suffix,
+	# platform link flags) in plugins/uuid/CMakeLists.txt; here we only
+	# wire its build artifact into the test executable.
+	#
+	# add_subdirectory is a no-op on Windows because the plugin's CMake
+	# file returns early there. The TARGET check handles both the
+	# platform-skipped and the file-missing case.
+	if(EXISTS ${PROJECT_SOURCE_DIR}/plugins/uuid/CMakeLists.txt)
+		add_subdirectory(plugins/uuid)
+		if(TARGET uuid_module)
+			# ENABLE_EXPORTS makes the host executable expose its lua_*
+			# symbols so dlopen'd modules can resolve against them.
+			set_target_properties(${PROJECT_NAME}_test PROPERTIES ENABLE_EXPORTS ON)
+			target_compile_definitions(${PROJECT_NAME}_test PRIVATE
+				LUACPP_UUID_MODULE_DIR="$<TARGET_FILE_DIR:uuid_module>"
+				LUACPP_HAVE_UUID_MODULE
+			)
+			add_dependencies(${PROJECT_NAME}_test uuid_module)
+		endif()
+	endif()
 else()
 	message("No test project configured")
 endif()
