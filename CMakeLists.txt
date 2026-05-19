@@ -11,7 +11,7 @@ cmake_minimum_required(VERSION 3.10)
 #   Windows: Lua is built as a SHARED library (lua.dll). The host EXE and
 #            all C modules link against the import library; the DLL must
 #            be deployed alongside the application. Windows PE/COFF has no
-#            equivalent to POSIX's prozessweite Symboltabelle, so a single
+#            equivalent to POSIX's process-wide symbol table, so a single
 #            shared Lua image is the only clean way to share state.
 option(LUACPP_ENABLE_CMODULE_LOADING
        "Allow Lua scripts to require() compiled C modules at runtime" OFF)
