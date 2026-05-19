@@ -2,16 +2,9 @@
 #include <lua/lua.hpp>
 
 #include <string>
-#include <array>
 #include <limits> //std::numeric_limits
 
 namespace {
-struct LibraryLoadingFunction {
-    int mask;
-	const char* name;
-	int (*func)(lua_State*);
-};
-
 // Detects whether s.data() points into the std::string object itself (Short
 // String Optimization). Portable across libstdc++, libc++ and MSVC. uintptr_t
 // conversion sidesteps the UB of comparing pointers from different objects.
@@ -130,30 +123,11 @@ void State::anchorOwned(void* ptr, void (*deleter)(void*)) {
 }
 
 void State::openLibrary(Library library) {
-	static const std::array<LibraryLoadingFunction, LibraryCount> libraries = {
-		LibraryLoadingFunction{LibBase, LUA_GNAME, luaopen_base},
-		LibraryLoadingFunction{LibPackage, LUA_LOADLIBNAME, luaopen_package},
-		LibraryLoadingFunction{LibCoroutine, LUA_COLIBNAME, luaopen_coroutine},
-		LibraryLoadingFunction{LibTable, LUA_TABLIBNAME, luaopen_table},
-		LibraryLoadingFunction{LibIO, LUA_IOLIBNAME, luaopen_io},
-		LibraryLoadingFunction{LibOS, LUA_OSLIBNAME, luaopen_os},
-		LibraryLoadingFunction{LibString, LUA_STRLIBNAME, luaopen_string},
-		LibraryLoadingFunction{LibMath, LUA_MATHLIBNAME, luaopen_math},
-		LibraryLoadingFunction{LibUTF8, LUA_UTF8LIBNAME, luaopen_utf8},
-		LibraryLoadingFunction{LibDebug, LUA_DBLIBNAME, luaopen_debug}	
-	};
+	luaL_openselectedlibs(m_state, static_cast<int>(library), 0);
+}
 
-	if (library == LibAll) {
-		luaL_openlibs(m_state);
-		return;
-	}
-
-	for (const auto& lib : libraries) {
-		if (library & lib.mask) {
-			luaL_requiref(m_state, lib.name, lib.func, 1);
-    		lua_pop(m_state, 1);  /* remove lib */
-		}
-	}
+void State::preloadLibrary(Library library) {
+	luaL_openselectedlibs(m_state, 0, static_cast<int>(library));
 }
 
 int State::registerNativeFunction(const char* name, NativeFunction func, int numUpValues) {

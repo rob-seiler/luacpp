@@ -32,18 +32,21 @@ public:
 	typedef std::function<void(Table&)> TableFunction;
 	typedef uint32_t Library;
 
-	constexpr static const Library LibNone = 0;
-	constexpr static const Library LibBase = bit(0);
-	constexpr static const Library LibPackage = bit(1);
-	constexpr static const Library LibCoroutine = bit(2);
-	constexpr static const Library LibTable = bit(3);
-	constexpr static const Library LibIO = bit(4);
-	constexpr static const Library LibOS = bit(5);
-	constexpr static const Library LibString = bit(6);
-	constexpr static const Library LibMath = bit(7);
-	constexpr static const Library LibUTF8 = bit(8);
-	constexpr static const Library LibDebug = bit(9);
-	constexpr static const Library LibAll = 0xFFFFFFFF;
+	// Library bits intentionally match Lua 5.5's LUA_*K constants (lualib.h)
+	// so that the enum value can be passed directly to luaL_openselectedlibs.
+	// Reordering here is a breaking change from the pre-5.5 layout.
+	constexpr static const Library LibNone      = 0;
+	constexpr static const Library LibBase      = bit(0); // LUA_GLIBK
+	constexpr static const Library LibPackage   = bit(1); // LUA_LOADLIBK
+	constexpr static const Library LibCoroutine = bit(2); // LUA_COLIBK
+	constexpr static const Library LibDebug     = bit(3); // LUA_DBLIBK
+	constexpr static const Library LibIO        = bit(4); // LUA_IOLIBK
+	constexpr static const Library LibMath      = bit(5); // LUA_MATHLIBK
+	constexpr static const Library LibOS        = bit(6); // LUA_OSLIBK
+	constexpr static const Library LibString    = bit(7); // LUA_STRLIBK
+	constexpr static const Library LibTable     = bit(8); // LUA_TABLIBK
+	constexpr static const Library LibUTF8      = bit(9); // LUA_UTF8LIBK
+	constexpr static const Library LibAll       = 0xFFFFFFFF;
 	constexpr static size_t LibraryCount = 10;
 
 	struct MetaTable {
@@ -84,7 +87,28 @@ public:
 
 	~State();
 
+	/**
+	 * @brief Open the selected libraries immediately.
+	 *
+	 * Each set bit names a standard Lua library to open right now: its
+	 * open-function runs and its global table becomes available.
+	 *
+	 * @note Backed by Lua 5.5's luaL_openselectedlibs; Library bits are
+	 *       chosen to match LUA_*K so the value is forwarded directly.
+	 */
 	void openLibrary(Library library);
+
+	/**
+	 * @brief Register the selected libraries for lazy loading via require().
+	 *
+	 * Each set bit names a standard Lua library to add to package.preload.
+	 * Scripts can then bring it in on demand with require("name"); until
+	 * that call the library's globals are not present in the state.
+	 *
+	 * @note Requires LibPackage to be open (otherwise require() is not
+	 *       reachable from scripts).
+	 */
+	void preloadLibrary(Library library);
 
 
 	template <typename T>
