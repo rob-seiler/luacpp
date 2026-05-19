@@ -4,8 +4,10 @@
 #include <luacpp/Basics.hpp>
 #include <lua/lua.hpp>
 
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +26,34 @@ void* recordingDealloc(void* /*ud*/, void* ptr, size_t osize, size_t nsize) {
 		g_freedSize = osize;
 	}
 	return nullptr;
+}
+
+// Forwards to libc allocators but denies any allocation once `budget` hits 0.
+// Used to fault-inject Lua's allocator and probe anchorOwned's exception path.
+struct CountingAllocator {
+	int budget;
+	int requestsServed;
+
+	static void* alloc(void* ud, void* ptr, size_t /*osize*/, size_t nsize) {
+		auto* self = static_cast<CountingAllocator*>(ud);
+		if (nsize == 0) {
+			std::free(ptr);
+			return nullptr;
+		}
+		if (self->budget <= 0) {
+			return nullptr;
+		}
+		--self->budget;
+		++self->requestsServed;
+		return std::realloc(ptr, nsize);
+	}
+};
+
+// Without a protected frame (lua_pcall), Lua's default panic handler calls
+// abort() — which would kill the test process. Override it to throw instead;
+// the throw unwinds through anchorOwned and runs its Guard destructor.
+int throwingPanic(lua_State*) {
+	throw std::runtime_error("Lua memory exhausted");
 }
 
 struct DestructionCounter {
@@ -287,6 +317,56 @@ TEST_F(ExternalStringTest, transferOwnership_multipleTransfersAllReleased) {
 		EXPECT_EQ(DestructionCounter::liveCount, 3);
 	}
 	EXPECT_EQ(DestructionCounter::liveCount, 0);
+}
+
+TEST_F(ExternalStringTest, anchorOwned_oomMidSequence_releasesObject) {
+	// Probe: how many Lua allocations does a successful transferOwnership need?
+	constexpr int kHugeBudget = 1 << 20;
+	int allocsForTransfer = 0;
+	{
+		CountingAllocator probe{kHugeBudget, 0};
+		lua_State* raw = lua_newstate(&CountingAllocator::alloc, &probe, 0);
+		ASSERT_NE(raw, nullptr);
+		lua_atpanic(raw, &throwingPanic);
+		const int before = probe.requestsServed;
+		{
+			State lua(raw);
+			lua.transferOwnership(DestructionCounter{});
+		}
+		allocsForTransfer = probe.requestsServed - before;
+		probe.budget = kHugeBudget;
+		lua_close(raw);
+	}
+	ASSERT_GT(allocsForTransfer, 0);
+
+	// For each failure point inside anchorOwned, verify cleanup:
+	//  - Throw before the __gc metatable is installed → Guard deletes the heap copy.
+	//  - Throw after that commit point → __gc deletes it during lua_close.
+	// Either path must leave liveCount at zero once the State is gone.
+	for (int allowedExtra = 0; allowedExtra <= allocsForTransfer; ++allowedExtra) {
+		DestructionCounter::liveCount = 0;
+
+		CountingAllocator counter{kHugeBudget, 0};
+		lua_State* raw = lua_newstate(&CountingAllocator::alloc, &counter, 0);
+		ASSERT_NE(raw, nullptr);
+		lua_atpanic(raw, &throwingPanic);
+
+		counter.budget = allowedExtra;
+		{
+			State lua(raw);
+			try {
+				lua.transferOwnership(DestructionCounter{});
+			} catch (...) {
+				// Expected when the budget runs out mid-anchor.
+			}
+		}
+		counter.budget = kHugeBudget; // let lua_close drain its own allocations
+		lua_close(raw);
+
+		EXPECT_EQ(DestructionCounter::liveCount, 0)
+		    << "Leak when only " << allowedExtra << " of " << allocsForTransfer
+		    << " anchor allocations were permitted";
+	}
 }
 
 } // namespace

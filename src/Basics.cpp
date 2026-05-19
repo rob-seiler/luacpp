@@ -43,7 +43,7 @@ void Basics::pushString(lua_State* state, const char* value, size_t len) { lua_p
 
 void Basics::pushExternalString(lua_State* state, const char* value, size_t len,
                                 ExternalStringDeallocator dealloc, void* ud) {
-	lua_pushexternalstring(state, value, len, reinterpret_cast<lua_Alloc>(dealloc), ud);
+	lua_pushexternalstring(state, value, len, dealloc, ud);
 }
 
 void Basics::pushCFunction(lua_State* state, NativeFunction value) { lua_pushcfunction(state, value); }

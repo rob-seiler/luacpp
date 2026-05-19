@@ -14,6 +14,8 @@
 #include <functional>
 #include <memory>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
 
 struct lua_State;
 
@@ -411,6 +413,7 @@ public:
 	 *       Lua relies on string immutability for hash caching and interning.
 	 */
 	void pushExternalString(const std::string& s);
+	void pushExternalString(std::string&&) = delete;
 
 	/**
 	 * @brief Anchor a C++ object in this state's registry, transferring its
