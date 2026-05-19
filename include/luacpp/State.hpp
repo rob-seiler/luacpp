@@ -439,9 +439,8 @@ public:
 		if constexpr (std::is_same_v<Owned, std::string>) {
 			transferStringOwnership(std::forward<T>(obj));
 		} else {
-			auto holder = std::make_unique<Owned>(std::forward<T>(obj));
-			anchorOwned(holder.get(), &State::deleteTyped<Owned>);
-			holder.release();
+			auto* raw = new Owned(std::forward<T>(obj));
+			anchorOwned(raw, &State::deleteTyped<Owned>);
 		}
 	}
 

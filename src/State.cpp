@@ -84,14 +84,25 @@ void State::transferStringOwnership(std::string s) {
 	}
 	// Long string: swap the heap buffer into a heap-allocated std::string holder.
 	// std::string swap on two long strings is a pointer swap — the buffer Lua
-	// references does not move. Then anchor the holder in the registry.
-	auto holder = std::make_unique<std::string>();
+	// references does not move. Then hand the holder to anchorOwned, which
+	// takes responsibility for either anchoring it in the registry or freeing
+	// it if Lua throws partway through.
+	auto* holder = new std::string;
 	holder->swap(s);
-	anchorOwned(holder.get(), &State::deleteTyped<std::string>);
-	holder.release();
+	anchorOwned(holder, &State::deleteTyped<std::string>);
 }
 
 void State::anchorOwned(void* ptr, void (*deleter)(void*)) {
+	// Local scope guard: owns ptr until ownership is committed to Lua's GC.
+	// If any Lua call below throws before the commit point, the guard's
+	// destructor runs and frees ptr. After the commit point (lua_setmetatable
+	// installs __gc), we release the guard so Lua's GC is the sole owner.
+	struct Guard {
+		void* ptr;
+		void (*deleter)(void*);
+		~Guard() { if (ptr) deleter(ptr); }
+	} guard{ptr, deleter};
+
 	void** slot = static_cast<void**>(lua_newuserdatauv(m_state, sizeof(void*), 0));
 	*slot = ptr;
 
@@ -106,6 +117,11 @@ void State::anchorOwned(void* ptr, void (*deleter)(void*)) {
 	}, 1);
 	lua_setfield(m_state, -2, "__gc");
 	lua_setmetatable(m_state, -2);
+	// Commit: Lua's GC now owns ptr via __gc. Even if luaL_ref throws below,
+	// the userdata is unreferenced after stack unwinding and Lua will collect
+	// it, running our deleter exactly once. Releasing the guard here ensures
+	// we don't double-free.
+	guard.ptr = nullptr;
 
 	luaL_ref(m_state, LUA_REGISTRYINDEX);
 }
