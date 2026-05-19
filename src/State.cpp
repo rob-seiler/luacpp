@@ -107,6 +107,9 @@ void State::anchorOwned(void* ptr, void (*deleter)(void*)) {
 	*slot = ptr;
 
 	lua_createtable(m_state, 0, 1);
+	// The __gc closure carries the deleter as its single upvalue (lightuserdata
+	// holding a void(*)(void*)). Push order and the upvalueindex(1) read below
+	// must stay in sync — if you add upvalues here, fix the index in the lambda.
 	lua_pushlightuserdata(m_state, reinterpret_cast<void*>(deleter));
 	lua_pushcclosure(m_state, [](lua_State* L) -> int {
 		void** s = static_cast<void**>(lua_touserdata(L, 1));
