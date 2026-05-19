@@ -2,7 +2,9 @@
 
 #include <luacpp/State.hpp>
 
+#include <chrono>
 #include <string>
+#include <thread>
 
 namespace Lua {
 namespace {
@@ -51,10 +53,17 @@ TEST_F(UuidPluginTest, v7_hasVersion7AndTimeOrdering) {
 	State lua = makeStateWithUuidLoadable();
 
 	ASSERT_EQ(lua.loadAndExecuteScript(R"(
-		local uuid = require("uuid")
+		uuid = require("uuid")
 		a = uuid.v7()
-		b = uuid.v7()
 	)"), 0);
+
+	// RFC 9562 v7 is monotonic across millisecond boundaries; within a
+	// single ms the trailing random bytes determine ordering, so two calls
+	// close enough in time can lex-order either way. Sleep past one ms
+	// boundary to make the comparison below deterministic.
+	std::this_thread::sleep_for(std::chrono::milliseconds(2));
+
+	ASSERT_EQ(lua.loadAndExecuteScript("b = uuid.v7()"), 0);
 
 	const auto a = lua.readVariable<std::string>("a");
 	const auto b = lua.readVariable<std::string>("b");
@@ -63,9 +72,7 @@ TEST_F(UuidPluginTest, v7_hasVersion7AndTimeOrdering) {
 	ASSERT_EQ(b.size(), 36u);
 	EXPECT_EQ(a[14], '7');
 	EXPECT_EQ(b[14], '7');
-	// RFC 9562 v7: 48-bit Unix-time-ms prefix makes lexicographic order
-	// monotonic for IDs generated within the same ms or later.
-	EXPECT_LE(a, b) << "v7 IDs must be lexicographically non-decreasing";
+	EXPECT_LT(a, b) << "v7 IDs from different ms must be strictly lex-ordered";
 }
 
 TEST_F(UuidPluginTest, requireFailsWithoutCustomCPath) {
