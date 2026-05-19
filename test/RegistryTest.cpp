@@ -1,11 +1,6 @@
 #include <gtest/gtest.h>
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Registry;
-import luacpp.Basics;
-#else
 #include <luacpp/Registry.hpp>
-#endif
 
 #include <lua/lua.hpp>
 

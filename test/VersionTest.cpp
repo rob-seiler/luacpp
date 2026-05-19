@@ -1,10 +1,6 @@
 #include <gtest/gtest.h>
 
-#ifdef USE_CPP20_MODULES
-import luacpp.Version;
-#else
 #include <luacpp/Version.hpp>
-#endif
 
 #include <lua/lua.hpp> //needed to compare the version
 
