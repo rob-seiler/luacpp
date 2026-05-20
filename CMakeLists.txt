@@ -99,6 +99,10 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 		LIST_DIRECTORIES true
 		${PROJECT_SOURCE_DIR}/test/*.cpp
 	)
+	# module_consumer.cpp uses `import luacpp;` and only compiles as a
+	# C++20 module consumer — it has no business in the gtest exe, which
+	# is plain C++17 header-based code.
+	list(FILTER TEST_SRC_FILES EXCLUDE REGEX "module_consumer\\.cpp$")
 	target_sources(${PROJECT_NAME}_test PRIVATE ${TEST_SRC_FILES})
 
 	target_link_libraries(
@@ -178,6 +182,29 @@ if(LUACPP_BUILD_MODULE)
 	target_link_libraries(${PROJECT_NAME}_module PUBLIC ${PROJECT_NAME})
 
 	add_library(luacpp::module ALIAS ${PROJECT_NAME}_module)
+
+	# Consumer-side smoke test: a separate TU that reaches the library only
+	# through `import luacpp;` (no header includes). Validates that the
+	# module surface actually resolves at link/run time — building the
+	# `.cppm` itself only verifies the module definition is parseable.
+	if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/test/module_consumer.cpp)
+		add_executable(${PROJECT_NAME}_module_consumer
+		               ${CMAKE_CURRENT_SOURCE_DIR}/test/module_consumer.cpp)
+		set_target_properties(${PROJECT_NAME}_module_consumer PROPERTIES
+			CXX_STANDARD 20
+			CXX_STANDARD_REQUIRED ON
+			CXX_EXTENSIONS OFF
+			CXX_SCAN_FOR_MODULES ON
+		)
+		target_link_libraries(${PROJECT_NAME}_module_consumer
+		                      PRIVATE luacpp::module)
+		# enable_testing() may already have been called by the googletest
+		# block above, but is idempotent — call it unconditionally so the
+		# module smoke test runs even when the googletest submodule is absent.
+		enable_testing()
+		add_test(NAME Module.ConsumerSmokeTest
+		         COMMAND ${PROJECT_NAME}_module_consumer)
+	endif()
 endif()
 
 option(BUILD_EXAMPLES "Build examples" ON)

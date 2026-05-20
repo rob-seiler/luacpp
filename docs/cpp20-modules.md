@@ -47,6 +47,10 @@ Everything in the `Lua::` namespace that consumers would normally reach through 
 
 The `_load` user-defined literal from `<luacpp/Literals.hpp>` is **not** re-exported through the module surface — `using` declarations of UDLs are inconsistently supported across module-aware compilers. If you need it, include `<luacpp/Literals.hpp>` alongside `import luacpp;` as a transitional step.
 
+## Validation
+
+When `LUACPP_BUILD_MODULE=ON` is set and the GoogleTest submodule is available, CMake also builds and registers `Module.ConsumerSmokeTest` — a tiny executable that reaches the library exclusively through `import luacpp;` (no header includes) and exercises variable round-trip, native-function registration, string passing and the version constant. CTest runs it automatically alongside the gtest suite. CI runs the same configuration on MSVC + windows-latest as a dedicated `build_module` job so the module surface is validated end-to-end on every push.
+
 ## When not to use the module
 
 If your codebase is still mostly header-based, the include path stays the better fit — the module adds a build-system dependency (CMake 3.28+, module-capable compiler) without changing the API. The module is meant for projects that already invest in modules for their own code.
