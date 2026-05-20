@@ -53,12 +53,6 @@ int main() {
 
 A fresh `Lua::State` opens no standard libraries — scripts run in a sealed sandbox by default. To enable `math`, `string`, etc. see [docs/lua-libraries.md](docs/lua-libraries.md).
 
-If you prefer to load the script from a file, the `_load` literal in `luacpp/Literals.hpp` provides a one-liner:
-
-```c++
-lua.loadAndExecuteScript("path/to/myscript.lua"_load);
-```
-
 ## Documentation
 
 - [Embedding C++ functions in Lua](docs/embedding-functions.md) — `registerNativeFunction`, upvalues, `registerMethod` for `std::function` callbacks and lambdas with capture.
