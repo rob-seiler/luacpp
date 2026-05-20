@@ -16,12 +16,18 @@
 #include <cstdint>
 #include <type_traits>
 #include <utility>
+#include <filesystem>
 
 struct lua_State;
 
 namespace Lua {
 
 constexpr uint32_t bit(uint32_t n) { return 1 << n; }
+
+// Semantic tag for file-source overloads of script-loading methods.
+// Alias rather than a wrapper type so std::filesystem::path values pass
+// through transparently without an extra construction step.
+using File = std::filesystem::path;
 
 class State {
 public:
@@ -249,6 +255,21 @@ public:
 	int loadScript(T key, const std::string& code) { return loadScript<T>(key, code.c_str()); }
 
 	/**
+	 * @brief Load a Lua script from a file into the registry
+	 *
+	 * Resolved by the overload set when @p path is a Lua::File (alias for
+	 * std::filesystem::path). Uses luaL_loadfile so Lua tracebacks reference
+	 * the actual file path instead of "[string \"...\"]".
+	 *
+	 * @param key  Registry key under which the loaded chunk is stored
+	 * @param path Filesystem path to the .lua source file
+	 */
+	template <typename T>
+	int loadScript(T key, const File& path) {
+		return static_cast<int>(m_registry.loadScriptFromFile<T>(key, path));
+	}
+
+	/**
 	 * @brief Execute a script from the registry
 	 * This method tries to load a script from the registry and executes it immediately. The script will be
 	 * popped from the stack after execution.
@@ -279,6 +300,22 @@ public:
 	 * not available as a function to call a second time.
 	*/
 	int loadAndExecuteScript(const std::string& code) { return loadAndExecuteScript(code.c_str()); }
+
+	/**
+	 * @brief Load and execute a Lua script from a file
+	 *
+	 * Resolved by the overload set when the argument is a Lua::File (alias
+	 * for std::filesystem::path). Uses luaL_dofile internally so Lua's
+	 * traceback machinery references the actual file path — runtime errors
+	 * surface as "path/to/script.lua:42: ..." instead of the opaque
+	 * "[string \"...\"]:42: ...".
+	 *
+	 * @param path Filesystem path to the .lua source file
+	 * @return     Lua status code (LUA_OK on success; LUA_ERRFILE if the
+	 *             file cannot be opened, LUA_ERRSYNTAX on a parse failure,
+	 *             LUA_ERRRUN on a runtime failure)
+	 */
+	int loadAndExecuteScript(const File& path);
 
 	template <int NumRet = 0, typename... Args>
 	int executeFunction(std::string_view name, Args... args) {

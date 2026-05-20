@@ -51,6 +51,12 @@ int main() {
 }
 ```
 
+To load from a file, pass a `Lua::File` (alias for `std::filesystem::path`) — Lua tracebacks then reference the actual file path:
+
+```c++
+lua.loadAndExecuteScript(Lua::File("scripts/main.lua"));
+```
+
 A fresh `Lua::State` opens no standard libraries — scripts run in a sealed sandbox by default. To enable `math`, `string`, etc. see [docs/lua-libraries.md](docs/lua-libraries.md).
 
 ## Documentation
@@ -71,7 +77,7 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 ## Roadmap
 
-- **Improved error handling** — currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned as the headline feature for v0.3.0.
+- **Improved error handling** — currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned as the headline feature for v0.3.0. Note: the string-source variant of `loadAndExecuteScript` still uses `luaL_dostring`, which collapses every non-zero Lua status into `1` — the differentiated codes (`LUA_ERRSYNTAX`, `LUA_ERRRUN`, …) currently only surface via the new file-loading overload.
 - **Coroutine support.**
 - **Custom Lua allocator support** — let the host install a `lua_Alloc` for tracking, pooling, or constraining Lua's memory.
 - **Improved debug hooks** — richer abstractions around `lua_sethook`.

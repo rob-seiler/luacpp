@@ -100,6 +100,14 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 		gtest_main
 	)
 
+	# Absolute path to the directory holding Lua test-fixture files
+	# (valid.lua / syntax_error.lua / runtime_error.lua, consumed by
+	# FileLoadingTest). Resolved at configure time so tests can be invoked
+	# from any working directory.
+	target_compile_definitions(${PROJECT_NAME}_test PRIVATE
+		LUACPP_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/test/data"
+	)
+
 	include(GoogleTest)
 	gtest_discover_tests(${PROJECT_NAME}_test)
 

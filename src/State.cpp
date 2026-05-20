@@ -204,6 +204,25 @@ int State::loadAndExecuteScript(const char* code) {
 	return status;
 }
 
+int State::loadAndExecuteScript(const File& path) {
+	// Share Registry::loadFile so path-encoding handling (notably non-ASCII
+	// paths on Windows) lives in exactly one place. We do NOT use luaL_dofile
+	// because that macro expands to (load || pcall), collapsing every non-zero
+	// status to 1 — preserving LUA_ERRFILE / LUA_ERRSYNTAX / LUA_ERRRUN is the
+	// entire point of the file-loading overload.
+	int status = static_cast<int>(Registry::loadFile(m_state, path));
+	if (status == LUA_OK) {
+		status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
+	}
+	if (status != LUA_OK) {
+		while (lua_isstring(m_state, -1)) {
+			m_errorList.emplace_back(lua_tostring(m_state, -1));
+			lua_pop(m_state, 1);
+		}
+	}
+	return status;
+}
+
 Type State::getType(int index) const {
 	return static_cast<Type>(lua_type(m_state, index));
 }
