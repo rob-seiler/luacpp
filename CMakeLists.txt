@@ -16,6 +16,15 @@ cmake_minimum_required(VERSION 3.10)
 option(LUACPP_ENABLE_CMODULE_LOADING
        "Allow Lua scripts to require() compiled C modules at runtime" OFF)
 
+# Off by default to keep the toolchain bar low (CMake 3.10 / C++17). Turning
+# this on additionally builds a C++20 named-module surface for the library —
+# consumers can then write `import luacpp;` instead of including individual
+# headers. The static library and its headers stay authoritative; the module
+# is a thin re-export wrapper. Requires CMake >= 3.28 and a compiler with
+# C++20 module support (Clang 16+, GCC 14+, MSVC 17.5+).
+option(LUACPP_BUILD_MODULE
+       "Build the C++20 named module 'luacpp' alongside the static library" OFF)
+
 if(LUACPP_ENABLE_CMODULE_LOADING)
 	# Unify runtime artifacts in build/bin so that lua.dll, the test EXE
 	# and any plugin DLL land in the same directory — required on Windows
@@ -142,6 +151,33 @@ if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/extern/googletest/CMakeLists.txt)
 	endif()
 else()
 	message("No test project configured")
+endif()
+
+if(LUACPP_BUILD_MODULE)
+	# Module support in CMake is a moving target; 3.28 is the first version
+	# that handles CXX_MODULES FILE_SETs in a portable way.
+	if(CMAKE_VERSION VERSION_LESS "3.28")
+		message(FATAL_ERROR "LUACPP_BUILD_MODULE requires CMake 3.28 or newer "
+		                    "(detected ${CMAKE_VERSION}).")
+	endif()
+
+	add_library(${PROJECT_NAME}_module STATIC)
+	set_target_properties(${PROJECT_NAME}_module PROPERTIES
+		CXX_STANDARD 20
+		CXX_STANDARD_REQUIRED ON
+		CXX_EXTENSIONS OFF
+		CXX_SCAN_FOR_MODULES ON
+	)
+	target_sources(${PROJECT_NAME}_module
+		PUBLIC FILE_SET CXX_MODULES FILES
+		${CMAKE_CURRENT_SOURCE_DIR}/module/luacpp.cppm
+	)
+	# Re-exports the public headers — link against the static library so the
+	# module surface ends up with the same symbol set consumers would get
+	# from #include.
+	target_link_libraries(${PROJECT_NAME}_module PUBLIC ${PROJECT_NAME})
+
+	add_library(luacpp::module ALIAS ${PROJECT_NAME}_module)
 endif()
 
 option(BUILD_EXAMPLES "Build examples" ON)

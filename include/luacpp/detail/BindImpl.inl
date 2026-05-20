@@ -16,6 +16,20 @@
 namespace Lua {
 namespace detail {
 
+// Forward declaration. Definition lives in <luacpp/Metatable.hpp>.
+//
+// Include chain quirk: State.hpp includes this file at its end, and
+// Metatable.hpp includes State.hpp at its top — so by the time the
+// preprocessor reaches Bind::staticField below, Metatable.hpp's body
+// (which defines pushResult) has not been parsed yet. The classic header
+// build tolerates this because template instantiation defers the qualified
+// lookup until use, but MSVC's C++20-module front end is stricter and
+// requires a name to be visible at the point of definition. This forward
+// declaration is the minimal fix and is harmless for the static-library
+// build (same signature, same namespace).
+template <typename R>
+void pushResult(State& state, R&& result);
+
 // Defined in src/Bind.cpp — keeps the Lua C API out of this header.
 void addMethodToMetatable(lua_State* L,
                           const char* metatableName,

@@ -67,6 +67,7 @@ A fresh `Lua::State` opens no standard libraries — scripts run in a sealed san
 - [Lua standard libraries](docs/lua-libraries.md) — Library bits, eager opening vs `require()`-based preloading, extending `package.path` / `package.cpath`.
 - [Loading C modules at runtime](docs/c-modules.md) — `LUACPP_ENABLE_CMODULE_LOADING`, POSIX vs Windows deployment, LuaRocks-compatible C-API contract.
 - [External strings and ownership transfer](docs/external-strings.md) — Lua 5.5's `lua_pushexternalstring` wrapper, zero-copy buffer sharing, transferring container lifetime to Lua's GC.
+- [C++20 module wrapper](docs/cpp20-modules.md) — opt-in `import luacpp;` surface for consumers that already build with modules.
 
 ## Examples
 
@@ -77,11 +78,21 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 ## Roadmap
 
-- **Improved error handling** — currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned as the headline feature for v0.3.0. Note: the string-source variant of `loadAndExecuteScript` still uses `luaL_dostring`, which collapses every non-zero Lua status into `1` — the differentiated codes (`LUA_ERRSYNTAX`, `LUA_ERRRUN`, …) currently only surface via the new file-loading overload.
+### v0.3.0 — Embedding hardening
+
+- **Improved error handling** — headline feature. Currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned: a `protected_call`-style abstraction that surfaces the Lua error message and (where available) a traceback across every script-execution path. Note: the string-source variant of `loadAndExecuteScript` still uses `luaL_dostring`, which collapses every non-zero Lua status into `1` — the differentiated codes (`LUA_ERRSYNTAX`, `LUA_ERRRUN`, …) currently only surface via the new file-loading overload.
+- **`std::optional`, multi-return, and tuple support** — extend `Stack<T>` and `pushResult` so bound methods can return `std::tuple<...>` as multiple Lua values and accept `std::optional<T>` arguments. Low effort, high comfort gain.
+- **C++20 module wrapper** (`luacpp.cppm`) — re-exports the existing headers so consumer projects can write `import luacpp;` without forcing internal module restructuring. Opt-in via CMake (`LUACPP_BUILD_MODULE`); the static library stays the default. See [docs/cpp20-modules.md](docs/cpp20-modules.md).
+
+### v0.4.0 — Class-binding polish
+
+- **Stable metatable names** — replace the implicit `typeid(T).name()` default with a portable, ABI-independent key. Mismatches across shared-library boundaries on Windows today silently produce two unrelated metatables for the same type.
 - **Coroutine support.**
+
+### Later / unscheduled
+
 - **Custom Lua allocator support** — let the host install a `lua_Alloc` for tracking, pooling, or constraining Lua's memory.
 - **Improved debug hooks** — richer abstractions around `lua_sethook`.
-- **C++20 modules** via a wrapper module (`luacpp.cppm`) that re-exports the existing headers — gives consumer projects `import luacpp;` without forcing internal module restructuring. Considered a worthwhile selling point for larger downstream codebases.
 - **Faster member access on bound classes** — for types with methods only (no properties), set `__index` directly to a methods table so Lua resolves lookups via `rawget` instead of crossing into a C dispatcher (`propertyIndexDispatcher`). Several times cheaper in hot loops; worth measuring before generalising.
 - **Reflection-based auto-binding (C++26, P2996)** — a single `shareInLua<T>(state)` call that registers every public data member and member function on `T`'s metatable, with opt-out annotations (`[[=Lua::reflect::skip]]`, `[[=Lua::reflect::rename("...")]]`). Blocked on mainline Clang/GCC/MSVC support for P2996.
 
