@@ -14,7 +14,6 @@ module;
 #include <luacpp/Basics.hpp>
 #include <luacpp/Debug.hpp>
 #include <luacpp/Generic.hpp>
-#include <luacpp/Literals.hpp>
 #include <luacpp/Metatable.hpp>
 #include <luacpp/Registry.hpp>
 #include <luacpp/Stack.hpp>
