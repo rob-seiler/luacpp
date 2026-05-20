@@ -1,7 +1,47 @@
 #include <Registry.hpp>
 #include <lua/lua.hpp>
 
+#include <cerrno>
+#include <cstring>
+#include <fstream>
+#include <sstream>
+#include <system_error>
+#include <type_traits>
+
 namespace Lua {
+
+namespace {
+// std::filesystem::path::u8string() returns std::string in C++17 but
+// std::u8string in C++20+. char and char8_t are byte-compatible by design,
+// so we reinterpret in the C++20 branch rather than maintain two impls.
+// if constexpr keeps both branches in a single function across standards.
+//
+// This indirection becomes load-bearing once the library migrates its
+// minimum standard to C++20 (planned alongside the module-wrapper work)
+// — until then it is a forward-compatibility insurance policy and is
+// equivalent to a plain copy on every C++17 toolchain we target.
+std::string pathToUtf8(const std::filesystem::path& p) {
+	auto u8 = p.u8string();
+	if constexpr (std::is_same_v<decltype(u8), std::string>) {
+		return u8;
+	} else {
+		// C++20+: std::u8string. Byte-equivalent to std::string under
+		// the UTF-8 contract path::u8string() guarantees.
+		return std::string(reinterpret_cast<const char*>(u8.data()), u8.size());
+	}
+}
+} // namespace
+
+// Lock the enum/macro coupling. ErrorCode values are cast directly from raw
+// Lua status codes (LUA_OK, LUA_ERRRUN, ...), so any future Lua renumbering
+// must fail to compile here rather than silently desynchronize.
+static_assert(static_cast<int>(Registry::ErrorCode::Ok)           == LUA_OK,        "Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::Yield)        == LUA_YIELD,    "Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::RuntimeError) == LUA_ERRRUN,   "Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::SyntaxError)  == LUA_ERRSYNTAX,"Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::MemoryError)  == LUA_ERRMEM,   "Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::ErrorError)   == LUA_ERRERR,   "Registry::ErrorCode out of sync with Lua status codes");
+static_assert(static_cast<int>(Registry::ErrorCode::FileError)    == LUA_ERRFILE,  "Registry::ErrorCode::FileError out of sync with LUA_ERRFILE");
 
 Registry::Registry(lua_State* L) : Table(L, LUA_REGISTRYINDEX, false) {}
 
@@ -63,12 +103,49 @@ Registry::ErrorCode Registry::loadString(lua_State* state, const char* src) {
 }
 
 Registry::ErrorCode Registry::loadFile(lua_State* state, const std::filesystem::path& path) {
-	// path.string() yields the native UTF-8 representation on Windows (where
-	// filesystem::path is wide internally) and a direct view on POSIX. Lua
-	// then uses that null-terminated string verbatim as the chunk name
-	// (prefixed with '@') in any traceback.
-	const std::string narrow = path.string();
-	return static_cast<ErrorCode>(luaL_loadfile(state, narrow.c_str()));
+	// We bypass luaL_loadfile and read the file ourselves so non-ASCII paths
+	// work on Windows:
+	//   - luaL_loadfile uses fopen, which on Windows accepts only the active
+	//     code page — std::filesystem::path::string() likewise narrows to the
+	//     ACP, so any path containing characters outside the ACP fails to open
+	//     even if the file exists.
+	//   - std::ifstream taking a std::filesystem::path (C++17) is required to
+	//     route through the platform's native API. The MSVC STL implements
+	//     this via _wfopen, which accepts any UTF-16 path the OS can name.
+	// We then hand the loaded bytes to luaL_loadbufferx with the path's UTF-8
+	// form as the chunk name (prefixed with '@', the Lua convention that marks
+	// the source as a file path), so tracebacks reference the path correctly
+	// regardless of the system's narrow encoding.
+	std::ifstream stream(path, std::ios::binary);
+	const std::string u8path = pathToUtf8(path);
+	const std::string chunkname = "@" + u8path;
+
+	if (!stream) {
+		// Match Lua's own ERRFILE message shape: "cannot open <path>: <reason>".
+		// errno is set by the underlying fopen/_wfopen on every STL we target;
+		// if it happens to be stale, the path piece — the part our tests pin —
+		// is still correct. std::error_code sidesteps the strerror deprecation
+		// warning MSVC emits at /W4.
+		const std::error_code ec(errno, std::generic_category());
+		const std::string reason = ec.message();
+		lua_pushfstring(state, "cannot open %s: %s", u8path.c_str(), reason.c_str());
+		return ErrorCode::FileError;
+	}
+
+	std::ostringstream buf;
+	buf << stream.rdbuf();
+	std::string contents = std::move(buf).str();
+
+	// Strip a leading UTF-8 BOM if present. luaL_loadfile does this implicitly;
+	// without it, Lua's tokenizer would choke on the 0xEF byte. Notepad on
+	// Windows writes the BOM by default for UTF-8 files.
+	static constexpr char utf8Bom[3] = {'\xEF', '\xBB', '\xBF'};
+	if (contents.size() >= 3 && std::memcmp(contents.data(), utf8Bom, 3) == 0) {
+		contents.erase(0, 3);
+	}
+
+	return static_cast<ErrorCode>(
+		luaL_loadbufferx(state, contents.data(), contents.size(), chunkname.c_str(), nullptr));
 }
 
 bool Registry::isUserDefinedEntry(const Registry& registry) {

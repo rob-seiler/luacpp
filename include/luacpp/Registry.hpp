@@ -66,9 +66,13 @@ public:
 
 	bool copyContent(Registry& other);
 
+	// Public so State::loadAndExecuteScript(File) can share the same file-read
+	// implementation — see Registry.cpp for why we don't delegate to
+	// luaL_loadfile directly.
+	static ErrorCode loadFile(lua_State* state, const std::filesystem::path& path);
+
 private:
 	static ErrorCode loadString(lua_State* state, const char* src);
-	static ErrorCode loadFile(lua_State* state, const std::filesystem::path& path);
 	static bool isUserDefinedEntry(const Registry& registry);
 	static void copyEntry(lua_State* src, lua_State* dst);
 };
