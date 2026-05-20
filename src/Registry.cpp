@@ -8,12 +8,26 @@ Registry::Registry(lua_State* L) : Table(L, LUA_REGISTRYINDEX, false) {}
 Registry::ErrorCode Registry::loadScript(Generic key, const char* src) {
 	switch (key.getType()) {
 		case Type::Boolean: return loadScript(key.get<bool>(), src);
-		case Type::Number: 
+		case Type::Number:
 			if (key.isInteger()) {
 				return loadScript(key.get<int64_t>(), src);
 			}
 			return loadScript(key.get<double>(), src);
 		case Type::String: return loadScript(key.get<std::string>().c_str(), src);
+		default: return ErrorCode::ErrorError;
+	};
+	return ErrorCode::RuntimeError;
+}
+
+Registry::ErrorCode Registry::loadScriptFromFile(Generic key, const std::filesystem::path& path) {
+	switch (key.getType()) {
+		case Type::Boolean: return loadScriptFromFile(key.get<bool>(), path);
+		case Type::Number:
+			if (key.isInteger()) {
+				return loadScriptFromFile(key.get<int64_t>(), path);
+			}
+			return loadScriptFromFile(key.get<double>(), path);
+		case Type::String: return loadScriptFromFile(key.get<std::string>().c_str(), path);
 		default: return ErrorCode::ErrorError;
 	};
 	return ErrorCode::RuntimeError;
@@ -46,6 +60,15 @@ bool Registry::copyContent(Registry& other) {
 
 Registry::ErrorCode Registry::loadString(lua_State* state, const char* src) {
 	return static_cast<ErrorCode>(luaL_loadstring(state, src));
+}
+
+Registry::ErrorCode Registry::loadFile(lua_State* state, const std::filesystem::path& path) {
+	// path.string() yields the native UTF-8 representation on Windows (where
+	// filesystem::path is wide internally) and a direct view on POSIX. Lua
+	// then uses that null-terminated string verbatim as the chunk name
+	// (prefixed with '@') in any traceback.
+	const std::string narrow = path.string();
+	return static_cast<ErrorCode>(luaL_loadfile(state, narrow.c_str()));
 }
 
 bool Registry::isUserDefinedEntry(const Registry& registry) {

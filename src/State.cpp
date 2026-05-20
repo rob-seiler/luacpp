@@ -204,6 +204,33 @@ int State::loadAndExecuteScript(const char* code) {
 	return status;
 }
 
+int State::loadAndExecuteScript(const File& path) {
+	// path.string() returns the native UTF-8 representation on platforms
+	// where std::filesystem stores wide chars (Windows); on POSIX it is a
+	// direct view of the underlying char string. Either way luaL_loadfile
+	// receives a null-terminated UTF-8 path, which Lua then uses verbatim
+	// as the chunk name (prefixed with '@') for tracebacks.
+	const std::string narrow = path.string();
+
+	// Note: we do NOT use luaL_dofile here. That macro expands to
+	//   (luaL_loadfile(...) || lua_pcall(...))
+	// — a logical OR that collapses every non-zero status to 1, so callers
+	// can no longer distinguish LUA_ERRFILE / LUA_ERRSYNTAX / LUA_ERRRUN.
+	// Expanding manually preserves the real status code, which is the
+	// entire point of separate error categories.
+	int status = luaL_loadfile(m_state, narrow.c_str());
+	if (status == LUA_OK) {
+		status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
+	}
+	if (status != LUA_OK) {
+		while (lua_isstring(m_state, -1)) {
+			m_errorList.emplace_back(lua_tostring(m_state, -1));
+			lua_pop(m_state, 1);
+		}
+	}
+	return status;
+}
+
 Type State::getType(int index) const {
 	return static_cast<Type>(lua_type(m_state, index));
 }
