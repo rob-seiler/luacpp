@@ -82,7 +82,6 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 - **Improved error handling** — headline feature. Currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned: a `protected_call`-style abstraction that surfaces the Lua error message and (where available) a traceback across every script-execution path. Note: the string-source variant of `loadAndExecuteScript` still uses `luaL_dostring`, which collapses every non-zero Lua status into `1` — the differentiated codes (`LUA_ERRSYNTAX`, `LUA_ERRRUN`, …) currently only surface via the new file-loading overload.
 - **`std::optional`, multi-return, and tuple support** — extend `Stack<T>` and `pushResult` so bound methods can return `std::tuple<...>` as multiple Lua values and accept `std::optional<T>` arguments. Low effort, high comfort gain.
-- **C++20 module wrapper** (`luacpp.cppm`) — re-exports the existing headers so consumer projects can write `import luacpp;` without forcing internal module restructuring. Opt-in via CMake (`LUACPP_BUILD_MODULE`); the static library stays the default. See [docs/cpp20-modules.md](docs/cpp20-modules.md).
 
 ### v0.4.0 — Class-binding polish
 

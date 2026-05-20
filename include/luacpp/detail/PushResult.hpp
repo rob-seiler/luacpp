@@ -1,18 +1,9 @@
 #ifndef LUACPP_DETAIL_PUSH_RESULT_HPP
 #define LUACPP_DETAIL_PUSH_RESULT_HPP
 
-// Smart push: dispatches a C++ value onto the Lua stack via Stack<T> for
-// primitives or via Metatable<T>::create for user-defined class types.
-//
-// Lives in its own header because two equally-weighted consumers depend on
-// it — Metatable.hpp's auto-generated operator wrappers, and BindImpl.inl's
-// methodWrapper / freeFunctionWrapper / staticField. Keeping the definition
-// here breaks the State.hpp <-> Metatable.hpp include cycle that would
-// otherwise hide it from BindImpl.inl at parse time (visible in C++20
-// module builds where MSVC's GMF is stricter than the classic header path).
-//
-// Internal header: include via <luacpp/State.hpp> or <luacpp/Metatable.hpp>,
-// not directly — the include order is brittle on its own.
+// Internal header — pulled in via <luacpp/Metatable.hpp>. Extracted to break
+// the State.hpp <-> Metatable.hpp include cycle that MSVC's stricter GMF
+// surfaces in C++20 module builds.
 
 #include "../State.hpp"
 #include "../Basics.hpp"

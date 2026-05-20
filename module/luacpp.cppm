@@ -61,7 +61,4 @@ using ::Lua::MaskReturn;
 using ::Lua::MaskLine;
 using ::Lua::MaskCount;
 
-// Small utilities
-using ::Lua::bit;
-
 } // namespace Lua

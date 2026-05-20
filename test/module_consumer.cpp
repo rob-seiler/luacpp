@@ -38,8 +38,11 @@ int testStringRoundtrip() {
 }
 
 int testVersionConstant() {
+    // Just prove the constant is reachable through the module surface and
+    // carries a non-degenerate value — hardcoding the current version here
+    // would force every release bump to touch this smoke test.
     constexpr auto v = Lua::LuaCppVersion;
-    return (v.getMajor() == 0 && v.getMinor() == 2) ? 0 : 1;
+    return v.toNumber() != 0 ? 0 : 1;
 }
 
 }  // namespace
