@@ -81,3 +81,33 @@ jobs:
       # Execute tests defined by the CMake configuration. Note that --build-config is needed because the default Windows generator is a multi-config generator (Visual Studio generator).
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest --build-config ${{ matrix.build_type }}
+
+  # Separate job for the C++20 module wrapper. Kept off the main matrix
+  # because module toolchain support is uneven (MSVC 17.5+, Clang 16+/libc++,
+  # GCC 14+) and it would multiply the matrix without adding much coverage
+  # for the non-module code paths. MSVC on windows-latest is the most
+  # consequential consumer platform and the strictest front-end — which is
+  # the one that surfaced the State<->Metatable include-cycle issue this
+  # branch resolved.
+  build_module:
+    name: Module build (MSVC)
+    runs-on: windows-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Configure CMake
+      run: >
+        cmake -B ${{ github.workspace }}/build
+        -DCMAKE_BUILD_TYPE=Release
+        -DLUACPP_BUILD_MODULE=ON
+        -S ${{ github.workspace }}
+
+    - name: Build
+      run: cmake --build ${{ github.workspace }}/build --config Release
+
+    - name: Test
+      working-directory: ${{ github.workspace }}/build
+      run: ctest --build-config Release --output-on-failure

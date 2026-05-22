@@ -6,6 +6,7 @@
 #include "../Table.hpp"
 #include "../Basics.hpp"
 #include "ArgumentExtractor.hpp"
+#include "PushResult.hpp"
 
 #include <type_traits>
 #include <tuple>
