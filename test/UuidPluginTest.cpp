@@ -13,25 +13,25 @@ namespace {
 
 class UuidPluginTest : public ::testing::Test {};
 
-// Helper: create a state ready to require("uuid") from the build's plugin dir.
-// Defined as a function (not a fixture method) because State has no copy ctor;
-// returning by move keeps each test's state independent.
+// Helper: register the build's plugin dir on the state's cpath so that
+// require("uuid") can locate the native module. Operates on a caller-owned
+// State because State is non-movable (registerMethod captures `this` in Lua
+// closures — see the State header for rationale).
 //
 // Lua's package.cpath patterns match the platform-specific shared-library
 // extension: .dll on Windows, .so elsewhere (including macOS — Lua's default
 // cpath uses .so even on macOS).
-static State makeStateWithUuidLoadable() {
-	State lua(State::LibBase | State::LibPackage);
+static void addUuidModuleSearchPath(State& lua) {
 #ifdef _WIN32
 	lua.addModuleSearchPath(LUACPP_UUID_MODULE_DIR "/?.dll", /*forNativeModule=*/true);
 #else
 	lua.addModuleSearchPath(LUACPP_UUID_MODULE_DIR "/?.so", /*forNativeModule=*/true);
 #endif
-	return lua;
 }
 
 TEST_F(UuidPluginTest, v4_returnsRfc4122FormattedString) {
-	State lua = makeStateWithUuidLoadable();
+	State lua(State::LibBase | State::LibPackage);
+	addUuidModuleSearchPath(lua);
 
 	ASSERT_EQ(lua.loadAndExecuteScript(R"(
 		local uuid = require("uuid")
@@ -50,7 +50,8 @@ TEST_F(UuidPluginTest, v4_returnsRfc4122FormattedString) {
 }
 
 TEST_F(UuidPluginTest, v7_hasVersion7AndTimeOrdering) {
-	State lua = makeStateWithUuidLoadable();
+	State lua(State::LibBase | State::LibPackage);
+	addUuidModuleSearchPath(lua);
 
 	ASSERT_EQ(lua.loadAndExecuteScript(R"(
 		uuid = require("uuid")
