@@ -84,7 +84,7 @@ struct AddOp {
 struct SubOp {
 	template <typename A, typename B>
 	static auto apply(const A& a, const B& b) -> decltype(a - b) { return a - b; }
-	static constexpr const char* slot = State::MetaTable::Substraction;
+	static constexpr const char* slot = State::MetaTable::Subtraction;
 	static constexpr const char* errorMsg = "operator-: invalid operand types";
 };
 

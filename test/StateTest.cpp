@@ -55,6 +55,19 @@ protected:
 
 using namespace std::literals::string_view_literals;
 
+// Regression guard: State is intentionally non-copyable and non-movable.
+// registerMethod() captures `this` inside Lua C-closures, so any move would
+// leave previously registered closures pointing at a stale object. Wrap in
+// std::unique_ptr<State> if you need transfer of ownership.
+static_assert(!std::is_copy_constructible_v<State>,
+              "State must not be copy-constructible");
+static_assert(!std::is_move_constructible_v<State>,
+              "State must not be move-constructible");
+static_assert(!std::is_copy_assignable_v<State>,
+              "State must not be copy-assignable");
+static_assert(!std::is_move_assignable_v<State>,
+              "State must not be move-assignable");
+
 
 TEST_F(StateTest, simpleScriptExecution) {
 	const char* src = R"(
@@ -175,6 +188,52 @@ TEST_F(StateTest, simpleNativeFunction) {
 	EXPECT_EQ(script.executeFunctionAndReadReturnVal(rc, "calcHypothenuse", 3, 4), 0);
 	EXPECT_EQ(rc, 5);
 	EXPECT_EQ(script.getStackSize(), 0);
+}
+
+// Regression: getUpValue<T>() previously forwarded to
+// getStackValue<T>(m_state, index) — but getStackValue only takes a single
+// argument, so any call site was uninstantiable. The method was documented
+// as public API yet never actually compiled. This test exercises the path.
+// Regression: executeScript previously popped the pcall error message off the
+// stack without recording it in m_errorList — diverging from
+// loadAndExecuteScript which does record. Both paths must now populate
+// getErrorList() so callers can inspect failures uniformly.
+TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
+	constexpr static const char* const ScriptKey = "errscript";
+	// LibBase is required so error() resolves at runtime.
+	const char* src = R"(
+		error("boom from executeScript")
+	)";
+
+	State script(State::LibBase);
+	ASSERT_EQ(script.loadScript(ScriptKey, src), 0);
+	ASSERT_TRUE(script.getErrorList().empty());
+
+	const int ec = script.executeScript(ScriptKey);
+	EXPECT_NE(ec, 0);
+	EXPECT_EQ(script.getStackSize(), 0); // error was drained, not left dangling
+	ASSERT_FALSE(script.getErrorList().empty());
+	EXPECT_NE(script.getErrorList().front().find("boom from executeScript"),
+	          std::string::npos);
+}
+
+TEST_F(StateTest, getUpValue) {
+	const char* src = R"(
+		result = multiplyByFactor(6)
+	)";
+
+	auto multiplyByFactor = [](lua_State* lvm) -> int {
+		State lua(lvm);
+		const int value  = lua.getArgument<int>(1);
+		const int factor = lua.getUpValue<int>(1);
+		return lua.setReturnValue(value * factor);
+	};
+
+	State script(State::LibNone);
+	EXPECT_EQ(script.registerNativeFunctionWithUpvalues("multiplyByFactor",
+	                                                   multiplyByFactor, 7), 0);
+	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	EXPECT_EQ(script.readVariable<int>("result"), 42);
 }
 
 TEST_F(StateTest, registerMethod) {
