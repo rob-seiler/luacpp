@@ -87,11 +87,13 @@ TEST_F(StateTest, simpleScriptWithInvalidSyntax) {
 	)";
 
 	State script(State::LibNone);
+	auto& errors = script.installErrorHandler<LogDecorator>();
 	EXPECT_NE(script.loadAndExecuteScript(src), 0);
 	EXPECT_EQ(script.getStackSize(), 0);
-	EXPECT_FALSE(script.getErrorList().empty());
-	for (const std::string& err : script.getErrorList()) {
-		std::cout << err << std::endl;
+	EXPECT_FALSE(errors.log().empty());
+	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
+	for (const auto& err : errors.log()) {
+		std::cout << err.message << std::endl;
 	}
 }
 
@@ -191,13 +193,10 @@ TEST_F(StateTest, simpleNativeFunction) {
 }
 
 // Regression: getUpValue<T>() previously forwarded to
-// getStackValue<T>(m_state, index) — but getStackValue only takes a single
-// argument, so any call site was uninstantiable. The method was documented
-// as public API yet never actually compiled. This test exercises the path.
 // Regression: executeScript previously popped the pcall error message off the
-// stack without recording it in m_errorList — diverging from
-// loadAndExecuteScript which does record. Both paths must now populate
-// getErrorList() so callers can inspect failures uniformly.
+// stack without routing it anywhere. After the ErrorHandler refactor both
+// load-and-execute and execute paths must invoke the configured handler so
+// callers can inspect failures uniformly.
 TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	constexpr static const char* const ScriptKey = "errscript";
 	// LibBase is required so error() resolves at runtime.
@@ -206,14 +205,16 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	)";
 
 	State script(State::LibBase);
+	auto& errors = script.installErrorHandler<LogDecorator>();
 	ASSERT_EQ(script.loadScript(ScriptKey, src), 0);
-	ASSERT_TRUE(script.getErrorList().empty());
+	ASSERT_TRUE(errors.log().empty());
 
 	const int ec = script.executeScript(ScriptKey);
 	EXPECT_NE(ec, 0);
 	EXPECT_EQ(script.getStackSize(), 0); // error was drained, not left dangling
-	ASSERT_FALSE(script.getErrorList().empty());
-	EXPECT_NE(script.getErrorList().front().find("boom from executeScript"),
+	ASSERT_FALSE(errors.log().empty());
+	EXPECT_EQ(errors.log().front().category, LuaError::Category::Runtime);
+	EXPECT_NE(errors.log().front().message.find("boom from executeScript"),
 	          std::string::npos);
 }
 
@@ -461,9 +462,6 @@ TEST_F(StateTest, metatable) {
 
 	script.registerNativeFunction("createVector", Vec2::create);
 	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	for (const std::string& err : script.getErrorList()) {
-		std::cout << err << std::endl;
-	}
 
 	//read out v3 to check against
 	double v3x = 0, v3y = 0;

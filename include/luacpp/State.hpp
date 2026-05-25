@@ -7,6 +7,7 @@
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
+#include "ErrorHandling.hpp"
 #include "detail/Bind.hpp"
 
 #include <string>
@@ -290,7 +291,7 @@ public:
 		if (ec == static_cast<int>(Registry::ErrorCode::Ok)) {
 			ec = callFunction(0, 0);
 			if (ec != 0) {
-				drainErrorStack(); // mirrors loadAndExecuteScript: log + pop
+				reportError(LuaError::Category::Runtime, ec);
 			}
 		}
 		return ec;
@@ -551,14 +552,36 @@ public:
 	}
 
 	/**
-	 * \brief Get the list of errors that occured during script execution
-	*/
-	const std::vector<std::string>& getErrorList() const { return m_errorList; }
+	 * \brief Install a strategy that receives every LuaError this state surfaces.
+	 *
+	 * Default-constructed States have a NullHandler installed — errors are
+	 * silently dropped. Compose decorators (see ErrorHandling.hpp) to log,
+	 * capture, throw, filter, or callback on errors. Passing nullptr resets
+	 * to the default NullHandler.
+	 *
+	 * \see ErrorHandling.hpp
+	 */
+	void setErrorHandler(std::unique_ptr<ErrorHandler> handler);
 
 	/**
-	 * \brief Clear the list of errors that occured during script execution
-	*/
-	void clearErrorList() { m_errorList.clear(); }
+	 * \brief Convenience: construct an ErrorHandler in place, install it,
+	 *        and return a reference for later inspection.
+	 *
+	 * Saves the unique_ptr dance for the common case of "install a handler
+	 * and remember it":
+	 * \code
+	 *   auto& log = state.installErrorHandler<LogDecorator>();
+	 *   // ... run scripts ...
+	 *   for (const auto& e : log.log()) std::cerr << e.message << '\n';
+	 * \endcode
+	 */
+	template <typename HandlerT, typename... Args>
+	HandlerT& installErrorHandler(Args&&... args) {
+		auto handler = std::make_unique<HandlerT>(std::forward<Args>(args)...);
+		HandlerT* ptr = handler.get();
+		setErrorHandler(std::move(handler));
+		return *ptr;
+	}
 
 	/**
 	 * \brief returns the internal lua state
@@ -637,10 +660,11 @@ private:
 	void anchorOwned(void* ptr, void (*deleter)(void*));
 	void transferStringOwnership(std::string s);
 
-	// Pops every string value currently on top of the Lua stack and pushes
-	// them onto m_errorList in order. Used after pcall failures so callers
-	// can inspect getErrorList(). No-op when the stack top is not a string.
-	void drainErrorStack();
+	// Pops the error message from the top of the Lua stack (if any), packages
+	// it as a LuaError with the given category and status code, and invokes
+	// the configured ErrorHandler. Called from every load/pcall path so all
+	// failures flow through one notification channel.
+	void reportError(LuaError::Category category, int status);
 
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
@@ -666,7 +690,7 @@ private:
 	Registry m_registry; ///< registry for user defined functions
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
-	std::vector<std::string> m_errorList; ///< list of errors that occured during script execution
+	std::unique_ptr<ErrorHandler> m_errorHandler; ///< strategy invoked for every LuaError (never null after construction)
 };
 
 } // namespace Lua

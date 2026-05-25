@@ -23,55 +23,62 @@ Lua::File dataFile(const char* name) {
 
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	int status = lua.loadAndExecuteScript(dataFile("valid.lua"));
 
 	ASSERT_EQ(status, LUA_OK);
-	EXPECT_TRUE(lua.getErrorList().empty());
+	EXPECT_TRUE(errors.log().empty());
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 	EXPECT_EQ(lua.readVariable<std::string>("greeting"), "hello from file");
 }
 
 TEST(FileLoadingTest, MissingFile_ReturnsErrFileAndCapturesPath) {
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	int status = lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
 
 	ASSERT_EQ(status, LUA_ERRFILE);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.log().empty());
+	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
 	// Lua's standard error format for ERRFILE is
 	//   "cannot open <path>: <reason>"
 	// We don't pin the entire message (varies by libc) but the path must be in it.
-	EXPECT_NE(errors.front().find("does_not_exist_xyz.lua"), std::string::npos)
-		<< "error message did not reference the failing path: " << errors.front();
+	const auto& msg = errors.log().front().message;
+	EXPECT_NE(msg.find("does_not_exist_xyz.lua"), std::string::npos)
+		<< "error message did not reference the failing path: " << msg;
 }
 
 TEST(FileLoadingTest, SyntaxError_ReturnsErrSyntaxAndReferencesFile) {
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	int status = lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
 
 	ASSERT_EQ(status, LUA_ERRSYNTAX);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.log().empty());
+	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
 	// chunkname (= '@path') means the file name appears in the error message
 	// — that is the whole point of the file-source overload vs. piping the
 	// file's bytes through loadAndExecuteScript(const char*).
-	EXPECT_NE(errors.front().find("syntax_error.lua"), std::string::npos)
-		<< "syntax error did not reference the file: " << errors.front();
+	const auto& msg = errors.log().front().message;
+	EXPECT_NE(msg.find("syntax_error.lua"), std::string::npos)
+		<< "syntax error did not reference the file: " << msg;
 }
 
 TEST(FileLoadingTest, RuntimeError_ReturnsErrRunAndPinpointsLine) {
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	int status = lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
 	ASSERT_EQ(status, LUA_ERRRUN);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.log().empty());
+	EXPECT_EQ(errors.log().front().category, LuaError::Category::Runtime);
 	// runtime_error.lua calls error("boom...") on line 4. The traceback must
 	// reference both the file and the line.
-	EXPECT_NE(errors.front().find("runtime_error.lua"), std::string::npos)
-		<< "runtime error did not reference the file: " << errors.front();
-	EXPECT_NE(errors.front().find(":4"), std::string::npos)
-		<< "runtime error did not reference line 4: " << errors.front();
+	const auto& msg = errors.log().front().message;
+	EXPECT_NE(msg.find("runtime_error.lua"), std::string::npos)
+		<< "runtime error did not reference the file: " << msg;
+	EXPECT_NE(msg.find(":4"), std::string::npos)
+		<< "runtime error did not reference line 4: " << msg;
 }
 
 TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
@@ -101,6 +108,7 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	}
 
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	const int status = lua.loadAndExecuteScript(path);
 
 	std::error_code rmErr;
@@ -108,7 +116,7 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 
 	ASSERT_EQ(status, LUA_OK)
 		<< "non-ASCII path failed to load: "
-		<< (lua.getErrorList().empty() ? std::string("<no error message>") : lua.getErrorList().front());
+		<< (errors.log().empty() ? std::string("<no error message>") : errors.log().front().message);
 	EXPECT_EQ(lua.readVariable<int>("x"), 7);
 }
 

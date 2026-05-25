@@ -19,19 +19,37 @@ namespace Lua {
 
 std::map<lua_State*, State::DebugHook> State::s_debugHooks;
 
-State::State(Library libraries) 
+State::State(Library libraries)
 : m_state(luaL_newstate()),
   m_registry(m_state),
-  m_externalState(false)
-{ 
+  m_externalState(false),
+  m_errorHandler(std::make_unique<NullHandler>())
+{
 	openLibrary(libraries);
 }
 
 State::State(lua_State* state)
 : m_state(state),
   m_registry(state),
-  m_externalState(true)
+  m_externalState(true),
+  m_errorHandler(std::make_unique<NullHandler>())
 {
+}
+
+void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
+	// Keep the invariant that m_errorHandler is never null after construction
+	// — callers can reset by passing nullptr explicitly, which collapses back
+	// to the silent default.
+	m_errorHandler = handler ? std::move(handler) : std::make_unique<NullHandler>();
+}
+
+void State::reportError(LuaError::Category category, int status) {
+	LuaError err{category, status, {}, {}};
+	if (lua_isstring(m_state, -1)) {
+		err.message = lua_tostring(m_state, -1);
+		lua_pop(m_state, 1);
+	}
+	(*m_errorHandler)(err);
 }
 
 State::~State() {
@@ -182,9 +200,16 @@ int State::overrideLuaFunction(const char* name, NativeFunction func) {
 }
 
 int State::loadAndExecuteScript(const char* code) {
-	int status = luaL_dostring(m_state, code);
+	// Split load/exec explicitly (instead of luaL_dostring) so that load
+	// failures and runtime failures land in distinct LuaError categories.
+	int status = luaL_loadstring(m_state, code);
 	if (status != LUA_OK) {
-		drainErrorStack();
+		reportError(LuaError::Category::Load, status);
+		return status;
+	}
+	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
+	if (status != LUA_OK) {
+		reportError(LuaError::Category::Runtime, status);
 	}
 	return status;
 }
@@ -196,20 +221,15 @@ int State::loadAndExecuteScript(const File& path) {
 	// status to 1 — preserving LUA_ERRFILE / LUA_ERRSYNTAX / LUA_ERRRUN is the
 	// entire point of the file-loading overload.
 	int status = static_cast<int>(Registry::loadFile(m_state, path));
-	if (status == LUA_OK) {
-		status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
-	}
 	if (status != LUA_OK) {
-		drainErrorStack();
+		reportError(LuaError::Category::Load, status);
+		return status;
+	}
+	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
+	if (status != LUA_OK) {
+		reportError(LuaError::Category::Runtime, status);
 	}
 	return status;
-}
-
-void State::drainErrorStack() {
-	while (lua_isstring(m_state, -1)) {
-		m_errorList.emplace_back(lua_tostring(m_state, -1));
-		lua_pop(m_state, 1);
-	}
 }
 
 Type State::getType(int index) const {
