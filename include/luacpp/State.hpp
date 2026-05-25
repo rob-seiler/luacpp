@@ -57,7 +57,7 @@ public:
 
 	struct MetaTable {
 		constexpr static const char* const Addition = "__add"; ///< addition operator (+)
-		constexpr static const char* const Substraction = "__sub"; ///< subtraction operator (-)
+		constexpr static const char* const Subtraction = "__sub"; ///< subtraction operator (-)
 		constexpr static const char* const Multiplication = "__mul"; ///< multiplication operator (*)
 		constexpr static const char* const Division = "__div"; ///< division operator (/)
 		constexpr static const char* const Modulo = "__mod"; ///< modulo operator (%)
@@ -89,7 +89,16 @@ public:
 	State(Library libraries = LibNone);
 	State(lua_State* state);
 	State(const State&) = delete;
-	State(State&& mv);
+	// Move is deleted on purpose. registerMethod() captures `this` as an
+	// upvalue inside a Lua C-closure; once moved, every previously registered
+	// closure still points at the moved-from State, so dispatching any Lua-
+	// registered method would access a stale object. Fixing that correctly
+	// would require re-binding every closure on move — out of scope for the
+	// resource-owning API. Wrap in std::unique_ptr<State> if movability is
+	// needed.
+	State(State&&) = delete;
+	State& operator=(const State&) = delete;
+	State& operator=(State&&) = delete;
 
 	~State();
 
@@ -281,7 +290,7 @@ public:
 		if (ec == static_cast<int>(Registry::ErrorCode::Ok)) {
 			ec = callFunction(0, 0);
 			if (ec != 0) {
-				popStack(1); //pop the error message ToDo: improve error handling
+				drainErrorStack(); // mirrors loadAndExecuteScript: log + pop
 			}
 		}
 		return ec;
@@ -427,7 +436,7 @@ public:
 	 * @return The value
 	*/
 	template <typename T>
-	T getUpValue(int index) const { return getStackValue<T>(m_state, Basics::calcUpValueIndex(index)); }
+	T getUpValue(int index) const { return getStackValue<T>(Basics::calcUpValueIndex(index)); }
 
 	/**
 	 * @brief check if the value on the stack is of the given type
@@ -627,6 +636,11 @@ private:
 
 	void anchorOwned(void* ptr, void (*deleter)(void*));
 	void transferStringOwnership(std::string s);
+
+	// Pops every string value currently on top of the Lua stack and pushes
+	// them onto m_errorList in order. Used after pcall failures so callers
+	// can inspect getErrorList(). No-op when the stack top is not a string.
+	void drainErrorStack();
 
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }

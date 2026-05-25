@@ -34,16 +34,6 @@ State::State(lua_State* state)
 {
 }
 
-State::State(State&& mv)
-: m_state(mv.m_state),
-  m_registry(m_state),
-  m_externalState(mv.m_externalState),
-  m_errorList(std::move(mv.m_errorList))
-{
-	mv.m_state = nullptr;
-	mv.m_externalState = true;
-}
-
 State::~State() {
 	if (!m_externalState) {
 		lua_close(m_state);
@@ -194,12 +184,7 @@ int State::overrideLuaFunction(const char* name, NativeFunction func) {
 int State::loadAndExecuteScript(const char* code) {
 	int status = luaL_dostring(m_state, code);
 	if (status != LUA_OK) {
-		//lua failed to load the script and push an error message on the stack
-		//we store the message in our error log and clean up the stack
-		while (lua_isstring(m_state, -1)) {
-			m_errorList.emplace_back(lua_tostring(m_state, -1));
-			lua_pop(m_state, 1);
-		}
+		drainErrorStack();
 	}
 	return status;
 }
@@ -215,12 +200,16 @@ int State::loadAndExecuteScript(const File& path) {
 		status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	}
 	if (status != LUA_OK) {
-		while (lua_isstring(m_state, -1)) {
-			m_errorList.emplace_back(lua_tostring(m_state, -1));
-			lua_pop(m_state, 1);
-		}
+		drainErrorStack();
 	}
 	return status;
+}
+
+void State::drainErrorStack() {
+	while (lua_isstring(m_state, -1)) {
+		m_errorList.emplace_back(lua_tostring(m_state, -1));
+		lua_pop(m_state, 1);
+	}
 }
 
 Type State::getType(int index) const {
