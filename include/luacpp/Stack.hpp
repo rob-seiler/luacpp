@@ -3,6 +3,7 @@
 
 #include "Basics.hpp"
 
+#include <optional>
 #include <string>
 #include <type_traits>
 
@@ -85,6 +86,41 @@ struct Stack {
 			return static_cast<T>(Basics::asInteger(state, index));
 		} else {
 			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
+		}
+	}
+
+	/**
+	 * @brief Non-throwing read. Returns nullopt when the value at @p index
+	 *        does not match T (wrong Lua type, or — for class pointers — a
+	 *        different metatable).
+	 *
+	 * Use at C++/host boundaries (readVariable) where a mismatch must be a
+	 * query result. get() is for callback context, where a mismatch should
+	 * raise a Lua error to the enclosing pcall.
+	 */
+	static std::optional<T> tryGet(lua_State* state, int index) {
+		if constexpr (std::is_pointer_v<T>) {
+			using PointeeType = std::remove_pointer_t<T>;
+			if constexpr (std::is_class_v<PointeeType>) {
+				static_assert(detail::metatable_visible<PointeeType>::value,
+					"Stack<T*>::tryGet for a class type requires "
+					"<luacpp/Metatable.hpp> to be included (typically pulled in "
+					"transitively via <luacpp/State.hpp>). Add the include and retry.");
+				void* ud = Basics::testUserData(state, index, Metatable<PointeeType>::metatableName());
+				if (ud == nullptr) return std::nullopt;
+				return static_cast<T>(ud);
+			} else {
+				void* ud = Basics::asUserData(state, index);
+				if (ud == nullptr) return std::nullopt;
+				return static_cast<T>(ud);
+			}
+		} else {
+			// Value types: require an exact Lua-type match before extracting,
+			// so we don't lean on Lua's implicit number<->string coercion.
+			if (Basics::getTypeFor<T>() != Basics::getType(state, index)) {
+				return std::nullopt;
+			}
+			return get(state, index);
 		}
 	}
 };

@@ -158,18 +158,11 @@ public:
 	 */
 	template <typename T>
 	[[nodiscard]] std::optional<T> readVariable(const char* variableName) {
-		Type actualType = pushGlobalToStack(variableName);
-		std::optional<T> result;
-		const Type expected = Basics::getTypeFor<T>();
-		// Pointer types map to LightUserData by default, but a Point* coming
-		// from bindConstructor lives in a full UserData. Accept either.
-		const bool typeMatches =
-		    (expected == actualType) ||
-		    (std::is_pointer_v<T> &&
-		     (actualType == Type::UserData || actualType == Type::LightUserData));
-		if (typeMatches) {
-			result = Stack<T>::get(m_state, -1);
-		}
+		pushGlobalToStack(variableName);
+		// tryGet never raises a Lua error (uses testUserData for class pointers),
+		// so the plain popStack below always runs — no stack-cleanup hazard even
+		// when the global has the wrong type. See Stack<T>::tryGet.
+		std::optional<T> result = Stack<T>::tryGet(m_state, -1);
 		popStack(1);
 		return result;
 	}

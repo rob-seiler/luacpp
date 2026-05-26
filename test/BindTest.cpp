@@ -136,6 +136,32 @@ TEST(BindConstructorTest, BasicConstructor) {
     EXPECT_FLOAT_EQ(p->y, 4.5f);
 }
 
+// Regression: readVariable<T*> on a userdata carrying a DIFFERENT metatable
+// must return nullopt, not raise a Lua error. The read happens at the host
+// boundary (no enclosing pcall), so an erroring luaL_checkudata would kill
+// the program. tryGet uses luaL_testudata which returns nullptr on mismatch.
+TEST(BindConstructorTest, ReadVariableWrongUserdataType_ReturnsNullopt) {
+    State lua(State::LibBase);
+    Metatable<Point>::registerMetatable(lua);
+    Metatable<Counter>::registerMetatable(lua);
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.bindConstructor<Counter, int>("Counter");
+
+    lua.loadAndExecuteScript("c = Counter(42)");
+
+    // c is a Counter userdata; asking for a Point* must NOT crash.
+    auto asPoint = lua.readVariable<Point*>("c");
+    EXPECT_FALSE(asPoint.has_value());
+
+    // The correct type still resolves.
+    auto asCounter = lua.readVariable<Counter*>("c");
+    ASSERT_TRUE(asCounter.has_value());
+    EXPECT_EQ((*asCounter)->value, 42);
+
+    // A missing global is likewise nullopt, not a crash.
+    EXPECT_FALSE(lua.readVariable<Point*>("doesNotExist").has_value());
+}
+
 TEST(BindConstructorTest, SingleArgumentConstructor) {
     State lua(State::LibBase);
     Metatable<Counter>::registerMetatable(lua);

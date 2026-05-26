@@ -57,6 +57,10 @@ void* Basics::checkUserData(lua_State* state, int index, const char* tname) {
 	return luaL_checkudata(state, index, tname);
 }
 
+void* Basics::testUserData(lua_State* state, int index, const char* tname) {
+	return luaL_testudata(state, index, tname);
+}
+
 bool Basics::asBoolean(lua_State* state, int index) { return lua_toboolean(state, index) != 0; }
 double Basics::asNumber(lua_State* state, int index) { return lua_tonumber(state, index); }
 int64_t Basics::asInteger(lua_State* state, int index) { return lua_tointeger(state, index); }
