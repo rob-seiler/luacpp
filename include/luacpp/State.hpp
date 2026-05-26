@@ -148,13 +148,30 @@ public:
 	void addModuleSearchPath(const std::string& pattern, bool forNativeModule = false);
 
 
+	/**
+	 * \brief Read a global variable, returning nullopt when missing or of the
+	 *        wrong type.
+	 *
+	 * Unlike the script-execution methods this does NOT invoke the configured
+	 * error handler — "this global isn't there / isn't a T" is a query result,
+	 * not a Lua-side error. Caller decides whether to treat nullopt as an error.
+	 */
 	template <typename T>
-	T readVariable(const char* variableName) {
-		pushGlobalToStack(variableName);
-
-		T val = Stack<T>::get(m_state, -1);
+	[[nodiscard]] std::optional<T> readVariable(const char* variableName) {
+		Type actualType = pushGlobalToStack(variableName);
+		std::optional<T> result;
+		const Type expected = Basics::getTypeFor<T>();
+		// Pointer types map to LightUserData by default, but a Point* coming
+		// from bindConstructor lives in a full UserData. Accept either.
+		const bool typeMatches =
+		    (expected == actualType) ||
+		    (std::is_pointer_v<T> &&
+		     (actualType == Type::UserData || actualType == Type::LightUserData));
+		if (typeMatches) {
+			result = Stack<T>::get(m_state, -1);
+		}
 		popStack(1);
-		return val;
+		return result;
 	}
 
 	template <typename T>
@@ -212,23 +229,19 @@ public:
 	/**
 	 * @brief Register a native function to be callable from Lua
 	*/
-	int registerNativeFunction(const char* name, NativeFunction func, int numUpValues = 0);
+	void registerNativeFunction(const char* name, NativeFunction func, int numUpValues = 0);
 
 	/**
-	 * 
+	 * @brief Register a native function with upvalues. The upvalues are pushed
+	 *        onto the Lua stack and consumed by lua_pushcclosure.
 	*/
 	template <typename... Args>
-	int registerNativeFunctionWithUpvalues(const char* name, NativeFunction func, Args... args) {
+	void registerNativeFunctionWithUpvalues(const char* name, NativeFunction func, Args... args) {
 		(pushToStack(args), ...);  // Push all arguments to the Lua stack
-		int status = registerNativeFunction(name, func, sizeof...(args));
-		if (status != 0) {
-			popStack(sizeof...(args)); //pop the upvalues from the stack (on success this is done by lua)
-		}
-		return status;
-	
+		registerNativeFunction(name, func, sizeof...(args));
 	}
 
-	int registerMethod(const char* name, Method method);
+	void registerMethod(const char* name, Method method);
 
 	/**
 	 * @brief Register a debug hook
@@ -249,20 +262,25 @@ public:
 	/**
 	 * @brief Override an existing lua function with the given native function to be callable from Lua
 	*/
-	int overrideLuaFunction(const char* name, NativeFunction func);
+	void overrideLuaFunction(const char* name, NativeFunction func);
 
 	/**
 	 * @brief Load a script into the registry
-	 * @param name The name of the script
+	 * @param key  Registry key under which the loaded chunk is stored
 	 * @param code The source code of the script
+	 *
+	 * Reports a Load-category error via the configured handler on failure.
 	*/
 	template <typename T>
-	int loadScript(T key, const char* code) {
-		return static_cast<int>(m_registry.loadScript<T>(key, code));
+	void loadScript(T key, const char* code) {
+		auto rc = m_registry.loadScript<T>(key, code);
+		if (rc != Registry::ErrorCode::Ok) {
+			reportError(LuaError::Category::Load, static_cast<int>(rc));
+		}
 	}
 
 	template <typename T>
-	int loadScript(T key, const std::string& code) { return loadScript<T>(key, code.c_str()); }
+	void loadScript(T key, const std::string& code) { loadScript<T>(key, code.c_str()); }
 
 	/**
 	 * @brief Load a Lua script from a file into the registry
@@ -273,102 +291,128 @@ public:
 	 *
 	 * @param key  Registry key under which the loaded chunk is stored
 	 * @param path Filesystem path to the .lua source file
+	 *
+	 * Reports a Load-category error via the configured handler on failure.
 	 */
 	template <typename T>
-	int loadScript(T key, const File& path) {
-		return static_cast<int>(m_registry.loadScriptFromFile<T>(key, path));
-	}
-
-	/**
-	 * @brief Execute a script from the registry
-	 * This method tries to load a script from the registry and executes it immediately. The script will be
-	 * popped from the stack after execution.
-	 * @param name The key in the registry where the script is stored
-	 */
-	template <typename T>
-	int executeScript(T key) {
-		int ec = static_cast<int>(m_registry.getScript(key));
-		if (ec == static_cast<int>(Registry::ErrorCode::Ok)) {
-			ec = callFunction(0, 0);
-			if (ec != 0) {
-				reportError(LuaError::Category::Runtime, ec);
-			}
+	void loadScript(T key, const File& path) {
+		auto rc = m_registry.loadScriptFromFile<T>(key, path);
+		if (rc != Registry::ErrorCode::Ok) {
+			reportError(LuaError::Category::Load, static_cast<int>(rc));
 		}
-		return ec;
 	}
 
 	/**
-	 * @brief Load and execute a script
-	 * This will load the script and executes it immediately. The script will not be loaded into the global scope. So it is
-	 * not available as a function to call a second time.
-	*/
-	int loadAndExecuteScript(const char* code);
+	 * @brief Execute a script previously loaded into the registry.
+	 *
+	 * Reports a Runtime-category error via the configured handler on failure
+	 * (including a missing or non-function registry key).
+	 */
+	template <typename T>
+	void executeScript(T key) {
+		auto rc = m_registry.getScript(key);
+		if (rc != Registry::ErrorCode::Ok) {
+			reportError(LuaError{
+			    LuaError::Category::Runtime, static_cast<int>(rc),
+			    "executeScript: registry key is missing or not a function", {}});
+			return;
+		}
+		int status = callFunction(0, 0);
+		if (status != 0) {
+			reportError(LuaError::Category::Runtime, status);
+		}
+	}
 
 	/**
-	 * @brief Load and execute a script
-	 * This will load the script and executes it immediately. The script will not be loaded into the global scope. So it is
-	 * not available as a function to call a second time.
+	 * @brief Load and execute a script. Reports Load or Runtime errors via
+	 *        the configured handler.
 	*/
-	int loadAndExecuteScript(const std::string& code) { return loadAndExecuteScript(code.c_str()); }
+	void loadAndExecuteScript(const char* code);
+
+	void loadAndExecuteScript(const std::string& code) { loadAndExecuteScript(code.c_str()); }
 
 	/**
 	 * @brief Load and execute a Lua script from a file
 	 *
 	 * Resolved by the overload set when the argument is a Lua::File (alias
-	 * for std::filesystem::path). Uses luaL_dofile internally so Lua's
-	 * traceback machinery references the actual file path — runtime errors
-	 * surface as "path/to/script.lua:42: ..." instead of the opaque
-	 * "[string \"...\"]:42: ...".
+	 * for std::filesystem::path). Reports Load (including LUA_ERRFILE) or
+	 * Runtime errors via the configured handler.
 	 *
 	 * @param path Filesystem path to the .lua source file
-	 * @return     Lua status code (LUA_OK on success; LUA_ERRFILE if the
-	 *             file cannot be opened, LUA_ERRSYNTAX on a parse failure,
-	 *             LUA_ERRRUN on a runtime failure)
 	 */
-	int loadAndExecuteScript(const File& path);
+	void loadAndExecuteScript(const File& path);
 
+	/**
+	 * @brief Call a Lua function by name. Reports a Runtime-category error
+	 *        if the name is not a function or if the call fails.
+	 */
 	template <int NumRet = 0, typename... Args>
-	int executeFunction(std::string_view name, Args... args) {
-		int status = 0;
-		if (loadFunction(name.data())) {
-			(pushToStack(args), ...);  // Push all arguments to the Lua stack
-			status = callFunction(sizeof...(args), NumRet);  // Call the function with the number of arguments
+	void executeFunction(std::string_view name, Args... args) {
+		if (!loadFunction(name.data())) {
+			popStack(1); // lua_getglobal pushed the non-function value
+			reportError(LuaError{
+			    LuaError::Category::Runtime, 0,
+			    std::string("executeFunction: '") + std::string(name) + "' is not a function", {}});
+			return;
 		}
-		return status;
+		(pushToStack(args), ...);
+		int status = callFunction(sizeof...(args), NumRet);
+		if (status != 0) {
+			reportError(LuaError::Category::Runtime, status);
+		}
 	}
 
 	template <int NumRet = 0, typename T>
-	int executeFunctionWithArgsArray(std::string_view name, T* args, size_t numArgs) {
-		int status = 0;
-		if (loadFunction(name.data())) {
-			for (size_t i = 0; i < numArgs; ++i) {
-				pushToStack<T>(args[i]);
-			}
-			status = callFunction(0, NumRet);  // Call the function with the number of arguments
+	void executeFunctionWithArgsArray(std::string_view name, T* args, size_t numArgs) {
+		if (!loadFunction(name.data())) {
+			popStack(1);
+			reportError(LuaError{
+			    LuaError::Category::Runtime, 0,
+			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function", {}});
+			return;
 		}
-		return status;
+		for (size_t i = 0; i < numArgs; ++i) {
+			pushToStack<T>(args[i]);
+		}
+		int status = callFunction(static_cast<int>(numArgs), NumRet);
+		if (status != 0) {
+			reportError(LuaError::Category::Runtime, status);
+		}
 	}
 
+	/**
+	 * @brief Call a Lua function expecting a single return value. Returns
+	 *        nullopt when the call failed (in which case the handler was
+	 *        also invoked) or when the returned value's type does not match T.
+	 */
 	template <typename T, typename... Args>
-	int executeFunctionAndReadReturnVal(T& result, std::string_view name, Args... args) {
-		int status = executeFunction<1>(name, args...);
-		if (status == 0) {
-			result = getStackValue<T>(-1);
-			popStack(1);
-			return 0;
+	[[nodiscard]] std::optional<T> executeFunctionReturning(std::string_view name, Args... args) {
+		const int sizeBefore = getStackSize();
+		executeFunction<1>(name, args...);
+		if (getStackSize() <= sizeBefore) {
+			return std::nullopt; // executeFunction reported and bailed
 		}
-		return status;
+		std::optional<T> result;
+		if (Basics::getTypeFor<T>() == getType(-1)) {
+			result = getStackValue<T>(-1);
+		}
+		popStack(1);
+		return result;
 	}
 
 	template <typename T>
-	int executeFunctionWithArgsArrayAndReadReturnVal(T& result, std::string_view name, T* args, size_t numArgs) {
-		int status = executeFunctionWithArgsArray<1>(name, args, numArgs);
-		if (status == 0) {
-			result = getStackValue<T>(-1);
-			popStack(1);
-			return 0;
+	[[nodiscard]] std::optional<T> executeFunctionWithArgsArrayReturning(std::string_view name, T* args, size_t numArgs) {
+		const int sizeBefore = getStackSize();
+		executeFunctionWithArgsArray<1>(name, args, numArgs);
+		if (getStackSize() <= sizeBefore) {
+			return std::nullopt;
 		}
-		return status;
+		std::optional<T> result;
+		if (Basics::getTypeFor<T>() == getType(-1)) {
+			result = getStackValue<T>(-1);
+		}
+		popStack(1);
+		return result;
 	}
 
 
@@ -665,6 +709,9 @@ private:
 	// the configured ErrorHandler. Called from every load/pcall path so all
 	// failures flow through one notification channel.
 	void reportError(LuaError::Category category, int status);
+	// Direct overload for synthetic errors not originating from a Lua status
+	// (e.g. "function name not registered"). Caller fills the LuaError fields.
+	void reportError(LuaError err);
 
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }

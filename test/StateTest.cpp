@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <stdexcept>
 #include <string>
 
 #include <luacpp/State.hpp>
@@ -8,6 +9,13 @@
 struct lua_State;
 
 namespace Lua {
+
+template <typename T>
+static T readVar(State& s, const char* name) {
+	auto v = s.readVariable<T>(name);
+	if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
+	return *v;
+}
 
 class TestObject {
 public:
@@ -30,7 +38,7 @@ public:
 	void increase(int val) { m_count += val; }
 	int getCount() const { return m_count; }
 private:
-	int m_count = 0; 
+	int m_count = 0;
 };
 
 int destroyObject(lua_State* lvm) {
@@ -76,7 +84,7 @@ TEST_F(StateTest, simpleScriptExecution) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	script.loadAndExecuteScript(src);
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
@@ -88,13 +96,10 @@ TEST_F(StateTest, simpleScriptWithInvalidSyntax) {
 
 	State script(State::LibNone);
 	auto& errors = script.installErrorHandler<LogDecorator>();
-	EXPECT_NE(script.loadAndExecuteScript(src), 0);
+	script.loadAndExecuteScript(src);
 	EXPECT_EQ(script.getStackSize(), 0);
-	EXPECT_FALSE(errors.log().empty());
+	ASSERT_FALSE(errors.log().empty());
 	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
-	for (const auto& err : errors.log()) {
-		std::cout << err.message << std::endl;
-	}
 }
 
 TEST_F(StateTest, readVariable) {
@@ -104,8 +109,8 @@ TEST_F(StateTest, readVariable) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
-	EXPECT_EQ(script.readVariable<int>("x"), 12);
+	script.loadAndExecuteScript(src);
+	EXPECT_EQ(readVar<int>(script, "x"), 12);
 }
 
 TEST_F(StateTest, writeVariable) {
@@ -119,13 +124,13 @@ TEST_F(StateTest, writeVariable) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
-	EXPECT_EQ(script.executeFunction("calcY"), 0);
-	EXPECT_EQ(script.readVariable<int>("y"), 2);
+	script.loadAndExecuteScript(src);
+	script.executeFunction("calcY");
+	EXPECT_EQ(readVar<int>(script, "y"), 2);
 
 	script.writeVariable("x", 10);
-	EXPECT_EQ(script.executeFunction("calcY"), 0);
-	EXPECT_EQ(script.readVariable<int>("y"), 12);
+	script.executeFunction("calcY");
+	EXPECT_EQ(readVar<int>(script, "y"), 12);
 }
 
 TEST_F(StateTest, executeScriptFromRegistry) {
@@ -137,19 +142,19 @@ TEST_F(StateTest, executeScriptFromRegistry) {
 
 	//load the script into the registry
 	State script(State::LibNone);
-	ASSERT_EQ(script.loadScript(ScriptKey, src), 0);
+	script.loadScript(ScriptKey, src);
 	EXPECT_EQ(script.getStackSize(), 0);
 
 	//execute the script
 	script.writeVariable("x", 0);
-	EXPECT_EQ(script.executeScript(ScriptKey), 0);
+	script.executeScript(ScriptKey);
 	EXPECT_EQ(script.getStackSize(), 0);
-	EXPECT_EQ(script.readVariable<int>("x"), 1);
+	EXPECT_EQ(readVar<int>(script, "x"), 1);
 
 	//execute the script again
-	EXPECT_EQ(script.executeScript(ScriptKey), 0);
+	script.executeScript(ScriptKey);
 	EXPECT_EQ(script.getStackSize(), 0);
-	EXPECT_EQ(script.readVariable<int>("x"), 2);
+	EXPECT_EQ(readVar<int>(script, "x"), 2);
 }
 
 TEST_F(StateTest, simpleFunctionWithReturnValue) {
@@ -164,10 +169,10 @@ TEST_F(StateTest, simpleFunctionWithReturnValue) {
 	)";
 
 	State script(State::LibMath);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	int rc = 0;
-	EXPECT_EQ(script.executeFunctionAndReadReturnVal(rc, "calcHypothenuse", 3, 4), 0);
-	EXPECT_EQ(rc, 5);
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
+	auto rc = script.executeFunctionReturning<int>("calcHypothenuse", 3, 4);
+	ASSERT_TRUE(rc.has_value());
+	EXPECT_EQ(*rc, 5);
 }
 
 TEST_F(StateTest, simpleNativeFunction) {
@@ -184,15 +189,14 @@ TEST_F(StateTest, simpleNativeFunction) {
 	};
 
 	State script(State::LibMath);
-	EXPECT_EQ(script.registerNativeFunction("sqr", sqr), 0);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	int rc = 0;
-	EXPECT_EQ(script.executeFunctionAndReadReturnVal(rc, "calcHypothenuse", 3, 4), 0);
-	EXPECT_EQ(rc, 5);
+	script.registerNativeFunction("sqr", sqr);
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
+	auto rc = script.executeFunctionReturning<int>("calcHypothenuse", 3, 4);
+	ASSERT_TRUE(rc.has_value());
+	EXPECT_EQ(*rc, 5);
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-// Regression: getUpValue<T>() previously forwarded to
 // Regression: executeScript previously popped the pcall error message off the
 // stack without routing it anywhere. After the ErrorHandler refactor both
 // load-and-execute and execute paths must invoke the configured handler so
@@ -206,11 +210,10 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 
 	State script(State::LibBase);
 	auto& errors = script.installErrorHandler<LogDecorator>();
-	ASSERT_EQ(script.loadScript(ScriptKey, src), 0);
+	script.loadScript(ScriptKey, src);
 	ASSERT_TRUE(errors.log().empty());
 
-	const int ec = script.executeScript(ScriptKey);
-	EXPECT_NE(ec, 0);
+	script.executeScript(ScriptKey);
 	EXPECT_EQ(script.getStackSize(), 0); // error was drained, not left dangling
 	ASSERT_FALSE(errors.log().empty());
 	EXPECT_EQ(errors.log().front().category, LuaError::Category::Runtime);
@@ -218,6 +221,10 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	          std::string::npos);
 }
 
+// Regression: getUpValue<T>() previously forwarded to
+// getStackValue<T>(m_state, index) — but getStackValue only takes a single
+// argument, so any call site was uninstantiable. The method was documented
+// as public API yet never actually compiled. This test exercises the path.
 TEST_F(StateTest, getUpValue) {
 	const char* src = R"(
 		result = multiplyByFactor(6)
@@ -231,10 +238,10 @@ TEST_F(StateTest, getUpValue) {
 	};
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.registerNativeFunctionWithUpvalues("multiplyByFactor",
-	                                                   multiplyByFactor, 7), 0);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
-	EXPECT_EQ(script.readVariable<int>("result"), 42);
+	script.registerNativeFunctionWithUpvalues("multiplyByFactor",
+	                                          multiplyByFactor, 7);
+	script.loadAndExecuteScript(src);
+	EXPECT_EQ(readVar<int>(script, "result"), 42);
 }
 
 TEST_F(StateTest, registerMethod) {
@@ -244,12 +251,12 @@ TEST_F(StateTest, registerMethod) {
 
 	Counter counter;
 	State script(State::LibNone);
-	EXPECT_EQ(script.registerMethod("count", [&counter](State& script) {
+	script.registerMethod("count", [&counter](State& script) {
 		const int count = script.getArgument<int>(1);
 		counter.increase(count);
 		return 0;
-	}), 0);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	});
+	script.loadAndExecuteScript(src);
 	EXPECT_EQ(counter.getCount(), 10);
 }
 
@@ -267,7 +274,7 @@ TEST_F(StateTest, registerDebugHook) {
 		EXPECT_EQ(info.event, static_cast<int>(EventCodes::Line));
 		EXPECT_EQ(info.currentline, callCount + 1); //we have a new line right after the raw string starts
 	}, MaskLine, 0);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	script.loadAndExecuteScript(src);
 	EXPECT_EQ(callCount, 3);
 }
 
@@ -277,7 +284,7 @@ TEST_F(StateTest, readTable) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 	auto map = script.readTable<std::string, int>("map");
 	EXPECT_EQ(map.size(), 3);
 	EXPECT_EQ(map["a"], 1);
@@ -291,7 +298,7 @@ TEST_F(StateTest, readTable_invalidValueType) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 
 	bool exceptionRaised = false;
 	try {
@@ -313,7 +320,7 @@ TEST_F(StateTest, readTableIfMatching) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 	auto map = script.readTableIfMatching<std::string, int>("map");
 	EXPECT_EQ(map.size(), 2);
 	EXPECT_EQ(map["a"], 1);
@@ -326,7 +333,7 @@ TEST_F(StateTest, readTableGeneric) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 	auto map = script.readTableGeneric("map");
 	EXPECT_EQ(map.size(), 3);
 
@@ -345,12 +352,12 @@ TEST_F(StateTest, writeTable) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+	script.loadAndExecuteScript(src);
 	std::map<std::string, int> map = { { "a", 10 }, { "b", 20 } };
 	script.writeTable("map", map);
-	
-	EXPECT_EQ(script.executeFunction("calcY"), 0);
-	EXPECT_EQ(script.readVariable<int>("y"), 30);
+
+	script.executeFunction("calcY");
+	EXPECT_EQ(readVar<int>(script, "y"), 30);
 }
 
 TEST_F(StateTest, withTableDo) {
@@ -359,8 +366,8 @@ TEST_F(StateTest, withTableDo) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
+
 	int a = 0, b = 0, c = 0;
 	script.withTableDo("map", [&a, &b, &c](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
@@ -380,8 +387,8 @@ TEST_F(StateTest, nestedTable) {
 	)";
 
 	State script(State::LibNone);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
-	
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
+
 	int a = 0, b = 0, d = 0, e = 0;
 	script.withTableDo("map", [&a, &b, &d, &e](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
@@ -426,7 +433,7 @@ TEST_F(StateTest, metatable) {
 
 		static int create(lua_State* lvm) {
 			State lua(lvm);
-			createVectorTable(lua, 0, 0);			
+			createVectorTable(lua, 0, 0);
 			return 1;
 		}
 
@@ -447,7 +454,7 @@ TEST_F(StateTest, metatable) {
 				//pop the operands from the stack
 				lua.popStack(2);
 			}
-			
+
 			createVectorTable(lua, x1 + x2, y1 + y2);
 			return 1;
 		}
@@ -461,7 +468,7 @@ TEST_F(StateTest, metatable) {
 	});
 
 	script.registerNativeFunction("createVector", Vec2::create);
-	EXPECT_EQ(script.loadAndExecuteScript(src), 0); //we need to execute the script once to get the functions into the global scope
+	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 
 	//read out v3 to check against
 	double v3x = 0, v3y = 0;
@@ -504,7 +511,7 @@ TEST_F(StateTest, ctordtor) {
 			table.setElement(State::MetaTable::GC, destroyObject);
 		});
 
-		EXPECT_EQ(script.loadAndExecuteScript(src), 0);
+		script.loadAndExecuteScript(src);
 		EXPECT_EQ(TestObject::ObjectCount, 1);
 	}
 	EXPECT_EQ(TestObject::ObjectCount, 0);

@@ -52,6 +52,10 @@ void State::reportError(LuaError::Category category, int status) {
 	(*m_errorHandler)(err);
 }
 
+void State::reportError(LuaError err) {
+	(*m_errorHandler)(err);
+}
+
 State::~State() {
 	if (!m_externalState) {
 		lua_close(m_state);
@@ -165,15 +169,14 @@ void State::addModuleSearchPath(const std::string& pattern, bool forNativeModule
 	lua_pop(m_state, 1); // pop package table
 }
 
-int State::registerNativeFunction(const char* name, NativeFunction func, int numUpValues) {
+void State::registerNativeFunction(const char* name, NativeFunction func, int numUpValues) {
 	lua_pushcclosure(m_state, func, numUpValues);
 	lua_setglobal(m_state, name);
-	return 0;
 }
 
-int State::registerMethod(const char* name, Method method) {
+void State::registerMethod(const char* name, Method method) {
 	m_callbacks.push_back(method);
-	return registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
+	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
@@ -191,30 +194,28 @@ void State::registerDebugHook(DebugHook hook, int mask, int count) {
     lua_sethook(m_state, chook, mask, count);
 }
 
-int State::overrideLuaFunction(const char* name, NativeFunction func) {
+void State::overrideLuaFunction(const char* name, NativeFunction func) {
 	lua_getglobal(m_state, GlobalScope); //load global scope to stack
 	lua_pushcclosure(m_state, func, 0); //push function to stack
-    lua_setfield(m_state, -2, name); //register the function under the given name
+	lua_setfield(m_state, -2, name); //register the function under the given name
 	lua_pop(m_state, 1); //pop global scope
-	return 0;
 }
 
-int State::loadAndExecuteScript(const char* code) {
+void State::loadAndExecuteScript(const char* code) {
 	// Split load/exec explicitly (instead of luaL_dostring) so that load
 	// failures and runtime failures land in distinct LuaError categories.
 	int status = luaL_loadstring(m_state, code);
 	if (status != LUA_OK) {
 		reportError(LuaError::Category::Load, status);
-		return status;
+		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
 		reportError(LuaError::Category::Runtime, status);
 	}
-	return status;
 }
 
-int State::loadAndExecuteScript(const File& path) {
+void State::loadAndExecuteScript(const File& path) {
 	// Share Registry::loadFile so path-encoding handling (notably non-ASCII
 	// paths on Windows) lives in exactly one place. We do NOT use luaL_dofile
 	// because that macro expands to (load || pcall), collapsing every non-zero
@@ -223,13 +224,12 @@ int State::loadAndExecuteScript(const File& path) {
 	int status = static_cast<int>(Registry::loadFile(m_state, path));
 	if (status != LUA_OK) {
 		reportError(LuaError::Category::Load, status);
-		return status;
+		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
 		reportError(LuaError::Category::Runtime, status);
 	}
-	return status;
 }
 
 Type State::getType(int index) const {

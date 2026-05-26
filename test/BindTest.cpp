@@ -5,9 +5,23 @@
 #include <luacpp/Metatable.hpp>
 
 #include <cmath>
+#include <stdexcept>
 #include <string>
 
 namespace Lua {
+
+// Test-local helper: unwrap the optional<T> returned by readVariable<T> or
+// throw if the variable is missing / has the wrong type. Throwing fails the
+// test loudly instead of letting a default-T value silently propagate.
+namespace {
+template <typename T>
+T readVar(State& s, const char* name) {
+    auto v = s.readVariable<T>(name);
+    if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
+    return *v;
+}
+} // namespace
+
 
 // ============================================================================
 // Test Types
@@ -114,9 +128,9 @@ TEST(BindConstructorTest, BasicConstructor) {
     lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "p = Point(3.5, 4.5)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Point* p = lua.readVariable<Point*>("p");
+    Point* p = readVar<Point*>(lua,"p");
     ASSERT_NE(p, nullptr);
     EXPECT_FLOAT_EQ(p->x, 3.5f);
     EXPECT_FLOAT_EQ(p->y, 4.5f);
@@ -128,9 +142,9 @@ TEST(BindConstructorTest, SingleArgumentConstructor) {
     lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(42)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Counter* c = lua.readVariable<Counter*>("c");
+    Counter* c = readVar<Counter*>(lua,"c");
     ASSERT_NE(c, nullptr);
     EXPECT_EQ(c->value, 42);
 }
@@ -141,9 +155,9 @@ TEST(BindConstructorTest, ConstructorWithOperators) {
     lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "p1 = Point(1, 2); p2 = Point(3, 4); result = p1 + p2";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Point* result = lua.readVariable<Point*>("result");
+    Point* result = readVar<Point*>(lua,"result");
     ASSERT_NE(result, nullptr);
     EXPECT_FLOAT_EQ(result->x, 4.0f);
     EXPECT_FLOAT_EQ(result->y, 6.0f);
@@ -158,14 +172,14 @@ TEST(BindConstructorTest, MultipleConstructors) {
     lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "p = Point(1.5, 2.5); c = Counter(42)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Point* p = lua.readVariable<Point*>("p");
+    Point* p = readVar<Point*>(lua,"p");
     ASSERT_NE(p, nullptr);
     EXPECT_FLOAT_EQ(p->x, 1.5f);
     EXPECT_FLOAT_EQ(p->y, 2.5f);
 
-    Counter* c = lua.readVariable<Counter*>("c");
+    Counter* c = readVar<Counter*>(lua,"c");
     ASSERT_NE(c, nullptr);
     EXPECT_EQ(c->value, 42);
 }
@@ -179,9 +193,9 @@ TEST(BindConstructorTest, ConstructorWithUserdataArgs) {
     lua.bindConstructor<Line, Point, Point>("Line");
 
     const char* src = "start = Point(0, 0); finish = Point(10, 20); line = Line(start, finish)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Line* line = lua.readVariable<Line*>("line");
+    Line* line = readVar<Line*>(lua,"line");
     ASSERT_NE(line, nullptr);
     EXPECT_FLOAT_EQ(line->start.x, 0.0f);
     EXPECT_FLOAT_EQ(line->start.y, 0.0f);
@@ -198,9 +212,9 @@ TEST(BindConstructorTest, ConstructorWithInlineUserdataArgs) {
     lua.bindConstructor<Line, Point, Point>("Line");
 
     const char* src = "line = Line(Point(1, 2), Point(3, 4))";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Line* line = lua.readVariable<Line*>("line");
+    Line* line = readVar<Line*>(lua,"line");
     ASSERT_NE(line, nullptr);
     EXPECT_FLOAT_EQ(line->start.x, 1.0f);
     EXPECT_FLOAT_EQ(line->start.y, 2.0f);
@@ -221,12 +235,12 @@ TEST(BindConstructorTest, NonCopyableType) {
     });
 
     const char* src = "r = Resource(123); id = getId(r)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    int id = lua.readVariable<int>("id");
+    int id = readVar<int>(lua,"id");
     EXPECT_EQ(id, 123);
 
-    Resource* r = lua.readVariable<Resource*>("r");
+    Resource* r = readVar<Resource*>(lua,"r");
     ASSERT_NE(r, nullptr);
     EXPECT_EQ(r->id, 123);
     EXPECT_EQ(r->moveCount, 0); // constructed in place, never moved
@@ -242,11 +256,11 @@ TEST(BindConstructorTest, MultipleNonCopyableInstances) {
         r2 = Resource(200)
         r3 = Resource(300)
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Resource* r1 = lua.readVariable<Resource*>("r1");
-    Resource* r2 = lua.readVariable<Resource*>("r2");
-    Resource* r3 = lua.readVariable<Resource*>("r3");
+    Resource* r1 = readVar<Resource*>(lua,"r1");
+    Resource* r2 = readVar<Resource*>(lua,"r2");
+    Resource* r3 = readVar<Resource*>(lua,"r3");
 
     ASSERT_NE(r1, nullptr);
     ASSERT_NE(r2, nullptr);
@@ -274,14 +288,14 @@ TEST(BindConstructorTest, ConstructorCallSemantics) {
         end
         p3 = makePoint()
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Point* p1 = lua.readVariable<Point*>("p1");
+    Point* p1 = readVar<Point*>(lua,"p1");
     ASSERT_NE(p1, nullptr);
     EXPECT_FLOAT_EQ(p1->x, 1.0f);
     EXPECT_FLOAT_EQ(p1->y, 2.0f);
 
-    Point* p3 = lua.readVariable<Point*>("p3");
+    Point* p3 = readVar<Point*>(lua,"p3");
     ASSERT_NE(p3, nullptr);
     EXPECT_FLOAT_EQ(p3->x, 5.0f);
     EXPECT_FLOAT_EQ(p3->y, 6.0f);
@@ -293,9 +307,9 @@ TEST(BindConstructorTest, ComplexExpression) {
     lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "result = Point(1, 2) + Point(3, 4) + Point(5, 6)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Point* result = lua.readVariable<Point*>("result");
+    Point* result = readVar<Point*>(lua,"result");
     ASSERT_NE(result, nullptr);
     EXPECT_FLOAT_EQ(result->x, 9.0f);
     EXPECT_FLOAT_EQ(result->y, 12.0f);
@@ -313,10 +327,10 @@ TEST(BindConstructorTest, ConstructorInTable) {
             Point(5, 6)
         }
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     lua.loadAndExecuteScript("first = points[1]");
-    Point* first = lua.readVariable<Point*>("first");
+    Point* first = readVar<Point*>(lua,"first");
     ASSERT_NE(first, nullptr);
     EXPECT_FLOAT_EQ(first->x, 1.0f);
     EXPECT_FLOAT_EQ(first->y, 2.0f);
@@ -333,9 +347,9 @@ TEST(BindConstructorTest, ConstructorInLoop) {
             sum = sum + Counter(i)
         end
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Counter* sum = lua.readVariable<Counter*>("sum");
+    Counter* sum = readVar<Counter*>(lua,"sum");
     ASSERT_NE(sum, nullptr);
     EXPECT_EQ(sum->value, 15);
 }
@@ -346,19 +360,17 @@ TEST(BindConstructorTest, ErrorHandling_WrongArgCount) {
     lua.bindConstructor<Point, float, float>("Point");
 
     const char* src1 = "p = Point(1)";
-    int status1 = lua.loadAndExecuteScript(src1);
-    EXPECT_EQ(status1, 0);
+    lua.loadAndExecuteScript(src1);
 
-    Point* p1 = lua.readVariable<Point*>("p");
+    Point* p1 = readVar<Point*>(lua,"p");
     ASSERT_NE(p1, nullptr);
     EXPECT_FLOAT_EQ(p1->x, 1.0f);
     EXPECT_FLOAT_EQ(p1->y, 0.0f);
 
     const char* src2 = "p = Point(1, 2, 3, 4)";
-    int status2 = lua.loadAndExecuteScript(src2);
-    EXPECT_EQ(status2, 0);
+    lua.loadAndExecuteScript(src2);
 
-    Point* p2 = lua.readVariable<Point*>("p");
+    Point* p2 = readVar<Point*>(lua,"p");
     ASSERT_NE(p2, nullptr);
     EXPECT_FLOAT_EQ(p2->x, 1.0f);
     EXPECT_FLOAT_EQ(p2->y, 2.0f);
@@ -375,8 +387,8 @@ TEST(BindConstructorTest, ErrorHandling_WrongUserdataType) {
     lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(5); line = Line(c, c)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindConstructorTest, ErrorHandling_NilArgument) {
@@ -399,10 +411,9 @@ TEST(BindConstructorTest, ZeroSizedType) {
     lua.bindConstructor<Empty>("Empty");
 
     const char* src = "e = Empty()";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_EQ(status, 0);
+    lua.loadAndExecuteScript(src);
 
-    Empty* e = lua.readVariable<Empty*>("e");
+    Empty* e = readVar<Empty*>(lua,"e");
     EXPECT_NE(e, nullptr);
 }
 
@@ -421,9 +432,9 @@ TEST(BindConstructorTest, LargeType) {
     lua.bindConstructor<Large, int>("Large");
 
     const char* src = "big = Large(42)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Large* big = lua.readVariable<Large*>("big");
+    Large* big = readVar<Large*>(lua,"big");
     ASSERT_NE(big, nullptr);
     EXPECT_EQ(big->data[0], 42);
     EXPECT_EQ(big->data[999], 42);
@@ -440,9 +451,9 @@ TEST(BindMethodTest, PrimitiveReturn) {
     lua.bindMethod<Vec, &Vec::length>("length");
 
     const char* src = "v = Vec(3, 4); result = v:length()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    float result = static_cast<float>(lua.readVariable<double>("result"));
+    float result = static_cast<float>(readVar<double>(lua,"result"));
     EXPECT_FLOAT_EQ(result, 5.0f);
 }
 
@@ -453,9 +464,9 @@ TEST(BindMethodTest, UserdataReturn) {
     lua.bindMethod<Vec, &Vec::scaled>("scaled");
 
     const char* src = "v = Vec(2, 3); result = v:scaled(2.5)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Vec* result = lua.readVariable<Vec*>("result");
+    Vec* result = readVar<Vec*>(lua,"result");
     ASSERT_NE(result, nullptr);
     EXPECT_FLOAT_EQ(result->x, 5.0f);
     EXPECT_FLOAT_EQ(result->y, 7.5f);
@@ -468,9 +479,9 @@ TEST(BindMethodTest, UserdataArg) {
     lua.bindMethod<Vec, &Vec::dot>("dot");
 
     const char* src = "v1 = Vec(3, 4); v2 = Vec(1, 2); result = v1:dot(v2)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    float result = static_cast<float>(lua.readVariable<double>("result"));
+    float result = static_cast<float>(readVar<double>(lua,"result"));
     EXPECT_FLOAT_EQ(result, 11.0f);
 }
 
@@ -481,9 +492,9 @@ TEST(BindMethodTest, VoidReturn) {
     lua.bindMethod<Vec, &Vec::reset>("reset");
 
     const char* src = "v = Vec(7, 8); v:reset()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Vec* v = lua.readVariable<Vec*>("v");
+    Vec* v = readVar<Vec*>(lua,"v");
     ASSERT_NE(v, nullptr);
     EXPECT_FLOAT_EQ(v->x, 0.0f);
     EXPECT_FLOAT_EQ(v->y, 0.0f);
@@ -496,9 +507,9 @@ TEST(BindMethodTest, MultipleArgs) {
     lua.bindMethod<Vec, &Vec::count>("count");
 
     const char* src = "v = Vec(0, 0); result = v:count(1, 2, 3)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    int result = lua.readVariable<int>("result");
+    int result = readVar<int>(lua,"result");
     EXPECT_EQ(result, 6);
 }
 
@@ -511,8 +522,8 @@ TEST(BindMethodTest, WrongSelfType_Errors) {
     lua.bindMethod<Vec, &Vec::length>("length");
 
     const char* src = "o = Other(42); result = Vec.length(o)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindMethodTest, WrongArgType_Errors) {
@@ -522,8 +533,8 @@ TEST(BindMethodTest, WrongArgType_Errors) {
     lua.bindMethod<Vec, &Vec::dot>("dot");
 
     const char* src = "v = Vec(1, 2); result = v:dot(42)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindMethodTest, MethodAndOperatorsCoexist) {
@@ -533,9 +544,9 @@ TEST(BindMethodTest, MethodAndOperatorsCoexist) {
     lua.bindMethod<Vec, &Vec::length>("length");
 
     const char* src = "v1 = Vec(3, 0); v2 = Vec(0, 4); result = (v1 + v2):length()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    float result = static_cast<float>(lua.readVariable<double>("result"));
+    float result = static_cast<float>(readVar<double>(lua,"result"));
     EXPECT_FLOAT_EQ(result, 5.0f);
 }
 
@@ -553,12 +564,12 @@ TEST(BindMethodTest, MultipleMethods) {
         "len = v1:length();"
         "sc = v1:scaled(0.5);"
         "d = v1:dot(v2)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("len")), 5.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("d")), 3.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"len")), 5.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"d")), 3.0f);
 
-    Vec* sc = lua.readVariable<Vec*>("sc");
+    Vec* sc = readVar<Vec*>(lua,"sc");
     ASSERT_NE(sc, nullptr);
     EXPECT_FLOAT_EQ(sc->x, 1.5f);
     EXPECT_FLOAT_EQ(sc->y, 2.0f);
@@ -578,10 +589,10 @@ TEST(BindMethodTest, MethodOnDifferentTypes) {
         "o = Other(21);"
         "vLen = v:length();"
         "oDbl = o:doubled()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("vLen")), 5.0f);
-    EXPECT_EQ(lua.readVariable<int>("oDbl"), 42);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"vLen")), 5.0f);
+    EXPECT_EQ(readVar<int>(lua,"oDbl"), 42);
 }
 
 // ============================================================================
@@ -594,9 +605,9 @@ TEST(BindToStringTest, AutoRegisteredForTypesWithToString) {
     lua.bindConstructor<Stringable, int>("Stringable");
 
     const char* src = "s = Stringable(42); result = tostring(s)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    std::string result = lua.readVariable<std::string>("result");
+    std::string result = readVar<std::string>(lua,"result");
     EXPECT_EQ(result, "Stringable(42)");
 }
 
@@ -606,11 +617,11 @@ TEST(BindToStringTest, NotRegisteredForTypesWithoutToString) {
     lua.bindConstructor<Vec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = tostring(v)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     // Without toString(), Lua falls back to the default "<__name>: <address>" format
     // (luaL_newmetatable auto-sets __name to the registered metatable name).
-    std::string result = lua.readVariable<std::string>("result");
+    std::string result = readVar<std::string>(lua,"result");
     EXPECT_FALSE(result.empty());
     EXPECT_NE(result.find(": "), std::string::npos);
 }
@@ -621,9 +632,9 @@ TEST(BindToStringTest, UsedByLuaConcatenation) {
     lua.bindConstructor<Stringable, int>("Stringable");
 
     const char* src = "s = Stringable(7); result = '' .. tostring(s)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    std::string result = lua.readVariable<std::string>("result");
+    std::string result = readVar<std::string>(lua,"result");
     EXPECT_EQ(result, "Stringable(7)");
 }
 
@@ -642,10 +653,10 @@ TEST(BindComparisonTest, LessThan) {
         ltFalse = b < a
         ltSelf  = a < a
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("ltTrue"));
-    EXPECT_FALSE(lua.readVariable<bool>("ltFalse"));
-    EXPECT_FALSE(lua.readVariable<bool>("ltSelf"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"ltTrue"));
+    EXPECT_FALSE(readVar<bool>(lua,"ltFalse"));
+    EXPECT_FALSE(readVar<bool>(lua,"ltSelf"));
 }
 
 TEST(BindComparisonTest, LessEqual) {
@@ -659,10 +670,10 @@ TEST(BindComparisonTest, LessEqual) {
         leEqual = a <= c
         leMore  = b <= a
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("leLess"));
-    EXPECT_TRUE(lua.readVariable<bool>("leEqual"));
-    EXPECT_FALSE(lua.readVariable<bool>("leMore"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"leLess"));
+    EXPECT_TRUE(readVar<bool>(lua,"leEqual"));
+    EXPECT_FALSE(readVar<bool>(lua,"leMore"));
 }
 
 // ============================================================================
@@ -692,8 +703,8 @@ TEST(BindMixedOpTest, VecMulScalar) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(2, 3); result = v * 2.5";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 5.0f);
     EXPECT_FLOAT_EQ(r->y, 7.5f);
@@ -705,8 +716,8 @@ TEST(BindMixedOpTest, ScalarMulVec) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(2, 3); result = 2.5 * v";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 5.0f);
     EXPECT_FLOAT_EQ(r->y, 7.5f);
@@ -718,8 +729,8 @@ TEST(BindMixedOpTest, VecDivScalar) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(10, 20); result = v / 4";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 2.5f);
     EXPECT_FLOAT_EQ(r->y, 5.0f);
@@ -731,8 +742,8 @@ TEST(BindMixedOpTest, SameTypeStillWorks) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a + b";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 4.0f);
     EXPECT_FLOAT_EQ(r->y, 6.0f);
@@ -745,8 +756,8 @@ TEST(BindMixedOpTest, UnsupportedScalarErrors) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = v + 5";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);  // Vec has no operator+(double)
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);  // Vec has no operator+(double)
 }
 
 // A type with the full set of mixed-type arithmetic operators, used to
@@ -776,8 +787,8 @@ TEST(BindMixedOpTest, VecPlusScalar) {
     lua.bindConstructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(10); result = v + 5";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ArithVec* r = readVar<ArithVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->v, 15.0f);
 }
@@ -788,8 +799,8 @@ TEST(BindMixedOpTest, ScalarPlusVec) {
     lua.bindConstructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(10); result = 5 + v";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ArithVec* r = readVar<ArithVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->v, 15.0f);
 }
@@ -800,8 +811,8 @@ TEST(BindMixedOpTest, ScalarDivVec) {
     lua.bindConstructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(2); result = 10 / v";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ArithVec* r = lua.readVariable<ArithVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ArithVec* r = readVar<ArithVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->v, 5.0f);
 }
@@ -814,8 +825,8 @@ TEST(BindMixedOpTest, UnaryMinusNotRegisteredForTypesWithoutIt) {
     lua.bindConstructor<Vec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = -v";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 // ============================================================================
@@ -838,8 +849,8 @@ TEST(BindStaticTest, StaticNumberField) {
     Bind::staticField(lua, "Vec", "EPSILON", 0.001);
 
     const char* src = "result = Vec.EPSILON";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_DOUBLE_EQ(lua.readVariable<double>("result"), 0.001);
+    lua.loadAndExecuteScript(src);
+    EXPECT_DOUBLE_EQ(readVar<double>(lua,"result"), 0.001);
 }
 
 TEST(BindStaticTest, StaticStringField) {
@@ -849,8 +860,8 @@ TEST(BindStaticTest, StaticStringField) {
     Bind::staticField(lua, "Vec", "TYPENAME", "ScalarVec");
 
     const char* src = "result = Vec.TYPENAME";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_EQ(lua.readVariable<std::string>("result"), "ScalarVec");
+    lua.loadAndExecuteScript(src);
+    EXPECT_EQ(readVar<std::string>(lua,"result"), "ScalarVec");
 }
 
 TEST(BindStaticTest, StaticFunctionNoArgs) {
@@ -860,8 +871,8 @@ TEST(BindStaticTest, StaticFunctionNoArgs) {
     Bind::staticFunction<&makeUnitX>(lua, "Vec", "unitX");
 
     const char* src = "result = Vec.unitX()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 1.0f);
     EXPECT_FLOAT_EQ(r->y, 0.0f);
@@ -874,8 +885,8 @@ TEST(BindStaticTest, StaticFunctionWithArgs) {
     Bind::staticFunction<&makeFromAngle>(lua, "Vec", "fromAngle");
 
     const char* src = "result = Vec.fromAngle(0)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    ScalarVec* r = lua.readVariable<ScalarVec*>("result");
+    lua.loadAndExecuteScript(src);
+    ScalarVec* r = readVar<ScalarVec*>(lua,"result");
     ASSERT_NE(r, nullptr);
     EXPECT_FLOAT_EQ(r->x, 1.0f);
     EXPECT_FLOAT_EQ(r->y, 0.0f);
@@ -888,8 +899,8 @@ TEST(BindStaticTest, StaticFunctionPrimitiveReturn) {
     Bind::staticFunction<&addThree>(lua, "Vec", "sum");
 
     const char* src = "result = Vec.sum(1, 2, 3)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_EQ(lua.readVariable<int>("result"), 6);
+    lua.loadAndExecuteScript(src);
+    EXPECT_EQ(readVar<int>(lua,"result"), 6);
 }
 
 TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
@@ -899,8 +910,8 @@ TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
 
     // Lua maps a > b to b < a, so __lt is sufficient for >
     const char* src = "a = Cmp(7); b = Cmp(3); result = a > b";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("result"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"result"));
 }
 
 TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
@@ -910,8 +921,8 @@ TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
 
     // Vec has no operator< / operator<= -- Lua should error on comparison
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a < b";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindComparisonTest, EqualNotRegisteredForTypesWithoutOp) {
@@ -925,9 +936,9 @@ TEST(BindComparisonTest, EqualNotRegisteredForTypesWithoutOp) {
     const char* src =
         "a = Vec(1, 2); b = Vec(1, 2);"
         " sameRef = (a == a); diffRef = (a == b)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("sameRef"));   // identity → equal
-    EXPECT_FALSE(lua.readVariable<bool>("diffRef"));  // distinct objects → unequal
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"sameRef"));   // identity → equal
+    EXPECT_FALSE(readVar<bool>(lua,"diffRef"));  // distinct objects → unequal
 }
 
 // ============================================================================
@@ -946,10 +957,10 @@ TEST(BindPropertyTest, ReadPrimitiveField) {
         p = Particle(3, 4, 100)
         rx = p.x; ry = p.y; rh = p.health
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("rx")), 3.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("ry")), 4.0f);
-    EXPECT_EQ(lua.readVariable<int>("rh"), 100);
+    lua.loadAndExecuteScript(src);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"rx")), 3.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"ry")), 4.0f);
+    EXPECT_EQ(readVar<int>(lua,"rh"), 100);
 }
 
 TEST(BindPropertyTest, WritePrimitiveField) {
@@ -964,9 +975,9 @@ TEST(BindPropertyTest, WritePrimitiveField) {
         p.x = 99.5
         p.health = 25
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Particle* p = lua.readVariable<Particle*>("p");
+    Particle* p = readVar<Particle*>(lua,"p");
     ASSERT_NE(p, nullptr);
     EXPECT_FLOAT_EQ(p->x, 99.5f);
     EXPECT_EQ(p->health, 25);
@@ -979,8 +990,8 @@ TEST(BindPropertyTest, ReadStringField) {
     lua.bindProperty<Particle, &Particle::name>("name");
 
     const char* src = "p = Particle(0, 0, 1); n = p.name";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_EQ(lua.readVariable<std::string>("n"), "particle");
+    lua.loadAndExecuteScript(src);
+    EXPECT_EQ(readVar<std::string>(lua,"n"), "particle");
 }
 
 TEST(BindPropertyTest, ReadUserdataField) {
@@ -991,9 +1002,9 @@ TEST(BindPropertyTest, ReadUserdataField) {
     lua.bindProperty<Particle, &Particle::velocity>("velocity");
 
     const char* src = "p = Particle(0, 0, 1); v = p.velocity";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Vec* v = lua.readVariable<Vec*>("v");
+    Vec* v = readVar<Vec*>(lua,"v");
     ASSERT_NE(v, nullptr);
     EXPECT_FLOAT_EQ(v->x, 0.0f);
     EXPECT_FLOAT_EQ(v->y, 0.0f);
@@ -1008,9 +1019,9 @@ TEST(BindPropertyTest, WriteUserdataField) {
     lua.bindProperty<Particle, &Particle::velocity>("velocity");
 
     const char* src = "p = Particle(0, 0, 1); p.velocity = Vec(7, 8)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    Particle* p = lua.readVariable<Particle*>("p");
+    Particle* p = readVar<Particle*>(lua,"p");
     ASSERT_NE(p, nullptr);
     EXPECT_FLOAT_EQ(p->velocity.x, 7.0f);
     EXPECT_FLOAT_EQ(p->velocity.y, 8.0f);
@@ -1023,8 +1034,8 @@ TEST(BindPropertyTest, UnknownPropertyRead_ReturnsNil) {
     lua.bindProperty<Particle, &Particle::x>("x");
 
     const char* src = "p = Particle(1, 2, 3); result = (p.nonExistent == nil)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("result"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"result"));
 }
 
 TEST(BindPropertyTest, UnknownPropertyWrite_Errors) {
@@ -1034,8 +1045,8 @@ TEST(BindPropertyTest, UnknownPropertyWrite_Errors) {
     lua.bindProperty<Particle, &Particle::x>("x");
 
     const char* src = "p = Particle(1, 2, 3); p.nonExistent = 5";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);
+    lua.installErrorHandler<ThrowDecorator>();
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindPropertyTest, PropertyAndMethodCoexist) {
@@ -1054,11 +1065,11 @@ TEST(BindPropertyTest, PropertyAndMethodCoexist) {
         v.x = 6
         afterX = v.x
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("readX")), 3.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("readY")), 4.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("len")), 5.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("afterX")), 6.0f);
+    lua.loadAndExecuteScript(src);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"readX")), 3.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"readY")), 4.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"len")), 5.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"afterX")), 6.0f);
 }
 
 // ============================================================================
@@ -1152,8 +1163,8 @@ TEST(BindReturnTest, PointerReturn_WrapsAsUserdataWithMetatable) {
     // If getVecPtr returned raw lightuserdata, v:length() would fail because
     // lightuserdata has no metatable. Wrapping as userdata makes it work.
     const char* src = "s = Source(); v = s:getVecPtr(); len = v:length()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    double len = lua.readVariable<double>("len");
+    lua.loadAndExecuteScript(src);
+    double len = readVar<double>(lua,"len");
     EXPECT_NEAR(len, std::sqrt(1.5 * 1.5 + 2.5 * 2.5), 1e-5);
 }
 
@@ -1165,8 +1176,8 @@ TEST(BindReturnTest, NullPointerReturn_BecomesNil) {
     lua.bindMethod<ReturnSource, &ReturnSource::getNullVec>("getNullVec");
 
     const char* src = "s = Source(); v = s:getNullVec(); isNil = (v == nil)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("isNil"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"isNil"));
 }
 
 TEST(BindReturnTest, PointerReturn_IsCopy_MutationDoesNotPropagate) {
@@ -1187,9 +1198,9 @@ TEST(BindReturnTest, PointerReturn_IsCopy_MutationDoesNotPropagate) {
         copyX = v.x
         origX = s:storedX()
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("copyX")), 99.0f);
-    EXPECT_FLOAT_EQ(static_cast<float>(lua.readVariable<double>("origX")), 1.5f);
+    lua.loadAndExecuteScript(src);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"copyX")), 99.0f);
+    EXPECT_FLOAT_EQ(static_cast<float>(readVar<double>(lua,"origX")), 1.5f);
 }
 
 TEST(BindReturnTest, ReferenceReturn_DoesNotMoveFromAliased) {
@@ -1210,9 +1221,9 @@ TEST(BindReturnTest, ReferenceReturn_DoesNotMoveFromAliased) {
         movedAfter = s:wasMoved()
         valueAfter = s:trackerValue()
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_FALSE(lua.readVariable<bool>("movedAfter"));
-    EXPECT_EQ(lua.readVariable<int>("valueAfter"), 42);
+    lua.loadAndExecuteScript(src);
+    EXPECT_FALSE(readVar<bool>(lua,"movedAfter"));
+    EXPECT_EQ(readVar<int>(lua,"valueAfter"), 42);
 }
 
 TEST(BindReturnTest, ConstReferenceReturn_AlsoCopies) {
@@ -1233,10 +1244,10 @@ TEST(BindReturnTest, ConstReferenceReturn_AlsoCopies) {
         len1 = v1:length()
         len2 = v2:length()
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_DOUBLE_EQ(lua.readVariable<double>("len1"),
-                     lua.readVariable<double>("len2"));
-    EXPECT_NEAR(lua.readVariable<double>("len1"),
+    lua.loadAndExecuteScript(src);
+    EXPECT_DOUBLE_EQ(readVar<double>(lua,"len1"),
+                     readVar<double>(lua,"len2"));
+    EXPECT_NEAR(readVar<double>(lua,"len1"),
                 std::sqrt(1.5 * 1.5 + 2.5 * 2.5), 1e-5);
 }
 
@@ -1257,8 +1268,8 @@ TEST(BindReturnTest, FreeFunction_PointerReturn_WrapsAsUserdata) {
     lua.bindMethod<Vec, &Vec::length>("length");
 
     const char* src = "v = Source.globalVec(); len = v:length()";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_NEAR(lua.readVariable<double>("len"), 25.0, 1e-5);
+    lua.loadAndExecuteScript(src);
+    EXPECT_NEAR(readVar<double>(lua,"len"), 25.0, 1e-5);
 }
 
 TEST(BindReturnTest, FreeFunction_NullPointerReturn_BecomesNil) {
@@ -1269,8 +1280,8 @@ TEST(BindReturnTest, FreeFunction_NullPointerReturn_BecomesNil) {
     Bind::staticFunction<&freeFuncReturnsNullVec>(lua, "Source", "noVec");
 
     const char* src = "v = Source.noVec(); isNil = (v == nil)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    EXPECT_TRUE(lua.readVariable<bool>("isNil"));
+    lua.loadAndExecuteScript(src);
+    EXPECT_TRUE(readVar<bool>(lua,"isNil"));
 }
 
 } // namespace Lua

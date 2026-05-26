@@ -24,61 +24,60 @@ Lua::File dataFile(const char* name) {
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
 	auto& errors = lua.installErrorHandler<LogDecorator>();
-	int status = lua.loadAndExecuteScript(dataFile("valid.lua"));
+	lua.loadAndExecuteScript(dataFile("valid.lua"));
 
-	ASSERT_EQ(status, LUA_OK);
 	EXPECT_TRUE(errors.log().empty());
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 	EXPECT_EQ(lua.readVariable<std::string>("greeting"), "hello from file");
 }
 
-TEST(FileLoadingTest, MissingFile_ReturnsErrFileAndCapturesPath) {
+TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 	State lua;
 	auto& errors = lua.installErrorHandler<LogDecorator>();
-	int status = lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
+	lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
 
-	ASSERT_EQ(status, LUA_ERRFILE);
 	ASSERT_FALSE(errors.log().empty());
-	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
+	const auto& err = errors.log().front();
+	EXPECT_EQ(err.category, LuaError::Category::Load);
+	EXPECT_EQ(err.status, LUA_ERRFILE);
 	// Lua's standard error format for ERRFILE is
 	//   "cannot open <path>: <reason>"
 	// We don't pin the entire message (varies by libc) but the path must be in it.
-	const auto& msg = errors.log().front().message;
-	EXPECT_NE(msg.find("does_not_exist_xyz.lua"), std::string::npos)
-		<< "error message did not reference the failing path: " << msg;
+	EXPECT_NE(err.message.find("does_not_exist_xyz.lua"), std::string::npos)
+		<< "error message did not reference the failing path: " << err.message;
 }
 
-TEST(FileLoadingTest, SyntaxError_ReturnsErrSyntaxAndReferencesFile) {
+TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 	State lua;
 	auto& errors = lua.installErrorHandler<LogDecorator>();
-	int status = lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
+	lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
 
-	ASSERT_EQ(status, LUA_ERRSYNTAX);
 	ASSERT_FALSE(errors.log().empty());
-	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
+	const auto& err = errors.log().front();
+	EXPECT_EQ(err.category, LuaError::Category::Load);
+	EXPECT_EQ(err.status, LUA_ERRSYNTAX);
 	// chunkname (= '@path') means the file name appears in the error message
 	// — that is the whole point of the file-source overload vs. piping the
 	// file's bytes through loadAndExecuteScript(const char*).
-	const auto& msg = errors.log().front().message;
-	EXPECT_NE(msg.find("syntax_error.lua"), std::string::npos)
-		<< "syntax error did not reference the file: " << msg;
+	EXPECT_NE(err.message.find("syntax_error.lua"), std::string::npos)
+		<< "syntax error did not reference the file: " << err.message;
 }
 
-TEST(FileLoadingTest, RuntimeError_ReturnsErrRunAndPinpointsLine) {
+TEST(FileLoadingTest, RuntimeError_ReportsRuntimeErrorPinpointingLine) {
 	State lua;
 	auto& errors = lua.installErrorHandler<LogDecorator>();
-	int status = lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
+	lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
-	ASSERT_EQ(status, LUA_ERRRUN);
 	ASSERT_FALSE(errors.log().empty());
-	EXPECT_EQ(errors.log().front().category, LuaError::Category::Runtime);
+	const auto& err = errors.log().front();
+	EXPECT_EQ(err.category, LuaError::Category::Runtime);
+	EXPECT_EQ(err.status, LUA_ERRRUN);
 	// runtime_error.lua calls error("boom...") on line 4. The traceback must
 	// reference both the file and the line.
-	const auto& msg = errors.log().front().message;
-	EXPECT_NE(msg.find("runtime_error.lua"), std::string::npos)
-		<< "runtime error did not reference the file: " << msg;
-	EXPECT_NE(msg.find(":4"), std::string::npos)
-		<< "runtime error did not reference line 4: " << msg;
+	EXPECT_NE(err.message.find("runtime_error.lua"), std::string::npos)
+		<< "runtime error did not reference the file: " << err.message;
+	EXPECT_NE(err.message.find(":4"), std::string::npos)
+		<< "runtime error did not reference line 4: " << err.message;
 }
 
 TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
@@ -98,7 +97,7 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	// replace with the path(std::u8string_view) constructor that became
 	// the canonical UTF-8 entry point in C++20.
 	const Lua::File path = std::filesystem::temp_directory_path() /
-		std::filesystem::u8path(u8"luacpp_t\u00e9st_\u4e2d\u6587.lua");
+		std::filesystem::u8path(u8"luacpp_tést_中文.lua");
 	{
 		std::ofstream out(path, std::ios::binary);
 		ASSERT_TRUE(out.is_open()) << "ifstream could not create the fixture — "
@@ -109,26 +108,28 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 
 	State lua;
 	auto& errors = lua.installErrorHandler<LogDecorator>();
-	const int status = lua.loadAndExecuteScript(path);
+	lua.loadAndExecuteScript(path);
 
 	std::error_code rmErr;
 	std::filesystem::remove(path, rmErr);  // best-effort cleanup; ignore failure
 
-	ASSERT_EQ(status, LUA_OK)
+	ASSERT_TRUE(errors.log().empty())
 		<< "non-ASCII path failed to load: "
-		<< (errors.log().empty() ? std::string("<no error message>") : errors.log().front().message);
+		<< errors.log().front().message;
 	EXPECT_EQ(lua.readVariable<int>("x"), 7);
 }
 
 TEST(FileLoadingTest, RegistryRoundtrip_LoadFromFileThenExecute) {
 	State lua;
+	auto& errors = lua.installErrorHandler<LogDecorator>();
 	const char* key = "stored_script";
 
-	int loadStatus = lua.loadScript(key, dataFile("valid.lua"));
-	ASSERT_EQ(loadStatus, static_cast<int>(Registry::ErrorCode::Ok));
+	lua.loadScript(key, dataFile("valid.lua"));
+	ASSERT_TRUE(errors.log().empty()) << "loadScript failed unexpectedly";
 
-	int execStatus = lua.executeScript(key);
-	ASSERT_EQ(execStatus, LUA_OK);
+	lua.executeScript(key);
+	ASSERT_TRUE(errors.log().empty()) << "executeScript failed unexpectedly";
+
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 }
 

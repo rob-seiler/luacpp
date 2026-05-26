@@ -142,7 +142,7 @@ TEST_F(GenericTest, lessThan) {
 
 TEST_F(GenericTest, fromStack_Integer) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = 42"), 0);
+    state.loadAndExecuteScript("a = 42");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
@@ -152,7 +152,7 @@ TEST_F(GenericTest, fromStack_Integer) {
 
 TEST_F(GenericTest, fromStack_Double) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = 42.0"), 0);
+    state.loadAndExecuteScript("a = 42.0");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
@@ -162,7 +162,7 @@ TEST_F(GenericTest, fromStack_Double) {
 
 TEST_F(GenericTest, fromStack_String) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = 'Hello, World!'"), 0);
+    state.loadAndExecuteScript("a = 'Hello, World!'");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
@@ -172,14 +172,14 @@ TEST_F(GenericTest, fromStack_String) {
 
 TEST_F(GenericTest, fromStack_Boolean) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = true"), 0);
+    state.loadAndExecuteScript("a = true");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
     EXPECT_EQ(Type::Boolean, generic.getType());
     EXPECT_EQ(true, generic.get<bool>());
 
-    ASSERT_EQ(state.loadAndExecuteScript("a = false"), 0);
+    state.loadAndExecuteScript("a = false");
 
     lua_getglobal(state.getState(), "a");
     generic = Generic::fromStack(-1, state);
@@ -189,7 +189,7 @@ TEST_F(GenericTest, fromStack_Boolean) {
 
 TEST_F(GenericTest, fromStack_Nil) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = nil"), 0);
+    state.loadAndExecuteScript("a = nil");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
@@ -199,7 +199,7 @@ TEST_F(GenericTest, fromStack_Nil) {
 
 TEST_F(GenericTest, fromStack_Table) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = { x = 1, y = 2, z = 3 }"), 0);
+    state.loadAndExecuteScript("a = { x = 1, y = 2, z = 3 }");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);
@@ -211,7 +211,7 @@ TEST_F(GenericTest, fromStack_Table) {
 
 TEST_F(GenericTest, fromStack_TableNested) {
     State state;
-    ASSERT_EQ(state.loadAndExecuteScript("a = { x = 1, y = { a = 1, b = 2 } }"), 0);
+    state.loadAndExecuteScript("a = { x = 1, y = { a = 1, b = 2 } }");
 
     lua_getglobal(state.getState(), "a");
     Generic generic = Generic::fromStack(-1, state);

@@ -75,8 +75,8 @@ int main() {
 		return 1;
 	}
 
-	int ret = lua.loadAndExecuteScript(script.c_str());
-	if (ret != 0) {
+	lua.loadAndExecuteScript(script.c_str());
+	if (!errorLog.log().empty()) {
 		std::cerr << "Script error" << std::endl;
 		for (const auto& e : errorLog.log()) std::cerr << "  " << e.message << std::endl;
 		return 1;

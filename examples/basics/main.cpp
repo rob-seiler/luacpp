@@ -22,8 +22,8 @@ public:
 		)";
 
 		m_state.loadAndExecuteScript(script);
-		double result = m_state.readVariable<double>("result");
-		return result == m_result ? 0 : 1;
+		auto result = m_state.readVariable<double>("result");
+		return (result && *result == m_result) ? 0 : 1;
 	}
 
 private:
