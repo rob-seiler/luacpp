@@ -196,9 +196,9 @@ void State::registerDebugHook(DebugHook hook, int mask, int count) {
 
 void State::overrideLuaFunction(const char* name, NativeFunction func) {
 	lua_getglobal(m_state, GlobalScope); //load global scope to stack
-	lua_pushcclosure(m_state, func, 0); //push function to stack
-	lua_setfield(m_state, -2, name); //register the function under the given name
-	lua_pop(m_state, 1); //pop global scope
+	StackGuard guard(m_state);           //pops _G on every exit path
+	lua_pushcclosure(m_state, func, 0);  //push function to stack
+	lua_setfield(m_state, -2, name);     //register under the given name (consumes closure)
 }
 
 void State::loadAndExecuteScript(const char* code) {
@@ -249,20 +249,23 @@ int State::getStackSize() const {
 }
 
 void State::withTableDo(std::string_view tableName, TableFunction workOnTable, bool createIfMissing) {
-	if (lua_getglobal(m_state, tableName.data()) != LUA_TTABLE) {
-		if (createIfMissing) {
-			lua_newtable(m_state); // Create a new table and push it onto the stack
-			lua_pushvalue(m_state, -1); // Duplicate the table because setglobal pops the value
-			lua_setglobal(m_state, tableName.data()); // Set the new table as a global variable
-		} else {
-			lua_pop(m_state, 1); // Pop the nil from the stack to clean up
-			return; // Exit the function as there's no table to work with and creation is not requested
+	const bool isTable = (lua_getglobal(m_state, tableName.data()) == LUA_TTABLE);
+	// Governs the single value lua_getglobal pushed; on the create path the
+	// non-table value is replaced by a fresh table, still a net of one value.
+	StackGuard guard(m_state);
+
+	if (!isTable) {
+		if (!createIfMissing) {
+			return; // guard pops the non-table value (previously the nil leaked here)
 		}
+		lua_pop(m_state, 1);                       // drop the non-table value
+		lua_newtable(m_state);                     // fresh table (now governed by guard)
+		lua_pushvalue(m_state, -1);                // dup, because setglobal pops
+		lua_setglobal(m_state, tableName.data());  // consumes the dup
 	}
 
-	Table table(m_state, -1); //the table is on top of the stack
-	workOnTable(table);
-	lua_pop(m_state, 1);
+	Table table(m_state, -1); // the table is on top of the stack
+	workOnTable(table);       // may throw — guard pops the table
 }
 
 void State::withTableDo(int index, TableFunction workOnTable) {
@@ -274,29 +277,35 @@ void State::withTableDo(int index, TableFunction workOnTable) {
 
 void State::createTable(const char* name, TableFunction workOnTable) {
 	lua_newtable(m_state);
-	Table table(m_state, -1); //the table is on top of the stack
+	StackGuard guard(m_state);  // pops the partial table if workOnTable throws
+	Table table(m_state, -1);   // the table is on top of the stack
 	workOnTable(table);
+	guard.release();            // succeeded — commit
 	if (name != nullptr) {
-		lua_setglobal(m_state, name);
+		lua_setglobal(m_state, name); // consumes the table
 	}
+	// else: leave the table on the stack as the caller's return value
 }
 
 void State::createMetaTable(const char* name, TableFunction workOnTable) {
 	luaL_newmetatable(m_state, name);
-	Table table(m_state, -1, true); //the table is on top of the stack
+	StackGuard guard(m_state);     // always pops the metatable; also on throw
+	Table table(m_state, -1, true); // the table is on top of the stack
 	workOnTable(table);
-	lua_pop(m_state, 1);
 }
 
 bool State::assignMetaTable(const char* name) {
-	if (luaL_getmetatable(m_state, name) == LUA_TTABLE) {
+	const bool found = (luaL_getmetatable(m_state, name) == LUA_TTABLE);
+	StackGuard guard(m_state); // governs the value luaL_getmetatable pushed
+	if (found) {
 		//stack assumption:
 		//-1: metatable
 		//-2: userdata to assign the metatable to
-		lua_setmetatable(m_state, -2);
+		lua_setmetatable(m_state, -2); // consumes the metatable
+		guard.release();
 		return true;
 	}
-	return false;
+	return false; // guard pops the nil — fixes a previous leak on this path
 }
 
 int State::dispatchMethod(lua_State* state) {
@@ -305,8 +314,12 @@ int State::dispatchMethod(lua_State* state) {
 	return luaState->m_callbacks[index](*luaState);
 }
 
-bool State::loadFunction(const char* funcName) { 
-	return lua_getglobal(m_state, funcName) == LUA_TFUNCTION;
+bool State::loadFunction(const char* funcName) {
+	if (lua_getglobal(m_state, funcName) == LUA_TFUNCTION) {
+		return true; // function left on the stack for the caller to invoke
+	}
+	lua_pop(m_state, 1); // not a function — don't leak the pushed value
+	return false;
 }
 
 int State::callFunction(int numArgs, int numResults) {

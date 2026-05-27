@@ -7,6 +7,7 @@
 #include "Generic.hpp"
 #include "Debug.hpp"
 #include "Stack.hpp"
+#include "StackGuard.hpp"
 #include "ErrorHandling.hpp"
 #include "detail/Bind.hpp"
 
@@ -175,40 +176,36 @@ public:
 	
 	std::map<Generic, Generic> readTableGeneric(const char* tableName) {
 		std::map<Generic, Generic> result;
-
-		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
-
-		if (pushGlobalToStack(tableName) == Type::Table) {
+		const Type t = pushGlobalToStack(tableName);
+		StackGuard guard(m_state); // pops on every path, incl. readGeneric throwing
+		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.readGeneric();
 		}
-		
 		return result;
 	}
 
 	template <typename Key, typename Value>
 	std::map<Key, Value> readTable(const char* tableName) {
 		std::map<Key, Value> result;
-
-		auto finallyGuard = std::shared_ptr<void>(nullptr, [&](...){ popStack(1); });
-
-		if (pushGlobalToStack(tableName) == Type::Table) {
+		const Type t = pushGlobalToStack(tableName);
+		StackGuard guard(m_state); // table.read can throw TypeMismatchException
+		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.read<Key, Value>();
 		}
-		
 		return result;
 	}
 
 	template <typename Key, typename Value>
-	std::map<Key, Value> readTableIfMatching(const std::string& tableName) { 
+	std::map<Key, Value> readTableIfMatching(const std::string& tableName) {
 		std::map<Key, Value> result;
-
-		if (pushGlobalToStack(tableName.c_str()) == Type::Table) {
+		const Type t = pushGlobalToStack(tableName.c_str());
+		StackGuard guard(m_state);
+		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.readIfMatching<Key, Value>();
 		}
-		popStack(1);
 		return result;
 	}
 
@@ -342,7 +339,7 @@ public:
 	template <int NumRet = 0, typename... Args>
 	void executeFunction(std::string_view name, Args... args) {
 		if (!loadFunction(name.data())) {
-			popStack(1); // lua_getglobal pushed the non-function value
+			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
 			    LuaError::Category::Runtime, 0,
 			    std::string("executeFunction: '") + std::string(name) + "' is not a function", {}});
@@ -358,7 +355,7 @@ public:
 	template <int NumRet = 0, typename T>
 	void executeFunctionWithArgsArray(std::string_view name, T* args, size_t numArgs) {
 		if (!loadFunction(name.data())) {
-			popStack(1);
+			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
 			    LuaError::Category::Runtime, 0,
 			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function", {}});
