@@ -143,30 +143,31 @@ void State::preloadLibrary(Library library) {
 }
 
 void State::addModuleSearchPath(const std::string& pattern, bool forNativeModule) {
-	// Pop guard: ensure the package table (or the placeholder for it) is
-	// off the stack on every exit path.
 	if (lua_getglobal(m_state, "package") != LUA_TTABLE) {
 		lua_pop(m_state, 1);
 		return; // LibPackage not loaded — no package table to extend
 	}
+	StackGuard packageGuard(m_state); // pops the package table on every exit path
 
 	const char* fieldName = forNativeModule ? "cpath" : "path";
-	lua_getfield(m_state, -1, fieldName);
-	size_t currentLen = 0;
-	const char* current = lua_tolstring(m_state, -1, &currentLen);
 
 	std::string combined;
-	combined.reserve(pattern.size() + 1 + currentLen);
-	combined.append(pattern);
-	if (current && currentLen > 0) {
-		combined.push_back(';');
-		combined.append(current, currentLen);
-	}
+	{
+		lua_getfield(m_state, -1, fieldName); // push current path/cpath
+		StackGuard pathGuard(m_state);        // pops it even if the string ops below throw bad_alloc
+		size_t currentLen = 0;
+		const char* current = lua_tolstring(m_state, -1, &currentLen);
 
-	lua_pop(m_state, 1); // pop old path/cpath
+		combined.reserve(pattern.size() + 1 + currentLen);
+		combined.append(pattern);
+		if (current && currentLen > 0) {
+			combined.push_back(';');
+			combined.append(current, currentLen);
+		}
+	} // pathGuard pops the old path here; `current` is no longer referenced
+
 	lua_pushlstring(m_state, combined.data(), combined.size());
 	lua_setfield(m_state, -2, fieldName);
-	lua_pop(m_state, 1); // pop package table
 }
 
 void State::registerNativeFunction(const char* name, NativeFunction func, int numUpValues) {
