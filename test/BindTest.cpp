@@ -413,7 +413,8 @@ TEST(BindConstructorTest, ErrorHandling_WrongUserdataType) {
     lua.bindConstructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(5); line = Line(c, c)";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -548,7 +549,8 @@ TEST(BindMethodTest, WrongSelfType_Errors) {
     lua.bindMethod<Vec, &Vec::length>("length");
 
     const char* src = "o = Other(42); result = Vec.length(o)";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -559,7 +561,8 @@ TEST(BindMethodTest, WrongArgType_Errors) {
     lua.bindMethod<Vec, &Vec::dot>("dot");
 
     const char* src = "v = Vec(1, 2); result = v:dot(42)";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -782,7 +785,8 @@ TEST(BindMixedOpTest, UnsupportedScalarErrors) {
     lua.bindConstructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = v + 5";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);  // Vec has no operator+(double)
 }
 
@@ -851,7 +855,8 @@ TEST(BindMixedOpTest, UnaryMinusNotRegisteredForTypesWithoutIt) {
     lua.bindConstructor<Vec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = -v";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -947,7 +952,8 @@ TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
 
     // Vec has no operator< / operator<= -- Lua should error on comparison
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a < b";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -1071,7 +1077,8 @@ TEST(BindPropertyTest, UnknownPropertyWrite_Errors) {
     lua.bindProperty<Particle, &Particle::x>("x");
 
     const char* src = "p = Particle(1, 2, 3); p.nonExistent = 5";
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 

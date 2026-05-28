@@ -55,7 +55,7 @@ int main() {
 	enableAnsi();
 
 	State lua(State::LibBase | State::LibIO);
-	auto& errorLog = lua.installErrorHandler<LogDecorator>();
+	auto& errorLog = lua.installLogger<MemoryLogger>();
 
 	Metatable<Grid>::registerMetatable(lua);
 	lua.bindConstructor<Grid, int, int>("Grid");
@@ -76,9 +76,9 @@ int main() {
 	}
 
 	lua.loadAndExecuteScript(script.c_str());
-	if (!errorLog.log().empty()) {
+	if (!errorLog.entries().empty()) {
 		std::cerr << "Script error" << std::endl;
-		for (const auto& e : errorLog.log()) std::cerr << "  " << e.message << std::endl;
+		for (const auto& e : errorLog.entries()) std::cerr << "  " << e.message << std::endl;
 		return 1;
 	}
 	return 0;

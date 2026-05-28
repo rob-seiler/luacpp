@@ -23,21 +23,21 @@ Lua::File dataFile(const char* name) {
 
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("valid.lua"));
 
-	EXPECT_TRUE(errors.log().empty());
+	EXPECT_TRUE(errors.entries().empty());
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 	EXPECT_EQ(lua.readVariable<std::string>("greeting"), "hello from file");
 }
 
 TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
 
-	ASSERT_FALSE(errors.log().empty());
-	const auto& err = errors.log().front();
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Load);
 	EXPECT_EQ(err.status, LUA_ERRFILE);
 	// Lua's standard error format for ERRFILE is
@@ -49,11 +49,11 @@ TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 
 TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
 
-	ASSERT_FALSE(errors.log().empty());
-	const auto& err = errors.log().front();
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Load);
 	EXPECT_EQ(err.status, LUA_ERRSYNTAX);
 	// chunkname (= '@path') means the file name appears in the error message
@@ -65,11 +65,11 @@ TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 
 TEST(FileLoadingTest, RuntimeError_ReportsRuntimeErrorPinpointingLine) {
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
-	ASSERT_FALSE(errors.log().empty());
-	const auto& err = errors.log().front();
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Runtime);
 	EXPECT_EQ(err.status, LUA_ERRRUN);
 	// runtime_error.lua calls error("boom...") on line 4. The traceback must
@@ -107,28 +107,28 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	}
 
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(path);
 
 	std::error_code rmErr;
 	std::filesystem::remove(path, rmErr);  // best-effort cleanup; ignore failure
 
-	ASSERT_TRUE(errors.log().empty())
+	ASSERT_TRUE(errors.entries().empty())
 		<< "non-ASCII path failed to load: "
-		<< errors.log().front().message;
+		<< errors.entries().front().message;
 	EXPECT_EQ(lua.readVariable<int>("x"), 7);
 }
 
 TEST(FileLoadingTest, RegistryRoundtrip_LoadFromFileThenExecute) {
 	State lua;
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	const char* key = "stored_script";
 
 	lua.loadScript(key, dataFile("valid.lua"));
-	ASSERT_TRUE(errors.log().empty()) << "loadScript failed unexpectedly";
+	ASSERT_TRUE(errors.entries().empty()) << "loadScript failed unexpectedly";
 
 	lua.executeScript(key);
-	ASSERT_TRUE(errors.log().empty()) << "executeScript failed unexpectedly";
+	ASSERT_TRUE(errors.entries().empty()) << "executeScript failed unexpectedly";
 
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 }

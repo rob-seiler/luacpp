@@ -89,9 +89,9 @@ TEST_F(UuidPluginTest, requireFailsWithoutCustomCPath) {
 	// does not contain our build dir, so require("uuid") must fail. Confirms
 	// that the positive tests above genuinely exercise the path we set.
 	State lua(State::LibBase | State::LibPackage);
-	auto& errors = lua.installErrorHandler<LogDecorator>();
+	auto& errors = lua.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript("loaded = require('uuid')");
-	EXPECT_FALSE(errors.log().empty())
+	EXPECT_FALSE(errors.entries().empty())
 	    << "require should fail when the module path is not registered";
 }
 

@@ -79,7 +79,8 @@ TEST(TypeSafetyTest, CheckUserData_WrongType_ThrowsError) {
     });
 
     // Pass Counter where Point is expected - should error
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "c = Counter(42); result = testWrongType(c)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -98,7 +99,8 @@ TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
     });
 
     // Pass nil - should error
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNil(nil)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -117,7 +119,8 @@ TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
     });
 
     // Pass number - should error
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNumber(42)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -135,7 +138,8 @@ TEST(TypeSafetyTest, CheckUserData_StringValue_ThrowsError) {
     });
 
     // Pass string - should error
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testString('hello')";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -172,9 +176,10 @@ TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
     lua.loadAndExecuteScript(src2);
     EXPECT_EQ(readVar<int>(lua, "v"), 42);
 
-    // Wrong type usage — install ThrowDecorator AFTER the successful calls
+    // Wrong type usage — install ThrowHandler AFTER the successful calls
     // above so the success path is not affected.
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src3 = "x = getX(c)"; // Pass Counter to Point function
     EXPECT_THROW(lua.loadAndExecuteScript(src3), LuaException);
 

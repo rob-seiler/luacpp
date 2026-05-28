@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <luacpp/ErrorHandling.hpp>
+#include <luacpp/State.hpp>
 
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
@@ -15,148 +17,149 @@ LuaError makeError(LuaError::Category cat = LuaError::Category::Runtime,
 	return LuaError{cat, status, std::move(message), {}};
 }
 
-TEST(ErrorHandlingTest, nullHandlerDoesNothing) {
-	NullHandler h;
-	// Just verifying it doesn't throw or otherwise misbehave.
-	h(makeError());
-	SUCCEED();
+// ---------------------------------------------------------------------------
+// ErrorLogger implementations
+// ---------------------------------------------------------------------------
+
+TEST(ErrorLoggerTest, streamLoggerWritesOneLinePerError) {
+	std::ostringstream out;
+	StreamLogger logger(out);
+	logger.log(makeError(LuaError::Category::Load, 3, "syntax"));
+	logger.log(makeError(LuaError::Category::Runtime, 2, "boom"));
+
+	const std::string text = out.str();
+	EXPECT_NE(text.find("load"),    std::string::npos);
+	EXPECT_NE(text.find("syntax"),  std::string::npos);
+	EXPECT_NE(text.find("runtime"), std::string::npos);
+	EXPECT_NE(text.find("boom"),    std::string::npos);
 }
 
-TEST(ErrorHandlingTest, logDecoratorAppendsAndDelegates) {
-	auto inner = std::make_unique<LogDecorator>(std::make_unique<NullHandler>());
-	LogDecorator* innerPtr = inner.get();
+TEST(ErrorLoggerTest, memoryLoggerCollectsAndClears) {
+	MemoryLogger logger;
+	EXPECT_TRUE(logger.entries().empty());
 
-	LogDecorator outer(std::move(inner));
-	outer(makeError(LuaError::Category::Runtime, 2, "first"));
-	outer(makeError(LuaError::Category::Load,    3, "second"));
+	logger.log(makeError(LuaError::Category::Runtime, 2, "first"));
+	logger.log(makeError(LuaError::Category::Load,    3, "second"));
 
-	ASSERT_EQ(outer.log().size(), 2u);
-	EXPECT_EQ(outer.log()[0].message, "first");
-	EXPECT_EQ(outer.log()[1].message, "second");
+	ASSERT_EQ(logger.entries().size(), 2u);
+	EXPECT_EQ(logger.entries()[0].message, "first");
+	EXPECT_EQ(logger.entries()[1].message, "second");
 
-	// Inner ran too — outer delegates.
-	ASSERT_EQ(innerPtr->log().size(), 2u);
+	logger.clear();
+	EXPECT_TRUE(logger.entries().empty());
 }
 
-TEST(ErrorHandlingTest, logDecoratorClear) {
-	LogDecorator log(std::make_unique<NullHandler>());
-	log(makeError());
-	ASSERT_EQ(log.log().size(), 1u);
-	log.clear();
-	EXPECT_TRUE(log.log().empty());
+TEST(ErrorLoggerTest, callbackLoggerForwardsToFunction) {
+	int calls = 0;
+	std::string lastMsg;
+	CallbackLogger logger([&](const LuaError& e) {
+		++calls;
+		lastMsg = e.message;
+	});
+
+	logger.log(makeError(LuaError::Category::Runtime, 2, "ping"));
+	EXPECT_EQ(calls, 1);
+	EXPECT_EQ(lastMsg, "ping");
 }
 
-TEST(ErrorHandlingTest, captureDecoratorKeepsLastOnly) {
-	CaptureDecorator cap(std::make_unique<NullHandler>());
-	EXPECT_FALSE(cap.lastError().has_value());
-
-	cap(makeError(LuaError::Category::Runtime, 2, "first"));
-	ASSERT_TRUE(cap.lastError().has_value());
-	EXPECT_EQ(cap.lastError()->message, "first");
-
-	cap(makeError(LuaError::Category::Runtime, 2, "second"));
-	EXPECT_EQ(cap.lastError()->message, "second");
-
-	cap.reset();
-	EXPECT_FALSE(cap.lastError().has_value());
+TEST(ErrorLoggerTest, callbackLoggerRejectsNullCallback) {
+	EXPECT_THROW(CallbackLogger(nullptr), std::invalid_argument);
 }
 
-TEST(ErrorHandlingTest, filterDecoratorRejectsOnFalsePredicate) {
-	auto log = std::make_unique<LogDecorator>(std::make_unique<NullHandler>());
-	LogDecorator* logPtr = log.get();
+// ---------------------------------------------------------------------------
+// ErrorHandler implementations
+// ---------------------------------------------------------------------------
 
-	FilterDecorator filter(
-	    [](const LuaError& e) { return e.category == LuaError::Category::Load; },
-	    std::move(log));
-
-	filter(makeError(LuaError::Category::Runtime)); // dropped
-	filter(makeError(LuaError::Category::Load));    // passes
-
-	ASSERT_EQ(logPtr->log().size(), 1u);
-	EXPECT_EQ(logPtr->log()[0].category, LuaError::Category::Load);
-}
-
-TEST(ErrorHandlingTest, throwDecoratorRunsInnerThenThrows) {
-	auto log = std::make_unique<LogDecorator>(std::make_unique<NullHandler>());
-	LogDecorator* logPtr = log.get();
-
-	ThrowDecorator thrower(std::move(log));
-
+TEST(ErrorHandlerTest, throwHandlerThrowsLuaException) {
+	ThrowHandler handler;
 	try {
-		thrower(makeError(LuaError::Category::Runtime, 2, "boom"));
-		FAIL() << "ThrowDecorator should have thrown";
-	} catch (const LuaException& e) {
-		EXPECT_STREQ(e.what(), "boom");
-		EXPECT_EQ(e.error().status, 2);
+		handler(makeError(LuaError::Category::Runtime, 2, "kaboom"));
+		FAIL() << "ThrowHandler must throw";
+	} catch (const LuaException& ex) {
+		EXPECT_STREQ(ex.what(), "kaboom");
+		EXPECT_EQ(ex.error().status, 2);
+		EXPECT_EQ(ex.error().category, LuaError::Category::Runtime);
 	}
-
-	// Inner ran BEFORE the throw, so log captured the error.
-	ASSERT_EQ(logPtr->log().size(), 1u);
-	EXPECT_EQ(logPtr->log()[0].message, "boom");
 }
 
-TEST(ErrorHandlingTest, callbackDecoratorInvokesCallbackThenDelegates) {
-	std::string seen;
-	auto log = std::make_unique<LogDecorator>(std::make_unique<NullHandler>());
-	LogDecorator* logPtr = log.get();
-
-	CallbackDecorator cb(
-	    [&seen](const LuaError& e) { seen = e.message; },
-	    std::move(log));
-
-	cb(makeError(LuaError::Category::Runtime, 2, "ping"));
-
-	EXPECT_EQ(seen, "ping");
-	ASSERT_EQ(logPtr->log().size(), 1u);
+TEST(ErrorHandlerTest, callbackHandlerForwardsToFunction) {
+	int calls = 0;
+	CallbackHandler handler([&](const LuaError& e) { ++calls; (void)e; });
+	handler(makeError());
+	EXPECT_EQ(calls, 1);
 }
 
-TEST(ErrorHandlingTest, outerFirstSemanticsAreCompositionOrderIndependent) {
-	// Compose Log inside Throw: Throw delegates first → log captures → throws.
-	auto innerLog = std::make_unique<LogDecorator>(std::make_unique<NullHandler>());
-	LogDecorator* innerLogPtr = innerLog.get();
-	ThrowDecorator throwOuter(std::move(innerLog));
-
-	// Compose Throw inside Log: Log runs first → delegates to Throw → throws.
-	auto innerThrow = std::make_unique<ThrowDecorator>(std::make_unique<NullHandler>());
-	auto outerLog   = std::make_unique<LogDecorator>(std::move(innerThrow));
-	LogDecorator*  outerLogPtr = outerLog.get();
-
-	EXPECT_THROW(throwOuter(makeError()), LuaException);
-	EXPECT_EQ(innerLogPtr->log().size(), 1u);
-
-	EXPECT_THROW((*outerLog)(makeError()), LuaException);
-	EXPECT_EQ(outerLogPtr->log().size(), 1u);
+TEST(ErrorHandlerTest, callbackHandlerRejectsNullCallback) {
+	EXPECT_THROW(CallbackHandler(nullptr), std::invalid_argument);
 }
 
-TEST(ErrorHandlingTest, decoratorRejectsNullInner) {
-	EXPECT_THROW(LogDecorator(nullptr),     std::invalid_argument);
-	EXPECT_THROW(CaptureDecorator(nullptr), std::invalid_argument);
-	EXPECT_THROW(ThrowDecorator(nullptr),   std::invalid_argument);
-}
-
-TEST(ErrorHandlingTest, filterRejectsNullPredicate) {
-	EXPECT_THROW(
-	    FilterDecorator(nullptr, std::make_unique<NullHandler>()),
-	    std::invalid_argument);
-}
-
-TEST(ErrorHandlingTest, callbackRejectsNullCallback) {
-	EXPECT_THROW(
-	    CallbackDecorator(nullptr, std::make_unique<NullHandler>()),
-	    std::invalid_argument);
-}
-
-TEST(ErrorHandlingTest, luaExceptionCarriesFullError) {
+TEST(ErrorHandlerTest, luaExceptionCarriesFullError) {
 	LuaError err{LuaError::Category::Load, 3, "syntax", "myfile.lua"};
 	try {
 		throw LuaException(err);
-	} catch (const LuaException& e) {
-		EXPECT_EQ(e.error().category, LuaError::Category::Load);
-		EXPECT_EQ(e.error().status, 3);
-		EXPECT_EQ(e.error().message, "syntax");
-		EXPECT_EQ(e.error().source, "myfile.lua");
-		EXPECT_STREQ(e.what(), "syntax");
+	} catch (const LuaException& ex) {
+		EXPECT_EQ(ex.error().category, LuaError::Category::Load);
+		EXPECT_EQ(ex.error().status, 3);
+		EXPECT_EQ(ex.error().message, "syntax");
+		EXPECT_EQ(ex.error().source, "myfile.lua");
+		EXPECT_STREQ(ex.what(), "syntax");
 	}
+}
+
+// ---------------------------------------------------------------------------
+// State slot interaction
+// ---------------------------------------------------------------------------
+
+TEST(StateErrorSlotsTest, loggerRunsBeforeHandler) {
+	// Outer-first semantics: even when the handler throws, the logger has
+	// already received the error.
+	State lua(State::LibBase);
+	auto& mem = lua.installLogger<MemoryLogger>();
+	lua.installErrorHandler<ThrowHandler>();
+
+	EXPECT_THROW(lua.loadAndExecuteScript("error('boom')"), LuaException);
+
+	ASSERT_FALSE(mem.entries().empty());
+	EXPECT_NE(mem.entries().front().message.find("boom"), std::string::npos);
+}
+
+TEST(StateErrorSlotsTest, setLoggerNullSilencesLogging) {
+	State lua(State::LibBase);
+	lua.setLogger(nullptr);
+	// No throw, no log, no output. The script just fails silently — the
+	// caller is opting out of every channel.
+	lua.loadAndExecuteScript("error('quiet')");
+	SUCCEED();
+}
+
+TEST(StateErrorSlotsTest, setErrorHandlerNullDoesNotPreventLogging) {
+	State lua(State::LibBase);
+	auto& mem = lua.installLogger<MemoryLogger>();
+	lua.setErrorHandler(nullptr); // explicit; equals the default
+
+	lua.loadAndExecuteScript("error('observe')");
+
+	ASSERT_FALSE(mem.entries().empty());
+	EXPECT_NE(mem.entries().front().message.find("observe"), std::string::npos);
+}
+
+TEST(StateErrorSlotsTest, customCallbackHandlerCanInspectAndThrowConditionally) {
+	State lua(State::LibBase);
+	lua.installLogger<MemoryLogger>(); // capture for assertion below
+
+	lua.installErrorHandler<CallbackHandler>([](const LuaError& e) {
+		// Only escalate Load errors; runtime errors stay non-throwing.
+		if (e.category == LuaError::Category::Load) {
+			throw LuaException(e);
+		}
+	});
+
+	// Runtime error: callback returns, no throw.
+	lua.loadAndExecuteScript("error('runtime')");
+	SUCCEED();
+
+	// Load error (syntax): callback throws.
+	EXPECT_THROW(lua.loadAndExecuteScript("x ="), LuaException);
 }
 
 } // namespace

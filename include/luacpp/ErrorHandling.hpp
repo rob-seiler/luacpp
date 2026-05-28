@@ -2,6 +2,7 @@
 #define LUACPP_ERRORHANDLING_HPP
 
 #include <functional>
+#include <iosfwd>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -32,7 +33,7 @@ struct LuaError {
 };
 
 /**
- * @brief Exception thrown by ThrowDecorator. Carries the original LuaError.
+ * @brief Exception thrown by ThrowHandler. Carries the original LuaError.
  */
 class LuaException : public std::runtime_error {
 public:
@@ -45,20 +46,75 @@ private:
 	LuaError m_error;
 };
 
+// ---------------------------------------------------------------------------
+// ErrorLogger — passive observer slot ("what happened, recorded somewhere")
+//
+// Per-State, swappable. Default = StreamLogger to std::cerr. Pass nullptr to
+// State::setLogger to silence all logging.
+// ---------------------------------------------------------------------------
+
+class ErrorLogger {
+public:
+	virtual ~ErrorLogger() = default;
+	virtual void log(const LuaError&) = 0;
+};
+
 /**
- * @brief Strategy interface: invoked by the State whenever a LuaError occurs.
- *
- * Decorator composition is the intended usage model — see the decorators
- * below. A bare ErrorHandler implementation (or a subclass) can be used
- * directly as a leaf.
- *
- * Convention "outer-first": pass-through decorators (Log, Capture, Filter,
- * Callback) run their own logic and then delegate to the wrapped handler.
- * Terminal decorators (Throw) delegate first and then perform their terminal
- * action. As a result, the outermost decorator's logic always runs first
- * irrespective of the composition order — composition is commutative for
- * the user's mental model.
+ * @brief Writes one line per error to an std::ostream. Default-constructs to
+ *        std::cerr; supply any other ostream for files, in-memory buffers,
+ *        or platform-specific sinks. The referenced stream must outlive the
+ *        logger.
  */
+class StreamLogger : public ErrorLogger {
+public:
+	StreamLogger();                              // → std::cerr (impl in .cpp to keep <iostream> out)
+	explicit StreamLogger(std::ostream& out) noexcept;
+	void log(const LuaError&) override;
+private:
+	std::ostream* m_out;
+};
+
+/**
+ * @brief Accumulates every LuaError in an in-memory vector. Pull the contents
+ *        via entries(); clear() resets. Replaces the previous LogDecorator
+ *        ergonomic.
+ */
+class MemoryLogger : public ErrorLogger {
+public:
+	void log(const LuaError& e) override { m_entries.push_back(e); }
+	const std::vector<LuaError>& entries() const noexcept { return m_entries; }
+	void clear() noexcept { m_entries.clear(); }
+private:
+	std::vector<LuaError> m_entries;
+};
+
+/**
+ * @brief Bridge to an external logging system: forwards each error to a
+ *        user-supplied std::function. Useful for plugging spdlog/glog/your
+ *        own sink without writing a subclass.
+ */
+class CallbackLogger : public ErrorLogger {
+public:
+	explicit CallbackLogger(std::function<void(const LuaError&)> callback)
+	    : m_callback(std::move(callback)) {
+		if (!m_callback) {
+			throw std::invalid_argument("CallbackLogger: callback must not be null");
+		}
+	}
+	void log(const LuaError& e) override { m_callback(e); }
+private:
+	std::function<void(const LuaError&)> m_callback;
+};
+
+// ---------------------------------------------------------------------------
+// ErrorHandler — active reaction slot ("what to do about it")
+//
+// Per-State, swappable. Default = nullptr (no reaction; the logger still
+// runs). Set ThrowHandler to escalate errors as C++ exceptions, or a
+// CallbackHandler for custom flow control. The logger runs before the
+// handler, so even a throwing handler leaves the log entry behind.
+// ---------------------------------------------------------------------------
+
 class ErrorHandler {
 public:
 	virtual ~ErrorHandler() = default;
@@ -66,153 +122,34 @@ public:
 };
 
 /**
- * @brief Leaf handler that does nothing. Marks the end of a decorator chain.
- */
-class NullHandler : public ErrorHandler {
-public:
-	void operator()(const LuaError&) override {}
-};
-
-/**
- * @brief Base for decorators that wrap a nested handler.
+ * @brief Turns every reported error into a thrown LuaException.
  *
- * Owns the nested handler via unique_ptr. Construction enforces a non-null
- * inner handler — a chain must terminate in a NullHandler (or other leaf),
- * not in nullptr.
+ * Place on the handler slot to escalate failures past the call site. The
+ * logger (if any) runs first, so the throw does not erase the log record.
  */
-class ErrorHandlerDecorator : public ErrorHandler {
+class ThrowHandler : public ErrorHandler {
 public:
-	explicit ErrorHandlerDecorator(std::unique_ptr<ErrorHandler> next)
-	    : m_next(std::move(next)) {
-		if (!m_next) {
-			throw std::invalid_argument(
-			    "ErrorHandlerDecorator: inner handler must not be null "
-			    "(terminate chains with NullHandler)");
-		}
-	}
-
-protected:
-	ErrorHandler& next() { return *m_next; }
-
-private:
-	std::unique_ptr<ErrorHandler> m_next;
-};
-
-/**
- * @brief Append every error to an in-memory log, then delegate.
- *
- * Typical default-handler position: lets callers retrieve everything that
- * happened during a script run via log().
- */
-class LogDecorator : public ErrorHandlerDecorator {
-public:
-	LogDecorator() : ErrorHandlerDecorator(std::make_unique<NullHandler>()) {}
-	using ErrorHandlerDecorator::ErrorHandlerDecorator;
-
-	void operator()(const LuaError& e) override {
-		m_entries.push_back(e);
-		next()(e);
-	}
-
-	const std::vector<LuaError>& log() const noexcept { return m_entries; }
-	void clear() noexcept { m_entries.clear(); }
-
-private:
-	std::vector<LuaError> m_entries;
-};
-
-/**
- * @brief Remember the most recent error and delegate.
- *
- * Pull-style counterpart to LogDecorator: keeps a single slot rather than
- * an unbounded history.
- */
-class CaptureDecorator : public ErrorHandlerDecorator {
-public:
-	CaptureDecorator() : ErrorHandlerDecorator(std::make_unique<NullHandler>()) {}
-	using ErrorHandlerDecorator::ErrorHandlerDecorator;
-
-	void operator()(const LuaError& e) override {
-		m_last = e;
-		next()(e);
-	}
-
-	const std::optional<LuaError>& lastError() const noexcept { return m_last; }
-	void reset() noexcept { m_last.reset(); }
-
-private:
-	std::optional<LuaError> m_last;
-};
-
-/**
- * @brief Delegate only when the predicate returns true for the error.
- *
- * Compose with the other decorators to apply per-category or per-status
- * behavior — e.g. wrap a ThrowDecorator behind a FilterDecorator that
- * matches only LUA_ERRSYNTAX.
- */
-class FilterDecorator : public ErrorHandlerDecorator {
-public:
-	FilterDecorator(std::function<bool(const LuaError&)> predicate,
-	                std::unique_ptr<ErrorHandler> next)
-	    : ErrorHandlerDecorator(std::move(next)),
-	      m_predicate(std::move(predicate)) {
-		if (!m_predicate) {
-			throw std::invalid_argument(
-			    "FilterDecorator: predicate must not be null");
-		}
-	}
-
-	void operator()(const LuaError& e) override {
-		if (m_predicate(e)) next()(e);
-	}
-
-private:
-	std::function<bool(const LuaError&)> m_predicate;
-};
-
-/**
- * @brief Invoke a user callback, then delegate. The callback runs first so
- *        any logging done by inner decorators reflects post-callback state.
- */
-class CallbackDecorator : public ErrorHandlerDecorator {
-public:
-	CallbackDecorator(std::function<void(const LuaError&)> callback,
-	                  std::unique_ptr<ErrorHandler> next)
-	    : ErrorHandlerDecorator(std::move(next)),
-	      m_callback(std::move(callback)) {
-		if (!m_callback) {
-			throw std::invalid_argument(
-			    "CallbackDecorator: callback must not be null");
-		}
-	}
-
-	void operator()(const LuaError& e) override {
-		m_callback(e);
-		next()(e);
-	}
-
-private:
-	std::function<void(const LuaError&)> m_callback;
-};
-
-/**
- * @brief Terminal decorator: delegates to inner handler first (so logs and
- *        captures along the chain still happen), then throws LuaException.
- *
- * Place at the OUTERMOST position when you want every error to escape via
- * C++ exception. Place behind a FilterDecorator to throw only on selected
- * errors.
- */
-class ThrowDecorator : public ErrorHandlerDecorator {
-public:
-	ThrowDecorator() : ErrorHandlerDecorator(std::make_unique<NullHandler>()) {}
-	using ErrorHandlerDecorator::ErrorHandlerDecorator;
-
-	void operator()(const LuaError& e) override {
-		next()(e);
+	[[noreturn]] void operator()(const LuaError& e) override {
 		throw LuaException(e);
 	}
+};
+
+/**
+ * @brief Reacts to errors via a user-supplied std::function. Lets the user
+ *        write arbitrary flow control (conditional throw, abort, custom
+ *        exception type) without subclassing.
+ */
+class CallbackHandler : public ErrorHandler {
+public:
+	explicit CallbackHandler(std::function<void(const LuaError&)> callback)
+	    : m_callback(std::move(callback)) {
+		if (!m_callback) {
+			throw std::invalid_argument("CallbackHandler: callback must not be null");
+		}
+	}
+	void operator()(const LuaError& e) override { m_callback(e); }
+private:
+	std::function<void(const LuaError&)> m_callback;
 };
 
 } // namespace Lua

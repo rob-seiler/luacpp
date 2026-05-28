@@ -118,7 +118,8 @@ TEST(MetatableTest, ErrorHandling_NilOperand) {
         return 1;
     });
 
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 + nil";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -141,7 +142,8 @@ TEST(MetatableTest, ErrorHandling_WrongType) {
     // avoid silently constructing a Vector from a scalar. Users who want a
     // real mixed-type operator must mark their ctor `explicit` or define
     // operator+(double) directly — see BindMixedOpTest for examples.)
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 + true";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -157,7 +159,8 @@ TEST(MetatableTest, ErrorHandling_StringOperand) {
         return 1;
     });
 
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 * 'hello'";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -182,7 +185,8 @@ TEST(MetatableTest, ErrorHandling_TypeConfusion) {
         return 1;
     });
 
-    lua.installErrorHandler<ThrowDecorator>();
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); b1 = createBox(5); result = v1 + b1";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }

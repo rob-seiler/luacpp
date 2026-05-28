@@ -23,7 +23,8 @@ State::State(Library libraries)
 : m_state(luaL_newstate()),
   m_registry(m_state),
   m_externalState(false),
-  m_errorHandler(std::make_unique<NullHandler>())
+  m_errorLogger(std::make_unique<StreamLogger>()),
+  m_errorHandler(nullptr)
 {
 	openLibrary(libraries);
 }
@@ -32,15 +33,17 @@ State::State(lua_State* state)
 : m_state(state),
   m_registry(state),
   m_externalState(true),
-  m_errorHandler(std::make_unique<NullHandler>())
+  m_errorLogger(std::make_unique<StreamLogger>()),
+  m_errorHandler(nullptr)
 {
 }
 
+void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
+	m_errorLogger = std::move(logger);
+}
+
 void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
-	// Keep the invariant that m_errorHandler is never null after construction
-	// — callers can reset by passing nullptr explicitly, which collapses back
-	// to the silent default.
-	m_errorHandler = handler ? std::move(handler) : std::make_unique<NullHandler>();
+	m_errorHandler = std::move(handler);
 }
 
 void State::reportError(LuaError::Category category, int status) {
@@ -49,11 +52,13 @@ void State::reportError(LuaError::Category category, int status) {
 		err.message = lua_tostring(m_state, -1);
 		lua_pop(m_state, 1);
 	}
-	(*m_errorHandler)(err);
+	if (m_errorLogger)  m_errorLogger->log(err);
+	if (m_errorHandler) (*m_errorHandler)(err);
 }
 
 void State::reportError(LuaError err) {
-	(*m_errorHandler)(err);
+	if (m_errorLogger)  m_errorLogger->log(err);
+	if (m_errorHandler) (*m_errorHandler)(err);
 }
 
 State::~State() {

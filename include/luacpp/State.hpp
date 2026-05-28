@@ -586,29 +586,39 @@ public:
 	}
 
 	/**
-	 * \brief Install a strategy that receives every LuaError this state surfaces.
+	 * \brief Install the passive observer for LuaErrors ("where to record").
 	 *
-	 * Default-constructed States have a NullHandler installed — errors are
-	 * silently dropped. Compose decorators (see ErrorHandling.hpp) to log,
-	 * capture, throw, filter, or callback on errors. Passing nullptr resets
-	 * to the default NullHandler.
+	 * Default-constructed States carry a StreamLogger writing to std::cerr.
+	 * Pass nullptr to silence logging entirely.
+	 *
+	 * \see ErrorHandling.hpp
+	 */
+	void setLogger(std::unique_ptr<ErrorLogger> logger);
+
+	/// Convenience: construct a Logger in place, install it, return a
+	/// reference for later inspection (typically MemoryLogger).
+	template <typename LoggerT, typename... Args>
+	LoggerT& installLogger(Args&&... args) {
+		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
+		LoggerT* ptr = logger.get();
+		setLogger(std::move(logger));
+		return *ptr;
+	}
+
+	/**
+	 * \brief Install the active reaction for LuaErrors ("what to do about it").
+	 *
+	 * Default = nullptr (no reaction; logger still runs). Set ThrowHandler
+	 * to escalate errors as C++ exceptions, or a CallbackHandler for custom
+	 * flow control. The logger runs before the handler, so a throwing handler
+	 * does not erase the log record.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
 	void setErrorHandler(std::unique_ptr<ErrorHandler> handler);
 
-	/**
-	 * \brief Convenience: construct an ErrorHandler in place, install it,
-	 *        and return a reference for later inspection.
-	 *
-	 * Saves the unique_ptr dance for the common case of "install a handler
-	 * and remember it":
-	 * \code
-	 *   auto& log = state.installErrorHandler<LogDecorator>();
-	 *   // ... run scripts ...
-	 *   for (const auto& e : log.log()) std::cerr << e.message << '\n';
-	 * \endcode
-	 */
+	/// Convenience: construct a Handler in place, install it, return a
+	/// reference for later inspection.
 	template <typename HandlerT, typename... Args>
 	HandlerT& installErrorHandler(Args&&... args) {
 		auto handler = std::make_unique<HandlerT>(std::forward<Args>(args)...);
@@ -695,9 +705,9 @@ private:
 	void transferStringOwnership(std::string s);
 
 	// Pops the error message from the top of the Lua stack (if any), packages
-	// it as a LuaError with the given category and status code, and invokes
-	// the configured ErrorHandler. Called from every load/pcall path so all
-	// failures flow through one notification channel.
+	// it as a LuaError with the given category and status code, and fans it
+	// out to the configured logger (if any) and the configured handler (if
+	// any). Logger runs first so a throwing handler does not erase the log.
 	void reportError(LuaError::Category category, int status);
 	// Direct overload for synthetic errors not originating from a Lua status
 	// (e.g. "function name not registered"). Caller fills the LuaError fields.
@@ -727,7 +737,8 @@ private:
 	Registry m_registry; ///< registry for user defined functions
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
-	std::unique_ptr<ErrorHandler> m_errorHandler; ///< strategy invoked for every LuaError (never null after construction)
+	std::unique_ptr<ErrorLogger>  m_errorLogger;  ///< passive observer; may be null
+	std::unique_ptr<ErrorHandler> m_errorHandler; ///< active reaction; may be null
 };
 
 } // namespace Lua

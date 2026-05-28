@@ -95,11 +95,11 @@ TEST_F(StateTest, simpleScriptWithInvalidSyntax) {
 	)";
 
 	State script(State::LibNone);
-	auto& errors = script.installErrorHandler<LogDecorator>();
+	auto& errors = script.installLogger<MemoryLogger>();
 	script.loadAndExecuteScript(src);
 	EXPECT_EQ(script.getStackSize(), 0);
-	ASSERT_FALSE(errors.log().empty());
-	EXPECT_EQ(errors.log().front().category, LuaError::Category::Load);
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_EQ(errors.entries().front().category, LuaError::Category::Load);
 }
 
 TEST_F(StateTest, readVariable) {
@@ -209,15 +209,15 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	)";
 
 	State script(State::LibBase);
-	auto& errors = script.installErrorHandler<LogDecorator>();
+	auto& errors = script.installLogger<MemoryLogger>();
 	script.loadScript(ScriptKey, src);
-	ASSERT_TRUE(errors.log().empty());
+	ASSERT_TRUE(errors.entries().empty());
 
 	script.executeScript(ScriptKey);
 	EXPECT_EQ(script.getStackSize(), 0); // error was drained, not left dangling
-	ASSERT_FALSE(errors.log().empty());
-	EXPECT_EQ(errors.log().front().category, LuaError::Category::Runtime);
-	EXPECT_NE(errors.log().front().message.find("boom from executeScript"),
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_EQ(errors.entries().front().category, LuaError::Category::Runtime);
+	EXPECT_NE(errors.entries().front().message.find("boom from executeScript"),
 	          std::string::npos);
 }
 
