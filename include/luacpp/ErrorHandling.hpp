@@ -23,13 +23,59 @@ namespace Lua {
  *             script started running and threw, ran out of memory, or its
  *             own message handler errored.
  */
+/**
+ * @brief Lua-side error text plus best-effort accessors for the standard
+ *        "<chunkname>:<line>: <text>" prefix Lua's error() prepends.
+ *
+ * The raw string Lua placed on the stack is always available verbatim via
+ * raw(). The convenience accessors source() / line() / text() parse Lua's
+ * standard prefix format and return nullopt (or fall back to raw()) when
+ * the message does not match — e.g. a table-thrown error, error() called
+ * with level=0, or a custom message handler that rewrote the format.
+ *
+ * Implicit construction from std::string is allowed because LuaMessage is
+ * essentially a thin wrapper that exposes parsing convenience — passing a
+ * plain std::string where a LuaMessage is expected is never a misuse.
+ */
+class LuaMessage {
+public:
+	LuaMessage() = default;
+	LuaMessage(std::string raw) : m_raw(std::move(raw)) {}
+	LuaMessage(const char* raw) : m_raw(raw ? raw : "") {}
+
+	const std::string& raw()   const noexcept { return m_raw; }
+	bool               empty() const noexcept { return m_raw.empty(); }
+
+	/// "<chunkname>" portion of the prefix; nullopt if no parseable prefix.
+	std::optional<std::string> source() const;
+
+	/// "<line>" portion; nullopt if no parseable prefix.
+	std::optional<int> line() const;
+
+	/// Message body without the "<src>:<line>: " prefix; raw() if no prefix.
+	std::string text() const;
+
+	// Forwarders for the common substring-search use case. Deliberately
+	// narrow: only find() is delegated because that's what callers actually
+	// reach for. Everything else goes through raw() to keep the API tight.
+	std::size_t find(const std::string& s, std::size_t pos = 0) const noexcept { return m_raw.find(s, pos); }
+	std::size_t find(const char* s,        std::size_t pos = 0) const          { return m_raw.find(s, pos); }
+	std::size_t find(char c,               std::size_t pos = 0) const noexcept { return m_raw.find(c, pos); }
+
+private:
+	std::string m_raw;
+};
+
+/// Streams the raw Lua message. For category/status-formatted output use
+/// StreamLogger, which wraps a LuaError and prepends "[lua <cat> <n>] ".
+std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
+
 struct LuaError {
 	enum class Category { Load, Runtime };
 
-	Category    category;
-	int         status;   ///< raw Lua status code (LUA_ERRSYNTAX etc.)
-	std::string message;  ///< message Lua placed on the stack
-	std::string source;   ///< chunk name / file path, when known
+	Category   category;
+	int        status;   ///< raw Lua status code (LUA_ERRSYNTAX etc.)
+	LuaMessage message;  ///< Lua's error string, with parsing helpers
 };
 
 /**
@@ -38,7 +84,7 @@ struct LuaError {
 class LuaException : public std::runtime_error {
 public:
 	explicit LuaException(LuaError err)
-	    : std::runtime_error(err.message), m_error(std::move(err)) {}
+	    : std::runtime_error(err.message.raw()), m_error(std::move(err)) {}
 
 	const LuaError& error() const noexcept { return m_error; }
 

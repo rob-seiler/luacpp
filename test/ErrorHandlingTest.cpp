@@ -14,7 +14,63 @@ namespace {
 LuaError makeError(LuaError::Category cat = LuaError::Category::Runtime,
                    int status = 2,
                    std::string message = "boom") {
-	return LuaError{cat, status, std::move(message), {}};
+	return LuaError{cat, status, std::move(message)};
+}
+
+// ---------------------------------------------------------------------------
+// LuaMessage prefix parser (best-effort against Lua's standard format)
+// ---------------------------------------------------------------------------
+
+TEST(LuaMessageTest, parsesStandardInMemoryChunk) {
+	LuaMessage m(std::string(R"([string "x"]:3: attempt to index a nil value)"));
+	ASSERT_TRUE(m.source().has_value());
+	EXPECT_EQ(*m.source(), R"([string "x"])");
+	ASSERT_TRUE(m.line().has_value());
+	EXPECT_EQ(*m.line(), 3);
+	EXPECT_EQ(m.text(), "attempt to index a nil value");
+}
+
+TEST(LuaMessageTest, parsesFilePath) {
+	LuaMessage m(std::string("/usr/scripts/run.lua:42: bar"));
+	ASSERT_TRUE(m.source().has_value());
+	EXPECT_EQ(*m.source(), "/usr/scripts/run.lua");
+	EXPECT_EQ(*m.line(), 42);
+	EXPECT_EQ(m.text(), "bar");
+}
+
+TEST(LuaMessageTest, parsesWindowsPathWithDriveColon) {
+	LuaMessage m(std::string("c:\\foo\\script.lua:7: baz"));
+	ASSERT_TRUE(m.source().has_value());
+	EXPECT_EQ(*m.source(), "c:\\foo\\script.lua");
+	EXPECT_EQ(*m.line(), 7);
+	EXPECT_EQ(m.text(), "baz");
+}
+
+TEST(LuaMessageTest, textPreservesInternalColons) {
+	LuaMessage m(std::string("[string \"x\"]:3: foo: bar: baz"));
+	EXPECT_EQ(m.text(), "foo: bar: baz");
+}
+
+TEST(LuaMessageTest, noPrefixReturnsNullopt) {
+	LuaMessage m(std::string("plain error, no prefix"));
+	EXPECT_FALSE(m.source().has_value());
+	EXPECT_FALSE(m.line().has_value());
+	EXPECT_EQ(m.text(), "plain error, no prefix"); // falls back to raw()
+}
+
+TEST(LuaMessageTest, malformedLineNumberReturnsNullopt) {
+	// Resembles a prefix but the "line" portion isn't an integer.
+	LuaMessage m(std::string("source:NaN: msg"));
+	EXPECT_FALSE(m.source().has_value());
+	EXPECT_FALSE(m.line().has_value());
+	EXPECT_EQ(m.text(), "source:NaN: msg");
+}
+
+TEST(LuaMessageTest, emptyMessageIsEmpty) {
+	LuaMessage m;
+	EXPECT_TRUE(m.empty());
+	EXPECT_FALSE(m.source().has_value());
+	EXPECT_EQ(m.text(), "");
 }
 
 // ---------------------------------------------------------------------------
@@ -42,8 +98,8 @@ TEST(ErrorLoggerTest, memoryLoggerCollectsAndClears) {
 	logger.log(makeError(LuaError::Category::Load,    3, "second"));
 
 	ASSERT_EQ(logger.entries().size(), 2u);
-	EXPECT_EQ(logger.entries()[0].message, "first");
-	EXPECT_EQ(logger.entries()[1].message, "second");
+	EXPECT_EQ(logger.entries()[0].message.raw(), "first");
+	EXPECT_EQ(logger.entries()[1].message.raw(), "second");
 
 	logger.clear();
 	EXPECT_TRUE(logger.entries().empty());
@@ -54,7 +110,7 @@ TEST(ErrorLoggerTest, callbackLoggerForwardsToFunction) {
 	std::string lastMsg;
 	CallbackLogger logger([&](const LuaError& e) {
 		++calls;
-		lastMsg = e.message;
+		lastMsg = e.message.raw();
 	});
 
 	logger.log(makeError(LuaError::Category::Runtime, 2, "ping"));
@@ -94,15 +150,21 @@ TEST(ErrorHandlerTest, callbackHandlerRejectsNullCallback) {
 }
 
 TEST(ErrorHandlerTest, luaExceptionCarriesFullError) {
-	LuaError err{LuaError::Category::Load, 3, "syntax", "myfile.lua"};
+	LuaError err{LuaError::Category::Load, 3,
+	             std::string("myfile.lua:7: syntax")};
 	try {
 		throw LuaException(err);
 	} catch (const LuaException& ex) {
 		EXPECT_EQ(ex.error().category, LuaError::Category::Load);
 		EXPECT_EQ(ex.error().status, 3);
-		EXPECT_EQ(ex.error().message, "syntax");
-		EXPECT_EQ(ex.error().source, "myfile.lua");
-		EXPECT_STREQ(ex.what(), "syntax");
+		EXPECT_EQ(ex.error().message.raw(), "myfile.lua:7: syntax");
+		EXPECT_STREQ(ex.what(), "myfile.lua:7: syntax");
+		// Convenience accessors parse the standard Lua prefix.
+		ASSERT_TRUE(ex.error().message.source().has_value());
+		EXPECT_EQ(*ex.error().message.source(), "myfile.lua");
+		ASSERT_TRUE(ex.error().message.line().has_value());
+		EXPECT_EQ(*ex.error().message.line(), 7);
+		EXPECT_EQ(ex.error().message.text(), "syntax");
 	}
 }
 

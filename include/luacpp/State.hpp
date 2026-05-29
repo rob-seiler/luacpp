@@ -304,7 +304,7 @@ public:
 		if (rc != Registry::ErrorCode::Ok) {
 			reportError(LuaError{
 			    LuaError::Category::Runtime, static_cast<int>(rc),
-			    "executeScript: registry key is missing or not a function", {}});
+			    "executeScript: registry key is missing or not a function"});
 			return;
 		}
 		int status = callFunction(0, 0);
@@ -342,7 +342,7 @@ public:
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
 			    LuaError::Category::Runtime, 0,
-			    std::string("executeFunction: '") + std::string(name) + "' is not a function", {}});
+			    std::string("executeFunction: '") + std::string(name) + "' is not a function"});
 			return;
 		}
 		(pushToStack(args), ...);
@@ -358,7 +358,7 @@ public:
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
 			    LuaError::Category::Runtime, 0,
-			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function", {}});
+			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function"});
 			return;
 		}
 		for (size_t i = 0; i < numArgs; ++i) {

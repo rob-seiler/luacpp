@@ -47,7 +47,7 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::reportError(LuaError::Category category, int status) {
-	LuaError err{category, status, {}, {}};
+	LuaError err{category, status, {}};
 	if (lua_isstring(m_state, -1)) {
 		err.message = lua_tostring(m_state, -1);
 		lua_pop(m_state, 1);
