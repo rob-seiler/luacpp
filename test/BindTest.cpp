@@ -136,6 +136,37 @@ TEST(BindConstructorTest, BasicConstructor) {
     EXPECT_FLOAT_EQ(p->y, 4.5f);
 }
 
+// Reviewer regression: void* (and other non-class pointer types) is opaque
+// to our type system — there's no metatable name we can verify against. The
+// old tryGet path accepted any userdata's pointer regardless of type,
+// silently breaking the optional<T> "wrong type → nullopt" contract for raw
+// pointers. Now only light userdata is accepted; full userdata is refused.
+TEST(BindConstructorTest, ReadVariableVoidPtrRejectsFullUserdata) {
+    State lua(State::LibBase);
+    Metatable<Point>::registerMetatable(lua);
+    lua.bindConstructor<Point, float, float>("Point");
+
+    lua.loadAndExecuteScript("p = Point(1.0, 2.0)");
+
+    // p is a full userdata. void* must refuse — no metatable check possible.
+    auto asVoid = lua.readVariable<void*>("p");
+    EXPECT_FALSE(asVoid.has_value())
+        << "void* must not accept full userdata blindly";
+
+    // The typed read still works.
+    auto asPoint = lua.readVariable<Point*>("p");
+    EXPECT_TRUE(asPoint.has_value());
+}
+
+TEST(BindConstructorTest, ReadVariableVoidPtrAcceptsLightUserdata) {
+    State lua(State::LibNone);
+    int sentinel = 42;
+    lua.writeVariable<void*>("ptr", &sentinel);   // pushes light userdata
+    auto p = lua.readVariable<void*>("ptr");
+    ASSERT_TRUE(p.has_value());
+    EXPECT_EQ(*p, &sentinel);
+}
+
 // Regression: readVariable<T*> on a userdata carrying a DIFFERENT metatable
 // must return nullopt, not raise a Lua error. The read happens at the host
 // boundary (no enclosing pcall), so an erroring luaL_checkudata would kill

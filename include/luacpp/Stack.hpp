@@ -91,8 +91,15 @@ struct Stack {
 
 	/**
 	 * @brief Non-throwing read. Returns nullopt when the value at @p index
-	 *        does not match T (wrong Lua type, or — for class pointers — a
-	 *        different metatable).
+	 *        does not match T:
+	 *          - class pointer T*: full userdata with a different (or no)
+	 *            metatable name yields nullopt
+	 *          - non-class pointer T* (void*, int*, …): anything other than
+	 *            Lua light userdata yields nullopt — full userdata is opaque
+	 *            without a metatable to identify the pointee type, so we
+	 *            refuse to misrepresent it as T*
+	 *          - value types: exact Lua-type match required (no number<->
+	 *            string coercion)
 	 *
 	 * Use at C++/host boundaries (readVariable) where a mismatch must be a
 	 * query result. get() is for callback context, where a mismatch should
@@ -110,9 +117,14 @@ struct Stack {
 				if (ud == nullptr) return std::nullopt;
 				return static_cast<T>(ud);
 			} else {
-				void* ud = Basics::asUserData(state, index);
-				if (ud == nullptr) return std::nullopt;
-				return static_cast<T>(ud);
+				// Non-class pointers — only accept light userdata. Full
+				// userdata has a metatable we have no way to verify here, so
+				// returning its raw pointer would silently violate the
+				// "wrong type → nullopt" contract this method advertises.
+				if (Basics::getType(state, index) != Type::LightUserData) {
+					return std::nullopt;
+				}
+				return static_cast<T>(Basics::asUserData(state, index));
 			}
 		} else {
 			// Value types: require an exact Lua-type match before extracting,
