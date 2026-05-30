@@ -46,9 +46,8 @@ LuaError::Status Registry::loadScript(Generic key, const char* src) {
 			}
 			return loadScript(key.get<double>(), src);
 		case Type::String: return loadScript(key.get<std::string>().c_str(), src);
-		default: return LuaError::Status::MsgHandlerError;
-	};
-	return LuaError::Status::RuntimeError;
+		default: return LuaError::Status::InvalidKey;
+	}
 }
 
 LuaError::Status Registry::loadScriptFromFile(Generic key, const std::filesystem::path& path) {
@@ -60,9 +59,8 @@ LuaError::Status Registry::loadScriptFromFile(Generic key, const std::filesystem
 			}
 			return loadScriptFromFile(key.get<double>(), path);
 		case Type::String: return loadScriptFromFile(key.get<std::string>().c_str(), path);
-		default: return LuaError::Status::MsgHandlerError;
-	};
-	return LuaError::Status::RuntimeError;
+		default: return LuaError::Status::InvalidKey;
+	}
 }
 
 LuaError::Status Registry::getScript(Generic key) {
@@ -74,9 +72,8 @@ LuaError::Status Registry::getScript(Generic key) {
 			}
 			return getScript(key.get<double>());
 		case Type::String: return getScript(key.get<std::string>().c_str());
-		default: return LuaError::Status::MsgHandlerError;
-	};
-	return LuaError::Status::RuntimeError;
+		default: return LuaError::Status::InvalidKey;
+	}
 }
 
 bool Registry::copyContent(Registry& other) {

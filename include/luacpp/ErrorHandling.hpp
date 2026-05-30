@@ -94,6 +94,7 @@ struct LuaError {
 		// luacpp-side detections (negative):
 		FunctionNotFound    = -1,  // executeFunction: name doesn't resolve
 		RegistryKeyNotFound = -2,  // executeScript: key missing or non-function
+		InvalidKey          = -3,  // Registry: key Generic carries an unsupported type
 	};
 
 	Category   category;

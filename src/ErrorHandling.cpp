@@ -32,6 +32,7 @@ const char* describe(LuaError::Status status) noexcept {
 		case LuaError::Status::FileError:           return "FileError";
 		case LuaError::Status::FunctionNotFound:    return "FunctionNotFound";
 		case LuaError::Status::RegistryKeyNotFound: return "RegistryKeyNotFound";
+		case LuaError::Status::InvalidKey:          return "InvalidKey";
 	}
 	return "Unknown";
 }
