@@ -305,7 +305,7 @@ public:
 			// rc is RuntimeError from Registry::getScript when the key isn't
 			// a function — that's *our* detection, not a real pcall failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
+			    LuaError::Category::Runtime, LuaError::Status::RegistryKeyNotFound,
 			    "executeScript: registry key is missing or not a function"});
 			return;
 		}
@@ -343,7 +343,7 @@ public:
 		if (!loadFunction(name.data())) {
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
+			    LuaError::Category::Runtime, LuaError::Status::FunctionNotFound,
 			    std::string("executeFunction: '") + std::string(name) + "' is not a function"});
 			return;
 		}
@@ -359,7 +359,7 @@ public:
 		if (!loadFunction(name.data())) {
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
+			    LuaError::Category::Runtime, LuaError::Status::FunctionNotFound,
 			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function"});
 			return;
 		}

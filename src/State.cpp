@@ -47,7 +47,10 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 LuaError State::popErrorFromStack(LuaError::Category category, int status) {
-	LuaError err{category, status, {}};
+	// Lua status codes (LUA_OK..LUA_ERRFILE = 0..6) map 1:1 onto our
+	// LuaError::Status mirror; the static_asserts in ErrorHandling.cpp
+	// guarantee the cast lands on a valid enum value.
+	LuaError err{category, static_cast<LuaError::Status>(status), {}};
 	if (lua_isstring(m_state, -1)) {
 		err.message = lua_tostring(m_state, -1);
 		lua_pop(m_state, 1);

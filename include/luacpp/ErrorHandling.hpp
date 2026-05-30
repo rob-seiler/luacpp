@@ -73,15 +73,40 @@ std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
 struct LuaError {
 	enum class Category { Load, Runtime };
 
-	/// Sentinel status for errors raised by luacpp itself, not by Lua —
-	/// e.g. when a name doesn't resolve to a function or a registry key is
-	/// missing. Negative to keep clear of LUA_OK / LUA_ERR* values (0..6).
-	static constexpr int SyntheticStatus = -1;
+	/**
+	 * @brief Status code: Lua's status (>=0) or a luacpp-side detection (<0).
+	 *
+	 * The positive values mirror Lua's LUA_OK..LUA_ERRFILE numerically — a
+	 * static_assert in ErrorHandling.cpp pins this so users never need to
+	 * include <lua/lua.h> to dispatch on status. Negative values are
+	 * conditions luacpp detects itself before Lua sees them.
+	 */
+	enum class Status : int {
+		// Lua status mirror (positive):
+		Ok                  = 0,   // LUA_OK
+		Yield               = 1,   // LUA_YIELD
+		RuntimeError        = 2,   // LUA_ERRRUN
+		SyntaxError         = 3,   // LUA_ERRSYNTAX
+		MemoryError         = 4,   // LUA_ERRMEM
+		MsgHandlerError     = 5,   // LUA_ERRERR (error in the error handler)
+		FileError           = 6,   // LUA_ERRFILE
+
+		// luacpp-side detections (negative):
+		FunctionNotFound    = -1,  // executeFunction: name doesn't resolve
+		RegistryKeyNotFound = -2,  // executeScript: key missing or non-function
+	};
 
 	Category   category;
-	int        status;   ///< raw Lua status code (LUA_ERRSYNTAX etc.), or SyntheticStatus
+	Status     status;
 	LuaMessage message;  ///< Lua's error string, with parsing helpers
+
+	/// True if this error was detected by luacpp itself (Status < 0).
+	bool isLuacppError() const noexcept { return static_cast<int>(status) < 0; }
 };
+
+/// Stable human-readable name for a Status value. Returns "Unknown" for
+/// values outside the enum (e.g. obtained via static_cast).
+const char* describe(LuaError::Status status) noexcept;
 
 /**
  * @brief Exception thrown by ThrowHandler. Carries the original LuaError.

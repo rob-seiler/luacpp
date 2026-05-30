@@ -232,8 +232,8 @@ TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	ASSERT_FALSE(errors.entries().empty());
 	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Runtime);
-	EXPECT_EQ(err.status, LuaError::SyntheticStatus)
-	    << "synthetic 'not a function' must use the sentinel, not 0 or LUA_OK";
+	EXPECT_EQ(err.status, LuaError::Status::FunctionNotFound)
+	    << "synthetic 'not a function' must surface as the typed code";
 	EXPECT_NE(err.message.find("doesNotExist"), std::string::npos);
 	EXPECT_EQ(script.getStackSize(), 0);
 }

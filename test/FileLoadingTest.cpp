@@ -2,8 +2,6 @@
 
 #include <luacpp/State.hpp>
 
-#include <lua/lua.hpp>  // for LUA_OK, LUA_ERRFILE, LUA_ERRSYNTAX, LUA_ERRRUN
-
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -39,7 +37,7 @@ TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 	ASSERT_FALSE(errors.entries().empty());
 	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Load);
-	EXPECT_EQ(err.status, LUA_ERRFILE);
+	EXPECT_EQ(err.status, LuaError::Status::FileError);
 	// Lua's standard error format for ERRFILE is
 	//   "cannot open <path>: <reason>"
 	// We don't pin the entire message (varies by libc) but the path must be in it.
@@ -55,7 +53,7 @@ TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 	ASSERT_FALSE(errors.entries().empty());
 	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Load);
-	EXPECT_EQ(err.status, LUA_ERRSYNTAX);
+	EXPECT_EQ(err.status, LuaError::Status::SyntaxError);
 	// chunkname (= '@path') means the file name appears in the error message
 	// — that is the whole point of the file-source overload vs. piping the
 	// file's bytes through loadAndExecuteScript(const char*).
@@ -71,7 +69,7 @@ TEST(FileLoadingTest, RuntimeError_ReportsRuntimeErrorPinpointingLine) {
 	ASSERT_FALSE(errors.entries().empty());
 	const auto& err = errors.entries().front();
 	EXPECT_EQ(err.category, LuaError::Category::Runtime);
-	EXPECT_EQ(err.status, LUA_ERRRUN);
+	EXPECT_EQ(err.status, LuaError::Status::RuntimeError);
 	// runtime_error.lua calls error("boom...") on line 4. The traceback must
 	// reference both the file and the line.
 	EXPECT_NE(err.message.find("runtime_error.lua"), std::string::npos)

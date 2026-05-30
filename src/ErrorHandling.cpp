@@ -1,5 +1,7 @@
 #include <ErrorHandling.hpp>
 
+#include <lua/lua.hpp>
+
 #include <charconv>
 #include <iostream>
 #include <ostream>
@@ -7,6 +9,32 @@
 #include <system_error>
 
 namespace Lua {
+
+// Pin our mirror values to Lua's actual status codes. If Lua ever renumbers,
+// these will fail at compile time — flagging the drift instead of silently
+// misclassifying errors at runtime.
+static_assert(static_cast<int>(LuaError::Status::Ok)              == LUA_OK,        "LuaError::Status::Ok out of sync");
+static_assert(static_cast<int>(LuaError::Status::Yield)           == LUA_YIELD,     "LuaError::Status::Yield out of sync");
+static_assert(static_cast<int>(LuaError::Status::RuntimeError)    == LUA_ERRRUN,    "LuaError::Status::RuntimeError out of sync");
+static_assert(static_cast<int>(LuaError::Status::SyntaxError)     == LUA_ERRSYNTAX, "LuaError::Status::SyntaxError out of sync");
+static_assert(static_cast<int>(LuaError::Status::MemoryError)     == LUA_ERRMEM,    "LuaError::Status::MemoryError out of sync");
+static_assert(static_cast<int>(LuaError::Status::MsgHandlerError) == LUA_ERRERR,    "LuaError::Status::MsgHandlerError out of sync");
+static_assert(static_cast<int>(LuaError::Status::FileError)       == LUA_ERRFILE,   "LuaError::Status::FileError out of sync");
+
+const char* describe(LuaError::Status status) noexcept {
+	switch (status) {
+		case LuaError::Status::Ok:                  return "Ok";
+		case LuaError::Status::Yield:               return "Yield";
+		case LuaError::Status::RuntimeError:        return "RuntimeError";
+		case LuaError::Status::SyntaxError:         return "SyntaxError";
+		case LuaError::Status::MemoryError:         return "MemoryError";
+		case LuaError::Status::MsgHandlerError:     return "MsgHandlerError";
+		case LuaError::Status::FileError:           return "FileError";
+		case LuaError::Status::FunctionNotFound:    return "FunctionNotFound";
+		case LuaError::Status::RegistryKeyNotFound: return "RegistryKeyNotFound";
+	}
+	return "Unknown";
+}
 
 namespace {
 
@@ -73,13 +101,8 @@ StreamLogger::StreamLogger(std::ostream& out) noexcept : m_out(&out) {}
 
 void StreamLogger::log(const LuaError& e) {
 	const char* cat = (e.category == LuaError::Category::Load) ? "load" : "runtime";
-	(*m_out) << "[lua " << cat << ' ';
-	if (e.status == LuaError::SyntheticStatus) {
-		(*m_out) << "synthetic";
-	} else {
-		(*m_out) << e.status;
-	}
-	(*m_out) << "] " << e.message.raw() << '\n';
+	(*m_out) << "[lua " << cat << ' ' << describe(e.status) << "] "
+	         << e.message.raw() << '\n';
 }
 
 } // namespace Lua

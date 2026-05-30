@@ -12,7 +12,7 @@ namespace Lua {
 namespace {
 
 LuaError makeError(LuaError::Category cat = LuaError::Category::Runtime,
-                   int status = 2,
+                   LuaError::Status status = LuaError::Status::RuntimeError,
                    std::string message = "boom") {
 	return LuaError{cat, status, std::move(message)};
 }
@@ -80,24 +80,25 @@ TEST(LuaMessageTest, emptyMessageIsEmpty) {
 TEST(ErrorLoggerTest, streamLoggerWritesOneLinePerError) {
 	std::ostringstream out;
 	StreamLogger logger(out);
-	logger.log(makeError(LuaError::Category::Load, 3, "syntax"));
-	logger.log(makeError(LuaError::Category::Runtime, 2, "boom"));
+	logger.log(makeError(LuaError::Category::Load, LuaError::Status::SyntaxError, "syntax"));
+	logger.log(makeError(LuaError::Category::Runtime, LuaError::Status::RuntimeError, "boom"));
 
 	const std::string text = out.str();
-	EXPECT_NE(text.find("load"),    std::string::npos);
-	EXPECT_NE(text.find("syntax"),  std::string::npos);
-	EXPECT_NE(text.find("runtime"), std::string::npos);
-	EXPECT_NE(text.find("boom"),    std::string::npos);
+	EXPECT_NE(text.find("load"),         std::string::npos);
+	EXPECT_NE(text.find("SyntaxError"),  std::string::npos);
+	EXPECT_NE(text.find("runtime"),      std::string::npos);
+	EXPECT_NE(text.find("RuntimeError"), std::string::npos);
+	EXPECT_NE(text.find("boom"),         std::string::npos);
 }
 
-TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticStatus) {
+TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticByName) {
 	std::ostringstream out;
 	StreamLogger logger(out);
 	logger.log(makeError(LuaError::Category::Runtime,
-	                     LuaError::SyntheticStatus, "not a function"));
+	                     LuaError::Status::FunctionNotFound, "not a function"));
 	const std::string text = out.str();
-	EXPECT_NE(text.find("synthetic"), std::string::npos)
-	    << "synthetic-status errors should not surface as raw -1: " << text;
+	EXPECT_NE(text.find("FunctionNotFound"), std::string::npos)
+	    << "synthetic-status errors should surface by name, not as raw -1: " << text;
 	EXPECT_EQ(text.find("-1"), std::string::npos);
 }
 
@@ -105,8 +106,8 @@ TEST(ErrorLoggerTest, memoryLoggerCollectsAndClears) {
 	MemoryLogger logger;
 	EXPECT_TRUE(logger.entries().empty());
 
-	logger.log(makeError(LuaError::Category::Runtime, 2, "first"));
-	logger.log(makeError(LuaError::Category::Load,    3, "second"));
+	logger.log(makeError(LuaError::Category::Runtime, LuaError::Status::RuntimeError, "first"));
+	logger.log(makeError(LuaError::Category::Load,    LuaError::Status::SyntaxError,  "second"));
 
 	ASSERT_EQ(logger.entries().size(), 2u);
 	EXPECT_EQ(logger.entries()[0].message.raw(), "first");
@@ -124,7 +125,7 @@ TEST(ErrorLoggerTest, callbackLoggerForwardsToFunction) {
 		lastMsg = e.message.raw();
 	});
 
-	logger.log(makeError(LuaError::Category::Runtime, 2, "ping"));
+	logger.log(makeError(LuaError::Category::Runtime, LuaError::Status::RuntimeError, "ping"));
 	EXPECT_EQ(calls, 1);
 	EXPECT_EQ(lastMsg, "ping");
 }
@@ -140,11 +141,11 @@ TEST(ErrorLoggerTest, callbackLoggerRejectsNullCallback) {
 TEST(ErrorHandlerTest, throwHandlerThrowsLuaException) {
 	ThrowHandler handler;
 	try {
-		handler(makeError(LuaError::Category::Runtime, 2, "kaboom"));
+		handler(makeError(LuaError::Category::Runtime, LuaError::Status::RuntimeError, "kaboom"));
 		FAIL() << "ThrowHandler must throw";
 	} catch (const LuaException& ex) {
 		EXPECT_STREQ(ex.what(), "kaboom");
-		EXPECT_EQ(ex.error().status, 2);
+		EXPECT_EQ(ex.error().status, LuaError::Status::RuntimeError);
 		EXPECT_EQ(ex.error().category, LuaError::Category::Runtime);
 	}
 }
@@ -161,13 +162,13 @@ TEST(ErrorHandlerTest, callbackHandlerRejectsNullCallback) {
 }
 
 TEST(ErrorHandlerTest, luaExceptionCarriesFullError) {
-	LuaError err{LuaError::Category::Load, 3,
+	LuaError err{LuaError::Category::Load, LuaError::Status::SyntaxError,
 	             std::string("myfile.lua:7: syntax")};
 	try {
 		throw LuaException(err);
 	} catch (const LuaException& ex) {
 		EXPECT_EQ(ex.error().category, LuaError::Category::Load);
-		EXPECT_EQ(ex.error().status, 3);
+		EXPECT_EQ(ex.error().status, LuaError::Status::SyntaxError);
 		EXPECT_EQ(ex.error().message.raw(), "myfile.lua:7: syntax");
 		EXPECT_STREQ(ex.what(), "myfile.lua:7: syntax");
 		// Convenience accessors parse the standard Lua prefix.
