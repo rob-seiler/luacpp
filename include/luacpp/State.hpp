@@ -264,8 +264,8 @@ public:
 	template <typename T>
 	void loadScript(T key, const char* code) {
 		auto rc = m_registry.loadScript<T>(key, code);
-		if (rc != Registry::ErrorCode::Ok) {
-			reportError(popErrorFromStack(LuaError::Category::Load, static_cast<int>(rc)));
+		if (rc != LuaError::Status::Ok) {
+			reportError(popErrorFromStack(LuaError::Category::Load, rc));
 		}
 	}
 
@@ -287,8 +287,8 @@ public:
 	template <typename T>
 	void loadScript(T key, const File& path) {
 		auto rc = m_registry.loadScriptFromFile<T>(key, path);
-		if (rc != Registry::ErrorCode::Ok) {
-			reportError(popErrorFromStack(LuaError::Category::Load, static_cast<int>(rc)));
+		if (rc != LuaError::Status::Ok) {
+			reportError(popErrorFromStack(LuaError::Category::Load, rc));
 		}
 	}
 
@@ -301,7 +301,7 @@ public:
 	template <typename T>
 	void executeScript(T key) {
 		auto rc = m_registry.getScript(key);
-		if (rc != Registry::ErrorCode::Ok) {
+		if (rc != LuaError::Status::Ok) {
 			// rc is RuntimeError from Registry::getScript when the key isn't
 			// a function — that's *our* detection, not a real pcall failure.
 			reportError(LuaError{
@@ -311,7 +311,8 @@ public:
 		}
 		int status = callFunction(0, 0);
 		if (status != 0) {
-			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
+			reportError(popErrorFromStack(LuaError::Category::Runtime,
+			                              static_cast<LuaError::Status>(status)));
 		}
 	}
 
@@ -350,7 +351,8 @@ public:
 		(pushToStack(args), ...);
 		int status = callFunction(sizeof...(args), NumRet);
 		if (status != 0) {
-			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
+			reportError(popErrorFromStack(LuaError::Category::Runtime,
+			                              static_cast<LuaError::Status>(status)));
 		}
 	}
 
@@ -368,7 +370,8 @@ public:
 		}
 		int status = callFunction(static_cast<int>(numArgs), NumRet);
 		if (status != 0) {
-			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
+			reportError(popErrorFromStack(LuaError::Category::Runtime,
+			                              static_cast<LuaError::Status>(status)));
 		}
 	}
 
@@ -710,7 +713,7 @@ private:
 	// returns it packaged as a LuaError. Made explicit so the stack effect
 	// is visible at the call site: pair it with reportError(LuaError) for
 	// the Lua-status path.
-	LuaError popErrorFromStack(LuaError::Category category, int status);
+	LuaError popErrorFromStack(LuaError::Category category, LuaError::Status status);
 
 	// Fans a LuaError out to the configured logger and handler. The logger
 	// runs first so a throwing handler does not erase the log. No Lua-stack

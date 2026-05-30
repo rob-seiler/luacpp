@@ -46,11 +46,8 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 	m_errorHandler = std::move(handler);
 }
 
-LuaError State::popErrorFromStack(LuaError::Category category, int status) {
-	// Lua status codes (LUA_OK..LUA_ERRFILE = 0..6) map 1:1 onto our
-	// LuaError::Status mirror; the static_asserts in ErrorHandling.cpp
-	// guarantee the cast lands on a valid enum value.
-	LuaError err{category, static_cast<LuaError::Status>(status), {}};
+LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status status) {
+	LuaError err{category, status, {}};
 	if (lua_isstring(m_state, -1)) {
 		err.message = lua_tostring(m_state, -1);
 		lua_pop(m_state, 1);
@@ -214,12 +211,14 @@ void State::loadAndExecuteScript(const char* code) {
 	// failures and runtime failures land in distinct LuaError categories.
 	int status = luaL_loadstring(m_state, code);
 	if (status != LUA_OK) {
-		reportError(popErrorFromStack(LuaError::Category::Load, status));
+		reportError(popErrorFromStack(LuaError::Category::Load,
+		                              static_cast<LuaError::Status>(status)));
 		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
-		reportError(popErrorFromStack(LuaError::Category::Runtime, status));
+		reportError(popErrorFromStack(LuaError::Category::Runtime,
+		                              static_cast<LuaError::Status>(status)));
 	}
 }
 
@@ -231,12 +230,14 @@ void State::loadAndExecuteScript(const File& path) {
 	// entire point of the file-loading overload.
 	int status = static_cast<int>(Registry::loadFile(m_state, path));
 	if (status != LUA_OK) {
-		reportError(popErrorFromStack(LuaError::Category::Load, status));
+		reportError(popErrorFromStack(LuaError::Category::Load,
+		                              static_cast<LuaError::Status>(status)));
 		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
-		reportError(popErrorFromStack(LuaError::Category::Runtime, status));
+		reportError(popErrorFromStack(LuaError::Category::Runtime,
+		                              static_cast<LuaError::Status>(status)));
 	}
 }
 

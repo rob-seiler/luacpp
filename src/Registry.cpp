@@ -32,20 +32,12 @@ std::string pathToUtf8(const std::filesystem::path& p) {
 }
 } // namespace
 
-// Lock the enum/macro coupling. ErrorCode values are cast directly from raw
-// Lua status codes (LUA_OK, LUA_ERRRUN, ...), so any future Lua renumbering
-// must fail to compile here rather than silently desynchronize.
-static_assert(static_cast<int>(Registry::ErrorCode::Ok)           == LUA_OK,        "Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::Yield)        == LUA_YIELD,    "Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::RuntimeError) == LUA_ERRRUN,   "Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::SyntaxError)  == LUA_ERRSYNTAX,"Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::MemoryError)  == LUA_ERRMEM,   "Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::ErrorError)   == LUA_ERRERR,   "Registry::ErrorCode out of sync with Lua status codes");
-static_assert(static_cast<int>(Registry::ErrorCode::FileError)    == LUA_ERRFILE,  "Registry::ErrorCode::FileError out of sync with LUA_ERRFILE");
+// Status / LUA_* pinning lives in ErrorHandling.cpp now (the canonical home
+// of LuaError::Status). No duplicate static_asserts here.
 
 Registry::Registry(lua_State* L) : Table(L, LUA_REGISTRYINDEX, false) {}
 
-Registry::ErrorCode Registry::loadScript(Generic key, const char* src) {
+LuaError::Status Registry::loadScript(Generic key, const char* src) {
 	switch (key.getType()) {
 		case Type::Boolean: return loadScript(key.get<bool>(), src);
 		case Type::Number:
@@ -54,12 +46,12 @@ Registry::ErrorCode Registry::loadScript(Generic key, const char* src) {
 			}
 			return loadScript(key.get<double>(), src);
 		case Type::String: return loadScript(key.get<std::string>().c_str(), src);
-		default: return ErrorCode::ErrorError;
+		default: return LuaError::Status::MsgHandlerError;
 	};
-	return ErrorCode::RuntimeError;
+	return LuaError::Status::RuntimeError;
 }
 
-Registry::ErrorCode Registry::loadScriptFromFile(Generic key, const std::filesystem::path& path) {
+LuaError::Status Registry::loadScriptFromFile(Generic key, const std::filesystem::path& path) {
 	switch (key.getType()) {
 		case Type::Boolean: return loadScriptFromFile(key.get<bool>(), path);
 		case Type::Number:
@@ -68,23 +60,23 @@ Registry::ErrorCode Registry::loadScriptFromFile(Generic key, const std::filesys
 			}
 			return loadScriptFromFile(key.get<double>(), path);
 		case Type::String: return loadScriptFromFile(key.get<std::string>().c_str(), path);
-		default: return ErrorCode::ErrorError;
+		default: return LuaError::Status::MsgHandlerError;
 	};
-	return ErrorCode::RuntimeError;
+	return LuaError::Status::RuntimeError;
 }
 
-Registry::ErrorCode Registry::getScript(Generic key) {
+LuaError::Status Registry::getScript(Generic key) {
 	switch (key.getType()) {
 		case Type::Boolean: return getScript(key.get<bool>());
-		case Type::Number: 
+		case Type::Number:
 			if (key.isInteger()) {
 				return getScript(key.get<int64_t>());
 			}
 			return getScript(key.get<double>());
 		case Type::String: return getScript(key.get<std::string>().c_str());
-		default: return ErrorCode::ErrorError;
+		default: return LuaError::Status::MsgHandlerError;
 	};
-	return ErrorCode::RuntimeError;
+	return LuaError::Status::RuntimeError;
 }
 
 bool Registry::copyContent(Registry& other) {
@@ -98,11 +90,11 @@ bool Registry::copyContent(Registry& other) {
 	return true;
 }
 
-Registry::ErrorCode Registry::loadString(lua_State* state, const char* src) {
-	return static_cast<ErrorCode>(luaL_loadstring(state, src));
+LuaError::Status Registry::loadString(lua_State* state, const char* src) {
+	return static_cast<LuaError::Status>(luaL_loadstring(state, src));
 }
 
-Registry::ErrorCode Registry::loadFile(lua_State* state, const std::filesystem::path& path) {
+LuaError::Status Registry::loadFile(lua_State* state, const std::filesystem::path& path) {
 	// We bypass luaL_loadfile and read the file ourselves so non-ASCII paths
 	// work on Windows:
 	//   - luaL_loadfile uses fopen, which on Windows accepts only the active
@@ -129,7 +121,7 @@ Registry::ErrorCode Registry::loadFile(lua_State* state, const std::filesystem::
 		const std::error_code ec(errno, std::generic_category());
 		const std::string reason = ec.message();
 		lua_pushfstring(state, "cannot open %s: %s", u8path.c_str(), reason.c_str());
-		return ErrorCode::FileError;
+		return LuaError::Status::FileError;
 	}
 
 	std::ostringstream buf;
@@ -144,7 +136,7 @@ Registry::ErrorCode Registry::loadFile(lua_State* state, const std::filesystem::
 		contents.erase(0, 3);
 	}
 
-	return static_cast<ErrorCode>(
+	return static_cast<LuaError::Status>(
 		luaL_loadbufferx(state, contents.data(), contents.size(), chunkname.c_str(), nullptr));
 }
 
