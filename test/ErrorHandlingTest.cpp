@@ -102,6 +102,25 @@ TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticByName) {
 	EXPECT_EQ(text.find("-1"), std::string::npos);
 }
 
+// Reviewer regression: synthetic (luacpp-detected) errors and real Lua-raised
+// errors are visually distinct in StreamLogger output so log readers can tell
+// apart "Lua said this" from "we said this".
+TEST(ErrorLoggerTest, streamLoggerOriginLabelDistinguishesLuaFromLuacpp) {
+	std::ostringstream out;
+	StreamLogger logger(out);
+
+	logger.log(makeError(LuaError::Category::Load,
+	                     LuaError::Status::SyntaxError, "x ="));
+	logger.log(makeError(LuaError::Category::Runtime,
+	                     LuaError::Status::FunctionNotFound, "not a function"));
+
+	const std::string text = out.str();
+	EXPECT_NE(text.find("[lua "),    std::string::npos)
+	    << "Lua-raised errors should carry the 'lua' origin tag";
+	EXPECT_NE(text.find("[luacpp "), std::string::npos)
+	    << "luacpp-detected errors should carry the 'luacpp' origin tag";
+}
+
 TEST(ErrorLoggerTest, memoryLoggerCollectsAndClears) {
 	MemoryLogger logger;
 	EXPECT_TRUE(logger.entries().empty());

@@ -101,8 +101,9 @@ StreamLogger::StreamLogger() : m_out(&std::cerr) {}
 StreamLogger::StreamLogger(std::ostream& out) noexcept : m_out(&out) {}
 
 void StreamLogger::log(const LuaError& e) {
-	const char* cat = (e.category == LuaError::Category::Load) ? "load" : "runtime";
-	(*m_out) << "[lua " << cat << ' ' << describe(e.status) << "] "
+	const char* origin = e.isLuacppError() ? "luacpp" : "lua";
+	const char* cat    = (e.category == LuaError::Category::Load) ? "load" : "runtime";
+	(*m_out) << '[' << origin << ' ' << cat << ' ' << describe(e.status) << "] "
 	         << e.message.raw() << '\n';
 }
 
