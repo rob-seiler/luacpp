@@ -73,8 +73,13 @@ std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
 struct LuaError {
 	enum class Category { Load, Runtime };
 
+	/// Sentinel status for errors raised by luacpp itself, not by Lua —
+	/// e.g. when a name doesn't resolve to a function or a registry key is
+	/// missing. Negative to keep clear of LUA_OK / LUA_ERR* values (0..6).
+	static constexpr int SyntheticStatus = -1;
+
 	Category   category;
-	int        status;   ///< raw Lua status code (LUA_ERRSYNTAX etc.)
+	int        status;   ///< raw Lua status code (LUA_ERRSYNTAX etc.), or SyntheticStatus
 	LuaMessage message;  ///< Lua's error string, with parsing helpers
 };
 

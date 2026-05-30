@@ -225,6 +225,19 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 // getStackValue<T>(m_state, index) — but getStackValue only takes a single
 // argument, so any call site was uninstantiable. The method was documented
 // as public API yet never actually compiled. This test exercises the path.
+TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
+	State script(State::LibNone);
+	auto& errors = script.installLogger<MemoryLogger>();
+	script.executeFunction("doesNotExist");
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
+	EXPECT_EQ(err.category, LuaError::Category::Runtime);
+	EXPECT_EQ(err.status, LuaError::SyntheticStatus)
+	    << "synthetic 'not a function' must use the sentinel, not 0 or LUA_OK";
+	EXPECT_NE(err.message.find("doesNotExist"), std::string::npos);
+	EXPECT_EQ(script.getStackSize(), 0);
+}
+
 TEST_F(StateTest, getUpValue) {
 	const char* src = R"(
 		result = multiplyByFactor(6)

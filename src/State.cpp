@@ -46,14 +46,13 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 	m_errorHandler = std::move(handler);
 }
 
-void State::reportError(LuaError::Category category, int status) {
+LuaError State::popErrorFromStack(LuaError::Category category, int status) {
 	LuaError err{category, status, {}};
 	if (lua_isstring(m_state, -1)) {
 		err.message = lua_tostring(m_state, -1);
 		lua_pop(m_state, 1);
 	}
-	if (m_errorLogger)  m_errorLogger->log(err);
-	if (m_errorHandler) (*m_errorHandler)(err);
+	return err;
 }
 
 void State::reportError(LuaError err) {
@@ -212,12 +211,12 @@ void State::loadAndExecuteScript(const char* code) {
 	// failures and runtime failures land in distinct LuaError categories.
 	int status = luaL_loadstring(m_state, code);
 	if (status != LUA_OK) {
-		reportError(LuaError::Category::Load, status);
+		reportError(popErrorFromStack(LuaError::Category::Load, status));
 		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
-		reportError(LuaError::Category::Runtime, status);
+		reportError(popErrorFromStack(LuaError::Category::Runtime, status));
 	}
 }
 
@@ -229,12 +228,12 @@ void State::loadAndExecuteScript(const File& path) {
 	// entire point of the file-loading overload.
 	int status = static_cast<int>(Registry::loadFile(m_state, path));
 	if (status != LUA_OK) {
-		reportError(LuaError::Category::Load, status);
+		reportError(popErrorFromStack(LuaError::Category::Load, status));
 		return;
 	}
 	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
 	if (status != LUA_OK) {
-		reportError(LuaError::Category::Runtime, status);
+		reportError(popErrorFromStack(LuaError::Category::Runtime, status));
 	}
 }
 

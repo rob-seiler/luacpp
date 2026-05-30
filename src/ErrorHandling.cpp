@@ -73,7 +73,13 @@ StreamLogger::StreamLogger(std::ostream& out) noexcept : m_out(&out) {}
 
 void StreamLogger::log(const LuaError& e) {
 	const char* cat = (e.category == LuaError::Category::Load) ? "load" : "runtime";
-	(*m_out) << "[lua " << cat << " " << e.status << "] " << e.message.raw() << '\n';
+	(*m_out) << "[lua " << cat << ' ';
+	if (e.status == LuaError::SyntheticStatus) {
+		(*m_out) << "synthetic";
+	} else {
+		(*m_out) << e.status;
+	}
+	(*m_out) << "] " << e.message.raw() << '\n';
 }
 
 } // namespace Lua

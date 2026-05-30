@@ -90,6 +90,17 @@ TEST(ErrorLoggerTest, streamLoggerWritesOneLinePerError) {
 	EXPECT_NE(text.find("boom"),    std::string::npos);
 }
 
+TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticStatus) {
+	std::ostringstream out;
+	StreamLogger logger(out);
+	logger.log(makeError(LuaError::Category::Runtime,
+	                     LuaError::SyntheticStatus, "not a function"));
+	const std::string text = out.str();
+	EXPECT_NE(text.find("synthetic"), std::string::npos)
+	    << "synthetic-status errors should not surface as raw -1: " << text;
+	EXPECT_EQ(text.find("-1"), std::string::npos);
+}
+
 TEST(ErrorLoggerTest, memoryLoggerCollectsAndClears) {
 	MemoryLogger logger;
 	EXPECT_TRUE(logger.entries().empty());

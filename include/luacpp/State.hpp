@@ -265,7 +265,7 @@ public:
 	void loadScript(T key, const char* code) {
 		auto rc = m_registry.loadScript<T>(key, code);
 		if (rc != Registry::ErrorCode::Ok) {
-			reportError(LuaError::Category::Load, static_cast<int>(rc));
+			reportError(popErrorFromStack(LuaError::Category::Load, static_cast<int>(rc)));
 		}
 	}
 
@@ -288,7 +288,7 @@ public:
 	void loadScript(T key, const File& path) {
 		auto rc = m_registry.loadScriptFromFile<T>(key, path);
 		if (rc != Registry::ErrorCode::Ok) {
-			reportError(LuaError::Category::Load, static_cast<int>(rc));
+			reportError(popErrorFromStack(LuaError::Category::Load, static_cast<int>(rc)));
 		}
 	}
 
@@ -302,14 +302,16 @@ public:
 	void executeScript(T key) {
 		auto rc = m_registry.getScript(key);
 		if (rc != Registry::ErrorCode::Ok) {
+			// rc is RuntimeError from Registry::getScript when the key isn't
+			// a function — that's *our* detection, not a real pcall failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, static_cast<int>(rc),
+			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
 			    "executeScript: registry key is missing or not a function"});
 			return;
 		}
 		int status = callFunction(0, 0);
 		if (status != 0) {
-			reportError(LuaError::Category::Runtime, status);
+			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
 		}
 	}
 
@@ -341,14 +343,14 @@ public:
 		if (!loadFunction(name.data())) {
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, 0,
+			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
 			    std::string("executeFunction: '") + std::string(name) + "' is not a function"});
 			return;
 		}
 		(pushToStack(args), ...);
 		int status = callFunction(sizeof...(args), NumRet);
 		if (status != 0) {
-			reportError(LuaError::Category::Runtime, status);
+			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
 		}
 	}
 
@@ -357,7 +359,7 @@ public:
 		if (!loadFunction(name.data())) {
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
-			    LuaError::Category::Runtime, 0,
+			    LuaError::Category::Runtime, LuaError::SyntheticStatus,
 			    std::string("executeFunctionWithArgsArray: '") + std::string(name) + "' is not a function"});
 			return;
 		}
@@ -366,7 +368,7 @@ public:
 		}
 		int status = callFunction(static_cast<int>(numArgs), NumRet);
 		if (status != 0) {
-			reportError(LuaError::Category::Runtime, status);
+			reportError(popErrorFromStack(LuaError::Category::Runtime, status));
 		}
 	}
 
@@ -704,13 +706,16 @@ private:
 	void anchorOwned(void* ptr, void (*deleter)(void*));
 	void transferStringOwnership(std::string s);
 
-	// Pops the error message from the top of the Lua stack (if any), packages
-	// it as a LuaError with the given category and status code, and fans it
-	// out to the configured logger (if any) and the configured handler (if
-	// any). Logger runs first so a throwing handler does not erase the log.
-	void reportError(LuaError::Category category, int status);
-	// Direct overload for synthetic errors not originating from a Lua status
-	// (e.g. "function name not registered"). Caller fills the LuaError fields.
+	// Pops the error message from the top of the Lua stack (if any) and
+	// returns it packaged as a LuaError. Made explicit so the stack effect
+	// is visible at the call site: pair it with reportError(LuaError) for
+	// the Lua-status path.
+	LuaError popErrorFromStack(LuaError::Category category, int status);
+
+	// Fans a LuaError out to the configured logger and handler. The logger
+	// runs first so a throwing handler does not erase the log. No Lua-stack
+	// side effects — use popErrorFromStack() to construct an error from the
+	// stack, or construct a LuaError directly for synthetic failures.
 	void reportError(LuaError err);
 
 	template <typename U>
