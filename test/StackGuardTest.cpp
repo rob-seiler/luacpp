@@ -41,13 +41,47 @@ TEST(StackGuardTest, popsMultiple) {
 	EXPECT_EQ(lua.getStackSize(), 0);
 }
 
-TEST(StackGuardTest, growIncreasesPopCount) {
+TEST(StackGuardTest, leanRestoreCleansUpSilently) {
+	// Plain StackGuard does pure top-restore without any debug check —
+	// intermediate pushes are silently cleaned up at scope exit. Useful
+	// for paths whose intermediate stack state is unpredictable (e.g.
+	// popErrorFromStack wrapping luaL_tolstring).
 	State lua(State::LibNone);
 	lua.pushToStack(1);
 	{
-		StackGuard guard(lua.getState()); // governs 1
+		StackGuard guard(lua.getState()); // target = 0
+		lua.pushToStack(2);                // untracked
+		lua.pushToStack(3);                // also untracked
+	}
+	EXPECT_EQ(lua.getStackSize(), 0);
+}
+
+TEST(AssertionStackGuardTest, tolerateImbalanceAllowsUntrackedIntermediatePushes) {
+	// AssertionStackGuard adds a debug-only check for stack imbalance.
+	// tolerateImbalance() suppresses the check when the imbalance is
+	// deliberate (the only state in which an unsuppressed check would
+	// fire in this test).
+	State lua(State::LibNone);
+	lua.pushToStack(1);
+	{
+		AssertionStackGuard guard(lua.getState());
+		guard.tolerateImbalance();
 		lua.pushToStack(2);
-		guard.grow();                     // now governs 2
+		lua.pushToStack(3);
+	}
+	EXPECT_EQ(lua.getStackSize(), 0)
+	    << "top-restore cleans up intermediate pushes when imbalance is tolerated";
+}
+
+TEST(AssertionStackGuardTest, balancedScopePassesCheck) {
+	// Without tolerateImbalance, AssertionStackGuard only passes when the
+	// intermediate stack state nets out — equivalent to count-based discipline.
+	State lua(State::LibNone);
+	lua.pushToStack(1);
+	{
+		AssertionStackGuard guard(lua.getState());
+		lua.pushToStack(2);
+		lua.popStack(1);  // balanced: pushed 1, popped 1
 	}
 	EXPECT_EQ(lua.getStackSize(), 0);
 }

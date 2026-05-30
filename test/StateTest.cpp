@@ -225,6 +225,40 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 // getStackValue<T>(m_state, index) — but getStackValue only takes a single
 // argument, so any call site was uninstantiable. The method was documented
 // as public API yet never actually compiled. This test exercises the path.
+// Regression: prior to the popErrorFromStack rewrite, errors raised with a
+// non-string value (e.g. `error({...})` propagates a table) were not
+// consumed from the Lua stack — the lua_isstring check failed, the value
+// stayed, and every subsequent call drifted further from a balanced stack.
+TEST_F(StateTest, tableErrorIsStringifiedAndStackStaysBalanced) {
+	State script(State::LibBase);
+	auto& errors = script.installLogger<MemoryLogger>();
+	script.loadAndExecuteScript("error({code = 42, reason = 'boom'})");
+	EXPECT_EQ(script.getStackSize(), 0)
+	    << "non-string error must still be consumed from the stack";
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_FALSE(errors.entries().front().message.empty())
+	    << "luaL_tolstring should produce a non-empty default representation";
+}
+
+// Regression / upside of switching to luaL_tolstring: custom error objects
+// that define __tostring surface their human-readable form instead of the
+// default "table: 0x..." identity.
+TEST_F(StateTest, tableErrorUsesCustomTostring) {
+	State script(State::LibBase);
+	auto& errors = script.installLogger<MemoryLogger>();
+	script.loadAndExecuteScript(R"(
+		local e = setmetatable({reason = "kaboom"}, {
+			__tostring = function(self) return "Custom: " .. self.reason end
+		})
+		error(e)
+	)");
+	EXPECT_EQ(script.getStackSize(), 0);
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_NE(errors.entries().front().message.find("Custom: kaboom"),
+	          std::string::npos)
+	    << "luaL_tolstring should honor __tostring on the error object";
+}
+
 TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	State script(State::LibNone);
 	auto& errors = script.installLogger<MemoryLogger>();

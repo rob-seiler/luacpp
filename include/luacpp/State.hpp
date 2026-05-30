@@ -177,7 +177,7 @@ public:
 	std::map<Generic, Generic> readTableGeneric(const char* tableName) {
 		std::map<Generic, Generic> result;
 		const Type t = pushGlobalToStack(tableName);
-		StackGuard guard(m_state); // pops on every path, incl. readGeneric throwing
+		DefaultStackGuard guard(m_state); // pops on every path, incl. readGeneric throwing
 		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.readGeneric();
@@ -189,7 +189,7 @@ public:
 	std::map<Key, Value> readTable(const char* tableName) {
 		std::map<Key, Value> result;
 		const Type t = pushGlobalToStack(tableName);
-		StackGuard guard(m_state); // table.read can throw TypeMismatchException
+		DefaultStackGuard guard(m_state); // table.read can throw TypeMismatchException
 		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.read<Key, Value>();
@@ -201,7 +201,7 @@ public:
 	std::map<Key, Value> readTableIfMatching(const std::string& tableName) {
 		std::map<Key, Value> result;
 		const Type t = pushGlobalToStack(tableName.c_str());
-		StackGuard guard(m_state);
+		DefaultStackGuard guard(m_state);
 		if (t == Type::Table) {
 			Table table(m_state, -1);
 			result = table.readIfMatching<Key, Value>();

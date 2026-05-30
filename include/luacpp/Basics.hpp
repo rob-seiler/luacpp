@@ -60,6 +60,8 @@ public:
 
 	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);
+	static int  getStackTop(lua_State* state);
+	static void setStackTop(lua_State* state, int newTop);
 
 	static void pushNil(lua_State* state);
 	static void pushBoolean(lua_State* state, bool value);

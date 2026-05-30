@@ -34,6 +34,9 @@ void Basics::popStack(lua_State* state, int numValues) {
 	lua_pop(state, numValues);
 }
 
+int  Basics::getStackTop(lua_State* state)              { return lua_gettop(state); }
+void Basics::setStackTop(lua_State* state, int newTop)  { lua_settop(state, newTop); }
+
 void Basics::pushNil(lua_State* state) { lua_pushnil(state); }
 void Basics::pushBoolean(lua_State* state, bool value) { lua_pushboolean(state, value); }
 void Basics::pushNumber(lua_State* state, double value) { lua_pushnumber(state, value); }

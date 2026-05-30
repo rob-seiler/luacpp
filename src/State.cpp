@@ -48,10 +48,23 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 
 LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status status) {
 	LuaError err{category, status, {}};
-	if (lua_isstring(m_state, -1)) {
-		err.message = lua_tostring(m_state, -1);
-		lua_pop(m_state, 1);
-	}
+
+	// Lua guarantees exactly one error object on the stack top after a failed
+	// luaL_loadstring / lua_pcall — we must consume it on every path, even
+	// when it's not a string (e.g. `error({...})` propagates a table).
+	// luaL_tolstring honors __tostring on tables/userdata, so custom error
+	// objects still surface a useful message.
+	//
+	// Plain StackGuard's top-restore semantics keep the stack balanced
+	// through every failure mode of luaL_tolstring — including the corner
+	// case where a buggy __tostring leaves an extra value behind before
+	// erroring. We use the lean variant here (not AssertionStackGuard)
+	// because the stringification luaL_tolstring pushes on success is an
+	// intentional intermediate value.
+	StackGuard guard(m_state);
+	size_t len = 0;
+	const char* s = luaL_tolstring(m_state, -1, &len);
+	err.message = std::string(s, len);
 	return err;
 }
 
@@ -151,14 +164,14 @@ void State::addModuleSearchPath(const std::string& pattern, bool forNativeModule
 		lua_pop(m_state, 1);
 		return; // LibPackage not loaded — no package table to extend
 	}
-	StackGuard packageGuard(m_state); // pops the package table on every exit path
+	DefaultStackGuard packageGuard(m_state); // pops the package table on every exit path
 
 	const char* fieldName = forNativeModule ? "cpath" : "path";
 
 	std::string combined;
 	{
 		lua_getfield(m_state, -1, fieldName); // push current path/cpath
-		StackGuard pathGuard(m_state);        // pops it even if the string ops below throw bad_alloc
+		DefaultStackGuard pathGuard(m_state); // pops it even if the string ops below throw bad_alloc
 		size_t currentLen = 0;
 		const char* current = lua_tolstring(m_state, -1, &currentLen);
 
@@ -201,7 +214,7 @@ void State::registerDebugHook(DebugHook hook, int mask, int count) {
 
 void State::overrideLuaFunction(const char* name, NativeFunction func) {
 	lua_getglobal(m_state, GlobalScope); //load global scope to stack
-	StackGuard guard(m_state);           //pops _G on every exit path
+	DefaultStackGuard guard(m_state);    //pops _G on every exit path
 	lua_pushcclosure(m_state, func, 0);  //push function to stack
 	lua_setfield(m_state, -2, name);     //register under the given name (consumes closure)
 }
@@ -261,7 +274,7 @@ void State::withTableDo(std::string_view tableName, TableFunction workOnTable, b
 	const bool isTable = (lua_getglobal(m_state, tableName.data()) == LUA_TTABLE);
 	// Governs the single value lua_getglobal pushed; on the create path the
 	// non-table value is replaced by a fresh table, still a net of one value.
-	StackGuard guard(m_state);
+	DefaultStackGuard guard(m_state);
 
 	if (!isTable) {
 		if (!createIfMissing) {
@@ -286,7 +299,7 @@ void State::withTableDo(int index, TableFunction workOnTable) {
 
 void State::createTable(const char* name, TableFunction workOnTable) {
 	lua_newtable(m_state);
-	StackGuard guard(m_state);  // pops the partial table if workOnTable throws
+	DefaultStackGuard guard(m_state);  // pops the partial table if workOnTable throws
 	Table table(m_state, -1);   // the table is on top of the stack
 	workOnTable(table);
 	guard.release();            // succeeded — commit
@@ -298,14 +311,14 @@ void State::createTable(const char* name, TableFunction workOnTable) {
 
 void State::createMetaTable(const char* name, TableFunction workOnTable) {
 	luaL_newmetatable(m_state, name);
-	StackGuard guard(m_state);     // always pops the metatable; also on throw
+	DefaultStackGuard guard(m_state);  // always pops the metatable; also on throw
 	Table table(m_state, -1, true); // the table is on top of the stack
 	workOnTable(table);
 }
 
 bool State::assignMetaTable(const char* name) {
 	const bool found = (luaL_getmetatable(m_state, name) == LUA_TTABLE);
-	StackGuard guard(m_state); // governs the value luaL_getmetatable pushed
+	DefaultStackGuard guard(m_state); // governs the value luaL_getmetatable pushed
 	if (found) {
 		//stack assumption:
 		//-1: metatable
