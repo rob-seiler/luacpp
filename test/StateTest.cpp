@@ -259,6 +259,43 @@ TEST_F(StateTest, tableErrorUsesCustomTostring) {
 	    << "luaL_tolstring should honor __tostring on the error object";
 }
 
+// Reviewer regression: previously executeFunctionReturning inferred success
+// from stack-depth change. Combined with the older popErrorFromStack that
+// only popped string errors, a non-string error (e.g. error({...})) could
+// leave the error table on the stack — the heuristic would call that
+// "success" and read the table as T. The current design surfaces success
+// vs failure via executeFunction's explicit Status return.
+TEST_F(StateTest, executeFunctionReturningSurfacesFailureViaStatus) {
+	State script(State::LibBase);
+	auto& errors = script.installLogger<MemoryLogger>();
+	script.loadAndExecuteScript("function bad() error({reason = 'boom'}) end");
+
+	// Direct call: status surfaces the runtime error.
+	EXPECT_EQ(script.executeFunction("bad"), LuaError::Status::RuntimeError);
+
+	// Returning variant: nullopt, no garbage read from the (table) error.
+	auto result = script.executeFunctionReturning<int>("bad");
+	EXPECT_FALSE(result.has_value());
+
+	EXPECT_EQ(script.getStackSize(), 0)
+	    << "both calls must leave the stack balanced";
+	ASSERT_EQ(errors.entries().size(), 2u);
+	EXPECT_EQ(errors.entries()[0].status, LuaError::Status::RuntimeError);
+	EXPECT_EQ(errors.entries()[1].status, LuaError::Status::RuntimeError);
+}
+
+TEST_F(StateTest, loadAndExecuteScriptSurfacesStatusOnSuccessAndFailure) {
+	State script(State::LibNone);
+	auto& errors = script.installLogger<MemoryLogger>();
+
+	EXPECT_EQ(script.loadAndExecuteScript("x = 1"), LuaError::Status::Ok);
+	EXPECT_TRUE(errors.entries().empty());
+
+	EXPECT_EQ(script.loadAndExecuteScript("x ="), LuaError::Status::SyntaxError);
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_EQ(errors.entries().front().status, LuaError::Status::SyntaxError);
+}
+
 TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	State script(State::LibNone);
 	auto& errors = script.installLogger<MemoryLogger>();
