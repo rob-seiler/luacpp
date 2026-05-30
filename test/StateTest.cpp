@@ -221,10 +221,6 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	          std::string::npos);
 }
 
-// Regression: getUpValue<T>() previously forwarded to
-// getStackValue<T>(m_state, index) — but getStackValue only takes a single
-// argument, so any call site was uninstantiable. The method was documented
-// as public API yet never actually compiled. This test exercises the path.
 // Regression: prior to the popErrorFromStack rewrite, errors raised with a
 // non-string value (e.g. `error({...})` propagates a table) were not
 // consumed from the Lua stack — the lua_isstring check failed, the value
@@ -309,6 +305,10 @@ TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
+// Regression: getUpValue<T>() previously forwarded to
+// getStackValue<T>(m_state, index) — but getStackValue only takes a single
+// argument, so any call site was uninstantiable. The method was documented
+// as public API yet never actually compiled. This test exercises the path.
 TEST_F(StateTest, getUpValue) {
 	const char* src = R"(
 		result = multiplyByFactor(6)
