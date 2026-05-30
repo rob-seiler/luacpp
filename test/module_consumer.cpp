@@ -17,8 +17,9 @@ namespace {
 
 int testReadWriteVariable() {
     Lua::State lua(Lua::State::LibMath);
-    if (lua.loadAndExecuteScript("x = 10 + 2") != 0) return 1;
-    return lua.readVariable<int>("x") == 12 ? 0 : 1;
+    lua.loadAndExecuteScript("x = 10 + 2");
+    auto x = lua.readVariable<int>("x");
+    return (x && *x == 12) ? 0 : 1;
 }
 
 int testNativeFunctionRoundtrip() {
@@ -26,15 +27,17 @@ int testNativeFunctionRoundtrip() {
     lua.registerMethod("score", [](Lua::State& s) -> int {
         return s.setReturnValue(42);
     });
-    if (lua.loadAndExecuteScript("y = score()") != 0) return 1;
-    return lua.readVariable<int>("y") == 42 ? 0 : 1;
+    lua.loadAndExecuteScript("y = score()");
+    auto y = lua.readVariable<int>("y");
+    return (y && *y == 42) ? 0 : 1;
 }
 
 int testStringRoundtrip() {
     Lua::State lua(Lua::State::LibString);
     lua.writeVariable<const char*>("greeting", "hello");
-    if (lua.loadAndExecuteScript("greeting = greeting .. ' world'") != 0) return 1;
-    return lua.readVariable<std::string>("greeting") == "hello world" ? 0 : 1;
+    lua.loadAndExecuteScript("greeting = greeting .. ' world'");
+    auto g = lua.readVariable<std::string>("greeting");
+    return (g && *g == "hello world") ? 0 : 1;
 }
 
 int testVersionConstant() {

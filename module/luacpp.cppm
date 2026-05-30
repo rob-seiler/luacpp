@@ -13,10 +13,12 @@ module;
 
 #include <luacpp/Basics.hpp>
 #include <luacpp/Debug.hpp>
+#include <luacpp/ErrorHandling.hpp>
 #include <luacpp/Generic.hpp>
 #include <luacpp/Metatable.hpp>
 #include <luacpp/Registry.hpp>
 #include <luacpp/Stack.hpp>
+#include <luacpp/StackGuard.hpp>
 #include <luacpp/State.hpp>
 #include <luacpp/Table.hpp>
 #include <luacpp/Type.hpp>
@@ -47,6 +49,20 @@ using ::Lua::Bind;
 using ::Lua::Stack;
 using ::Lua::pushToStack;
 using ::Lua::getStackValue;
+using ::Lua::StackGuard;
+
+// Error handling
+using ::Lua::LuaError;
+using ::Lua::LuaException;
+using ::Lua::LuaMessage;
+using ::Lua::ErrorLogger;
+using ::Lua::StreamLogger;
+using ::Lua::MemoryLogger;
+using ::Lua::CallbackLogger;
+using ::Lua::ErrorHandler;
+using ::Lua::ThrowHandler;
+using ::Lua::CallbackHandler;
+using ::Lua::describe;
 
 // Versioning
 using ::Lua::Version;
