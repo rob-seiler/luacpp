@@ -1,21 +1,14 @@
 #include <gtest/gtest.h>
-#include <stdexcept>
-#include <string>
 
 #include <luacpp/State.hpp>
 #include <luacpp/TypeMismatchException.hpp>
+
+#include "TestSupport.hpp"
 
 //#include <lua/lua.hpp>
 struct lua_State;
 
 namespace Lua {
-
-template <typename T>
-static T readVar(State& s, const char* name) {
-	auto v = s.readVariable<T>(name);
-	if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
-	return *v;
-}
 
 class TestObject {
 public:

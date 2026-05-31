@@ -4,17 +4,9 @@
 #include <luacpp/Table.hpp>
 #include <luacpp/Metatable.hpp>
 
-#include <stdexcept>
-#include <string>
+#include "TestSupport.hpp"
 
 namespace Lua {
-
-template <typename T>
-static T readVar(State& s, const char* name) {
-    auto v = s.readVariable<T>(name);
-    if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
-    return *v;
-}
 
 struct Vector {
     Vector(float ax = 0, float ay = 0) : x(ax), y(ay) {}

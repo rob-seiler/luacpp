@@ -4,23 +4,11 @@
 #include <luacpp/Table.hpp>
 #include <luacpp/Metatable.hpp>
 
+#include "TestSupport.hpp"
+
 #include <cmath>
-#include <stdexcept>
-#include <string>
 
 namespace Lua {
-
-// Test-local helper: unwrap the optional<T> returned by readVariable<T> or
-// throw if the variable is missing / has the wrong type. Throwing fails the
-// test loudly instead of letting a default-T value silently propagate.
-namespace {
-template <typename T>
-T readVar(State& s, const char* name) {
-    auto v = s.readVariable<T>(name);
-    if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
-    return *v;
-}
-} // namespace
 
 
 // ============================================================================

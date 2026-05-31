@@ -2,20 +2,12 @@
 
 #include <luacpp/State.hpp>
 
-#include <stdexcept>
-#include <string>
+#include "TestSupport.hpp"
 
 namespace Lua {
 namespace {
 
 class LibraryLoadingTest : public ::testing::Test {};
-
-template <typename T>
-T readVar(State& s, const char* name) {
-	auto v = s.readVariable<T>(name);
-	if (!v) throw std::runtime_error(std::string("readVar: '") + name + "' missing or wrong type");
-	return *v;
-}
 
 TEST_F(LibraryLoadingTest, openLibrary_singleLibIsAvailable) {
 	State lua(State::LibMath);
