@@ -11,6 +11,8 @@
 
 import luacpp;
 
+#include <array>
+#include <span>
 #include <string>
 
 namespace {
@@ -40,6 +42,19 @@ int testStringRoundtrip() {
     return (g && *g == "hello world") ? 0 : 1;
 }
 
+int testSpanArgsArray() {
+    // Exercises the C++20-only std::span overload of
+    // executeFunctionWithArgsArray purely through the module surface — the
+    // gtest suite is built at C++17 (LUACPP_HAS_SPAN=0) and so cannot cover
+    // this path. The overload reaches us here because the module interface
+    // was compiled at C++20, where it is part of the exported State class.
+    Lua::State lua;
+    lua.loadAndExecuteScript("function add3(a, b, c) return a + b + c end");
+    const std::array<int, 3> args{2, 3, 4};
+    auto sum = lua.executeFunctionWithArgsArrayReturning("add3", std::span(args));
+    return (sum && *sum == 9) ? 0 : 1;
+}
+
 int testVersionConstant() {
     // Just prove the constant is reachable through the module surface and
     // carries a non-degenerate value — hardcoding the current version here
@@ -55,5 +70,6 @@ int main() {
     if (testNativeFunctionRoundtrip() != 0) return 20;
     if (testStringRoundtrip() != 0) return 30;
     if (testVersionConstant() != 0) return 40;
+    if (testSpanArgsArray() != 0) return 50;
     return 0;
 }
