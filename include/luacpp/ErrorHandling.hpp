@@ -63,7 +63,24 @@ public:
 	std::size_t find(char c,               std::size_t pos = 0) const noexcept { return m_raw.find(c, pos); }
 
 private:
-	std::string m_raw;
+	// Owned (not string_views) so the cache survives copy/move of LuaMessage
+	// without depending on the original m_raw buffer.
+	struct Parsed {
+		std::string source;
+		int         line;
+		std::string text;
+	};
+
+	// Runs the prefix parser at most once. Returns reference to the cached
+	// optional; nullopt means "raw has no parseable prefix".
+	const std::optional<Parsed>& parsed() const;
+
+	// "<source>:<line>: <text>" — see implementation comment for invariants.
+	static std::optional<Parsed> parsePrefix(const std::string& raw);
+
+	std::string                          m_raw;
+	mutable bool                         m_parseAttempted = false;
+	mutable std::optional<Parsed>        m_parsed;
 };
 
 /// Streams the raw Lua message. For category/status-formatted output use

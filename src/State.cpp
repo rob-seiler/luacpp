@@ -73,6 +73,17 @@ void State::reportError(LuaError err) {
 	if (m_errorHandler) (*m_errorHandler)(err);
 }
 
+LuaError::Status State::reportStatus(LuaError::Category category, int rawStatus) {
+	return reportStatus(category, static_cast<LuaError::Status>(rawStatus));
+}
+
+LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Status status) {
+	if (status != LuaError::Status::Ok) {
+		reportError(popErrorFromStack(category, status));
+	}
+	return status;
+}
+
 State::~State() {
 	if (!m_externalState) {
 		lua_close(m_state);
@@ -222,19 +233,9 @@ void State::overrideLuaFunction(const char* name, NativeFunction func) {
 LuaError::Status State::loadAndExecuteScript(const char* code) {
 	// Split load/exec explicitly (instead of luaL_dostring) so that load
 	// failures and runtime failures land in distinct LuaError categories.
-	int status = luaL_loadstring(m_state, code);
-	if (status != LUA_OK) {
-		const auto s = static_cast<LuaError::Status>(status);
-		reportError(popErrorFromStack(LuaError::Category::Load, s));
-		return s;
-	}
-	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
-	if (status != LUA_OK) {
-		const auto s = static_cast<LuaError::Status>(status);
-		reportError(popErrorFromStack(LuaError::Category::Runtime, s));
-		return s;
-	}
-	return LuaError::Status::Ok;
+	const auto loadRc = reportStatus(LuaError::Category::Load, luaL_loadstring(m_state, code));
+	if (loadRc != LuaError::Status::Ok) return loadRc;
+	return reportStatus(LuaError::Category::Runtime, lua_pcall(m_state, 0, LUA_MULTRET, 0));
 }
 
 LuaError::Status State::loadAndExecuteScript(const File& path) {
@@ -243,19 +244,9 @@ LuaError::Status State::loadAndExecuteScript(const File& path) {
 	// because that macro expands to (load || pcall), collapsing every non-zero
 	// status to 1 — preserving LUA_ERRFILE / LUA_ERRSYNTAX / LUA_ERRRUN is the
 	// entire point of the file-loading overload.
-	int status = static_cast<int>(Registry::loadFile(m_state, path));
-	if (status != LUA_OK) {
-		const auto s = static_cast<LuaError::Status>(status);
-		reportError(popErrorFromStack(LuaError::Category::Load, s));
-		return s;
-	}
-	status = lua_pcall(m_state, 0, LUA_MULTRET, 0);
-	if (status != LUA_OK) {
-		const auto s = static_cast<LuaError::Status>(status);
-		reportError(popErrorFromStack(LuaError::Category::Runtime, s));
-		return s;
-	}
-	return LuaError::Status::Ok;
+	const auto loadRc = reportStatus(LuaError::Category::Load, Registry::loadFile(m_state, path));
+	if (loadRc != LuaError::Status::Ok) return loadRc;
+	return reportStatus(LuaError::Category::Runtime, lua_pcall(m_state, 0, LUA_MULTRET, 0));
 }
 
 Type State::getType(int index) const {

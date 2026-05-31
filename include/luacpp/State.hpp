@@ -263,11 +263,7 @@ public:
 	*/
 	template <typename T>
 	LuaError::Status loadScript(T key, const char* code) {
-		auto rc = m_registry.loadScript<T>(key, code);
-		if (rc != LuaError::Status::Ok) {
-			reportError(popErrorFromStack(LuaError::Category::Load, rc));
-		}
-		return rc;
+		return reportStatus(LuaError::Category::Load, m_registry.loadScript<T>(key, code));
 	}
 
 	template <typename T>
@@ -288,11 +284,7 @@ public:
 	 */
 	template <typename T>
 	LuaError::Status loadScript(T key, const File& path) {
-		auto rc = m_registry.loadScriptFromFile<T>(key, path);
-		if (rc != LuaError::Status::Ok) {
-			reportError(popErrorFromStack(LuaError::Category::Load, rc));
-		}
-		return rc;
+		return reportStatus(LuaError::Category::Load, m_registry.loadScriptFromFile<T>(key, path));
 	}
 
 	/**
@@ -313,13 +305,7 @@ public:
 			    "executeScript: registry key is missing or not a function"});
 			return LuaError::Status::RegistryKeyNotFound;
 		}
-		int status = callFunction(0, 0);
-		if (status != 0) {
-			const auto s = static_cast<LuaError::Status>(status);
-			reportError(popErrorFromStack(LuaError::Category::Runtime, s));
-			return s;
-		}
-		return LuaError::Status::Ok;
+		return reportStatus(LuaError::Category::Runtime, callFunction(0, 0));
 	}
 
 	/**
@@ -356,13 +342,7 @@ public:
 			return LuaError::Status::FunctionNotFound;
 		}
 		(pushToStack(args), ...);
-		int status = callFunction(sizeof...(args), NumRet);
-		if (status != 0) {
-			const auto s = static_cast<LuaError::Status>(status);
-			reportError(popErrorFromStack(LuaError::Category::Runtime, s));
-			return s;
-		}
-		return LuaError::Status::Ok;
+		return reportStatus(LuaError::Category::Runtime, callFunction(sizeof...(args), NumRet));
 	}
 
 	template <int NumRet = 0, typename T>
@@ -377,13 +357,7 @@ public:
 		for (size_t i = 0; i < numArgs; ++i) {
 			pushToStack<T>(args[i]);
 		}
-		int status = callFunction(static_cast<int>(numArgs), NumRet);
-		if (status != 0) {
-			const auto s = static_cast<LuaError::Status>(status);
-			reportError(popErrorFromStack(LuaError::Category::Runtime, s));
-			return s;
-		}
-		return LuaError::Status::Ok;
+		return reportStatus(LuaError::Category::Runtime, callFunction(static_cast<int>(numArgs), NumRet));
 	}
 
 	/**
@@ -396,12 +370,7 @@ public:
 		if (executeFunction<1>(name, args...) != LuaError::Status::Ok) {
 			return std::nullopt;
 		}
-		std::optional<T> result;
-		if (Basics::getTypeFor<T>() == getType(-1)) {
-			result = getStackValue<T>(-1);
-		}
-		popStack(1);
-		return result;
+		return popTypedReturn<T>();
 	}
 
 	template <typename T>
@@ -409,12 +378,7 @@ public:
 		if (executeFunctionWithArgsArray<1>(name, args, numArgs) != LuaError::Status::Ok) {
 			return std::nullopt;
 		}
-		std::optional<T> result;
-		if (Basics::getTypeFor<T>() == getType(-1)) {
-			result = getStackValue<T>(-1);
-		}
-		popStack(1);
-		return result;
+		return popTypedReturn<T>();
 	}
 
 
@@ -728,8 +692,28 @@ private:
 	// stack, or construct a LuaError directly for synthetic failures.
 	void reportError(LuaError err);
 
+	// Choke-point for the "Lua API returned a status code" pattern. On Ok
+	// this is a no-op that returns Ok; on any error status it pops the error
+	// from the stack and dispatches to logger/handler. Both overloads exist
+	// so callers that already hold a Status don't round-trip through int.
+	LuaError::Status reportStatus(LuaError::Category category, int rawStatus);
+	LuaError::Status reportStatus(LuaError::Category category, LuaError::Status status);
+
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
+
+	// Shared tail for the *Returning overloads: read the top stack value if
+	// its Lua type matches T's, otherwise return nullopt — but always pop
+	// the one return slot the caller's pcall(..., 1) reserved.
+	template <typename T>
+	std::optional<T> popTypedReturn() {
+		std::optional<T> result;
+		if (Basics::getTypeFor<T>() == getType(-1)) {
+			result = getStackValue<T>(-1);
+		}
+		popStack(1);
+		return result;
+	}
 
 	/**
 	 * @brief loads a function from the global scope onto the stack
