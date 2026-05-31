@@ -221,4 +221,4 @@ TEST_F(GenericTest, fromStack_TableNested) {
     EXPECT_EQ(Generic(2), generic.get("y").get("b"));
 }
 
-} //namespace Lua
+} //namespace Lua

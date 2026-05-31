@@ -96,4 +96,4 @@ TEST_F(RegistryTest, copyContent) {
 	lua_close(otherState);
 }
 
-} // namespace Lua
+} // namespace Lua

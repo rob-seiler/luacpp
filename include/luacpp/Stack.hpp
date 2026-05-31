@@ -163,4 +163,4 @@ T getStackValue(lua_State* state, int index) {
 
 } // namespace Lua
 
-#endif // LUACPP_STACK_HPP
+#endif // LUACPP_STACK_HPP

@@ -183,4 +183,4 @@ void Registry::copyEntry(lua_State* src, lua_State* dst) {
 	lua_rawset(dst, LUA_REGISTRYINDEX);
 }
 
-} // namespace Lua
+} // namespace Lua

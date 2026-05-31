@@ -79,4 +79,4 @@ int Basics::error(lua_State* state, const char* message) {
 	return luaL_error(state, "%s", message);
 }
 
-} //namespace Lua
+} //namespace Lua

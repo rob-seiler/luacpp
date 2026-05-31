@@ -34,4 +34,4 @@ private:
 int main(int argc, char** argv) {
 	LuaExample example;
 	return example.run();
-}
+}
