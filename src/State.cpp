@@ -1,6 +1,7 @@
 #include <State.hpp>
 #include <lua/lua.hpp>
 
+#include <cassert>
 #include <string>
 #include <limits> //std::numeric_limits
 
@@ -12,6 +13,25 @@ bool hasInlineStorage(const std::string& s) {
 	const auto data  = reinterpret_cast<std::uintptr_t>(s.data());
 	const auto begin = reinterpret_cast<std::uintptr_t>(&s);
 	return data >= begin && data < begin + sizeof(std::string);
+}
+
+// Statuses for which Lua left an error object on the top of the stack.
+// Everything else (Ok, Yield, and the synthetic luacpp-side codes with
+// negative values) carries its message inline and must NOT trigger a
+// stack pop — luaL_tolstring on whatever happens to be at -1 would
+// stringify a bogus value (or push nil on an empty stack).
+bool hasStackError(Lua::LuaError::Status s) {
+	using S = Lua::LuaError::Status;
+	switch (s) {
+		case S::RuntimeError:
+		case S::SyntaxError:
+		case S::MemoryError:
+		case S::MsgHandlerError:
+		case S::FileError:
+			return true;
+		default:
+			return false;
+	}
 }
 } // namespace
 
@@ -78,8 +98,15 @@ LuaError::Status State::reportStatus(LuaError::Category category, int rawStatus)
 }
 
 LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Status status) {
-	if (status != LuaError::Status::Ok) {
+	if (hasStackError(status)) {
 		reportError(popErrorFromStack(category, status));
+	} else {
+		// Ok / Yield / synthetic (negative) statuses carry no stack object.
+		// Callers with a synthetic failure must build the LuaError themselves
+		// and route it through reportError() — not through this helper.
+		assert((status == LuaError::Status::Ok ||
+		        status == LuaError::Status::Yield) &&
+		       "reportStatus: synthetic status routed through stack-popping path");
 	}
 	return status;
 }

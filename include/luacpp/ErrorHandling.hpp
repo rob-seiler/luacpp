@@ -13,17 +13,6 @@
 namespace Lua {
 
 /**
- * @brief Describes a single Lua error surfaced to C++.
- *
- * The State raises a LuaError whenever a Lua API call returns a non-OK
- * status. Two categories cover the lifecycle:
- *  - Load:    luaL_loadstring / luaL_loadfile failures (LUA_ERRSYNTAX,
- *             LUA_ERRFILE). The script never started running.
- *  - Runtime: pcall failures (LUA_ERRRUN, LUA_ERRMEM, LUA_ERRERR). The
- *             script started running and threw, ran out of memory, or its
- *             own message handler errored.
- */
-/**
  * @brief Lua-side error text plus best-effort accessors for the standard
  *        "<chunkname>:<line>: <text>" prefix Lua's error() prepends.
  *
@@ -70,6 +59,17 @@ private:
 /// StreamLogger, which wraps a LuaError and prepends "[lua <cat> <n>] ".
 std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
 
+/**
+ * @brief Describes a single Lua error surfaced to C++.
+ *
+ * The State raises a LuaError whenever a Lua API call returns a non-OK
+ * status. Two categories cover the lifecycle:
+ *  - Load:    luaL_loadstring / luaL_loadfile failures (LUA_ERRSYNTAX,
+ *             LUA_ERRFILE). The script never started running.
+ *  - Runtime: pcall failures (LUA_ERRRUN, LUA_ERRMEM, LUA_ERRERR). The
+ *             script started running and threw, ran out of memory, or its
+ *             own message handler errored.
+ */
 struct LuaError {
 	enum class Category { Load, Runtime };
 

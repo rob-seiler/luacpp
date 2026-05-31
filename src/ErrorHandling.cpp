@@ -61,9 +61,13 @@ std::optional<Parsed> parsePrefix(const std::string& raw) {
 	const char* lineEnd   = raw.data() + sep;
 	if (lineBegin == lineEnd) return std::nullopt;
 
+	// std::from_chars accepts a leading '-'; Lua line numbers are always ≥ 1.
+	// Reject signs up front so "src:-5: msg" doesn't parse as line = -5.
+	if (*lineBegin == '-' || *lineBegin == '+') return std::nullopt;
+
 	int lineNum = 0;
 	const auto r = std::from_chars(lineBegin, lineEnd, lineNum);
-	if (r.ec != std::errc{} || r.ptr != lineEnd) return std::nullopt;
+	if (r.ec != std::errc{} || r.ptr != lineEnd || lineNum < 1) return std::nullopt;
 
 	return Parsed{
 	    std::string_view(raw.data(), lineColon),

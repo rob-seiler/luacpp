@@ -66,6 +66,23 @@ TEST(LuaMessageTest, malformedLineNumberReturnsNullopt) {
 	EXPECT_EQ(m.text(), "source:NaN: msg");
 }
 
+// Reviewer regression: std::from_chars accepts a leading '-' sign, so a
+// prefix like "src:-5: msg" used to parse as line=-5. Lua never produces
+// negative line numbers (line 1 is the first source line); we reject them
+// instead of surfacing nonsense.
+TEST(LuaMessageTest, negativeLineNumberReturnsNullopt) {
+	LuaMessage m(std::string("src:-5: msg"));
+	EXPECT_FALSE(m.source().has_value());
+	EXPECT_FALSE(m.line().has_value());
+	EXPECT_EQ(m.text(), "src:-5: msg");
+}
+
+TEST(LuaMessageTest, signedLineNumberReturnsNullopt) {
+	// Same rationale for an explicit '+' sign — Lua doesn't emit those.
+	LuaMessage m(std::string("src:+5: msg"));
+	EXPECT_FALSE(m.line().has_value());
+}
+
 TEST(LuaMessageTest, emptyMessageIsEmpty) {
 	LuaMessage m;
 	EXPECT_TRUE(m.empty());

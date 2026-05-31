@@ -167,6 +167,28 @@ TEST(BindConstructorTest, ReadVariableVoidPtrAcceptsLightUserdata) {
     EXPECT_EQ(*p, &sentinel);
 }
 
+// Reviewer regression: executeFunctionReturning<T*> for a bound type used to
+// gate the read with `Basics::getTypeFor<T*>() == getType(-1)`. getTypeFor on
+// any pointer returns LightUserData, but bound objects are full userdata —
+// the gate could never match and the optional was always nullopt. The fix
+// routes the read through Stack<T>::tryGet, which has the correct metatable
+// check for full userdata (and falls back to the light-userdata check for
+// raw pointer types). readVariable<T*> already used that path.
+TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
+    State lua(State::LibBase);
+    Metatable<Point>::registerMetatable(lua);
+    lua.bindConstructor<Point, float, float>("Point");
+    lua.loadAndExecuteScript("function make() return Point(3, 4) end");
+
+    auto p = lua.executeFunctionReturning<Point*>("make");
+    ASSERT_TRUE(p.has_value())
+        << "class-pointer return values must come back through tryGet's "
+           "metatable check, not the broken getTypeFor gate";
+    ASSERT_NE(*p, nullptr);
+    EXPECT_FLOAT_EQ((*p)->x, 3.0f);
+    EXPECT_FLOAT_EQ((*p)->y, 4.0f);
+}
+
 // Regression: readVariable<T*> on a userdata carrying a DIFFERENT metatable
 // must return nullopt, not raise a Lua error. The read happens at the host
 // boundary (no enclosing pcall), so an erroring luaL_checkudata would kill

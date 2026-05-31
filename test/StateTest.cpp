@@ -221,6 +221,24 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	          std::string::npos);
 }
 
+// Reviewer regression: executeScript<Generic> with an unsupported-type key
+// previously collapsed Registry::getScript's InvalidKey into RegistryKeyNotFound,
+// losing the distinction between "the key type is bogus" and "the key is fine
+// but nothing's stored under it". The status returned (and reported) must
+// preserve the original classification.
+TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
+	State script(State::LibBase);
+	auto& errors = script.installLogger<MemoryLogger>();
+
+	// Generic(nullptr) constructs a Generic of Type::Nil — getScript's switch
+	// hits the default arm and returns InvalidKey.
+	const auto rc = script.executeScript(Generic(nullptr));
+	EXPECT_EQ(rc, LuaError::Status::InvalidKey)
+	    << "executeScript must not flatten InvalidKey to RegistryKeyNotFound";
+	ASSERT_FALSE(errors.entries().empty());
+	EXPECT_EQ(errors.entries().front().status, LuaError::Status::InvalidKey);
+}
+
 // Regression: prior to the popErrorFromStack rewrite, errors raised with a
 // non-string value (e.g. `error({...})` propagates a table) were not
 // consumed from the Lua stack — the lua_isstring check failed, the value

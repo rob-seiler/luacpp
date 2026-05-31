@@ -296,14 +296,23 @@ public:
 	 */
 	template <typename T>
 	LuaError::Status executeScript(T key) {
-		auto rc = m_registry.getScript(key);
+		const auto rc = m_registry.getScript(key);
 		if (rc != LuaError::Status::Ok) {
-			// rc is RuntimeError from Registry::getScript when the key isn't
-			// a function — that's *our* detection, not a real pcall failure.
+			// getScript reports two distinct conditions and we must preserve
+			// the distinction:
+			//  - RuntimeError: the key resolved but the stored value isn't a
+			//                  function (or nothing is stored under it).
+			//  - InvalidKey:   the Generic key carries an unsupported type.
+			// Both are luacpp-side detections, not real pcall failures.
+			const auto status = (rc == LuaError::Status::RuntimeError)
+			    ? LuaError::Status::RegistryKeyNotFound
+			    : rc;
 			reportError(LuaError{
-			    LuaError::Category::Runtime, LuaError::Status::RegistryKeyNotFound,
-			    "executeScript: registry key is missing or not a function"});
-			return LuaError::Status::RegistryKeyNotFound;
+			    LuaError::Category::Runtime, status,
+			    status == LuaError::Status::InvalidKey
+			        ? "executeScript: registry key has an unsupported type"
+			        : "executeScript: registry key is missing or not a function"});
+			return status;
 		}
 		return reportStatus(LuaError::Category::Runtime, callFunction(0, 0));
 	}
@@ -702,15 +711,16 @@ private:
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
 
-	// Shared tail for the *Returning overloads: read the top stack value if
-	// its Lua type matches T's, otherwise return nullopt — but always pop
-	// the one return slot the caller's pcall(..., 1) reserved.
+	// Shared tail for the *Returning overloads: read the top stack value via
+	// Stack<T>::tryGet (which handles both class-pointer userdata and value
+	// types correctly), then always pop the one return slot the caller's
+	// pcall(..., 1) reserved. The earlier `getTypeFor<T>() == getType(-1)`
+	// gate was broken for class pointers — every T* mapped to LightUserData
+	// while bound objects live as full userdata, so the optional was always
+	// nullopt for bound returns.
 	template <typename T>
 	std::optional<T> popTypedReturn() {
-		std::optional<T> result;
-		if (Basics::getTypeFor<T>() == getType(-1)) {
-			result = getStackValue<T>(-1);
-		}
+		std::optional<T> result = Stack<T>::tryGet(m_state, -1);
 		popStack(1);
 		return result;
 	}
