@@ -82,7 +82,6 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 - **Lua traceback support** via opt-in `pcall` message handler.
 - **Stable metatable names** — replace the `typeid(T).name()` default.
-- **`WarningLogger`** — slot for Lua 5.4+ `warn()` analogous to `ErrorLogger`.
 
 ### v0.4.0 — Class binding expansion
 

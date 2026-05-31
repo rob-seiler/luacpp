@@ -9,6 +9,7 @@
 #include "Stack.hpp"
 #include "StackGuard.hpp"
 #include "ErrorHandling.hpp"
+#include "WarningHandling.hpp"
 #include "detail/Bind.hpp"
 #include "detail/Config.hpp"
 
@@ -650,6 +651,33 @@ public:
 	}
 
 	/**
+	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
+	 *
+	 * Default = nullptr (warnings are off; Lua's warn() drops messages).
+	 * Installing a non-null logger turns warnings on implicitly — the act
+	 * of installing is the opt-in. Pass nullptr to detach the sink and
+	 * disable the warning system again.
+	 *
+	 * Scripts can still toggle reporting at runtime via the standard
+	 * control directives `warn("@off")` / `warn("@on")` even after a
+	 * logger is installed.
+	 *
+	 * \see WarningHandling.hpp for WarningLogger implementations
+	 *      (Stream/Memory/Callback variants).
+	 */
+	void setWarningLogger(std::unique_ptr<WarningLogger> logger);
+
+	/// Convenience: construct a WarningLogger in place, install it, return
+	/// a reference for later inspection (typically MemoryWarningLogger).
+	template <typename LoggerT, typename... Args>
+	LoggerT& installWarningLogger(Args&&... args) {
+		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
+		LoggerT* ptr = logger.get();
+		setWarningLogger(std::move(logger));
+		return *ptr;
+	}
+
+	/**
 	 * \brief returns the internal lua state
 	*/
 
@@ -785,6 +813,19 @@ private:
 	std::vector<Method> m_callbacks; ///< list of registered methods
 	std::unique_ptr<ErrorLogger>  m_errorLogger;  ///< passive observer; may be null
 	std::unique_ptr<ErrorHandler> m_errorHandler; ///< active reaction; may be null
+
+	// Lua warning system state. m_warningBuffer assembles multi-piece
+	// messages (Lua may split a single warn() across several callbacks).
+	// m_warningsEnabled mirrors Lua's @on/@off control directive — installing
+	// a logger flips it true; scripts may flip it back via warn("@off").
+	std::unique_ptr<WarningLogger> m_warningLogger;
+	std::string                    m_warningBuffer;
+	bool                           m_warningsEnabled = false;
+
+	// Trampoline matching lua_WarnFunction signature. Forwards to the
+	// per-State handleWarning() via the ud pointer set in lua_setwarnf.
+	static void warnFunctionTrampoline(void* ud, const char* msg, int tocont);
+	void handleWarning(const char* msg, int tocont);
 };
 
 } // namespace Lua

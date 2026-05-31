@@ -24,6 +24,7 @@ module;
 #include <luacpp/Type.hpp>
 #include <luacpp/TypeMismatchException.hpp>
 #include <luacpp/Version.hpp>
+#include <luacpp/WarningHandling.hpp>
 
 export module luacpp;
 
@@ -62,6 +63,10 @@ using ::Lua::CallbackLogger;
 using ::Lua::ErrorHandler;
 using ::Lua::ThrowHandler;
 using ::Lua::CallbackHandler;
+using ::Lua::WarningLogger;
+using ::Lua::StreamWarningLogger;
+using ::Lua::MemoryWarningLogger;
+using ::Lua::CallbackWarningLogger;
 using ::Lua::describe;
 
 // Versioning

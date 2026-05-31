@@ -46,6 +46,11 @@ State::State(Library libraries)
   m_errorLogger(std::make_unique<StreamLogger>()),
   m_errorHandler(nullptr)
 {
+	// Default warning sink mirrors the error path: loud-to-cerr by default,
+	// users override via setWarningLogger / installWarningLogger. Without
+	// this, Lua 5.5's own warnfon would print to stderr in a different
+	// format, bypassing the [lua warning] tag the library promises.
+	setWarningLogger(std::make_unique<StreamWarningLogger>());
 	openLibrary(libraries);
 }
 
@@ -56,6 +61,7 @@ State::State(lua_State* state)
   m_errorLogger(std::make_unique<StreamLogger>()),
   m_errorHandler(nullptr)
 {
+	setWarningLogger(std::make_unique<StreamWarningLogger>());
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
@@ -64,6 +70,50 @@ void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
 
 void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 	m_errorHandler = std::move(handler);
+}
+
+void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
+	m_warningLogger = std::move(logger);
+	m_warningBuffer.clear();
+	if (m_warningLogger) {
+		// Installing a logger is explicit opt-in: enable warnings even though
+		// Lua starts the system disabled. Scripts can still flip via @off.
+		m_warningsEnabled = true;
+		lua_setwarnf(m_state, &State::warnFunctionTrampoline, this);
+	} else {
+		// Detach: Lua disables the warning system entirely until a new
+		// function is installed. Matches lua_setwarnf(L, NULL, NULL).
+		m_warningsEnabled = false;
+		lua_setwarnf(m_state, nullptr, nullptr);
+	}
+}
+
+void State::warnFunctionTrampoline(void* ud, const char* msg, int tocont) {
+	if (!ud || !msg) return;
+	static_cast<State*>(ud)->handleWarning(msg, tocont);
+}
+
+void State::handleWarning(const char* msg, int tocont) {
+	m_warningBuffer.append(msg);
+	if (tocont) return; // more pieces follow; wait for the terminal call
+
+	// Take ownership of the accumulated message, then reset the buffer so
+	// the next warning starts fresh even if the logger throws.
+	std::string assembled;
+	assembled.swap(m_warningBuffer);
+
+	// Control directives: leading '@' is reserved by Lua's warning protocol.
+	// The two we honor are @on/@off; anything else (e.g. an editor-specific
+	// pragma) is silently dropped, matching the default Lua warn function.
+	if (!assembled.empty() && assembled.front() == '@') {
+		if      (assembled == "@on")  m_warningsEnabled = true;
+		else if (assembled == "@off") m_warningsEnabled = false;
+		return;
+	}
+
+	if (m_warningsEnabled && m_warningLogger) {
+		m_warningLogger->log(assembled);
+	}
 }
 
 LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status status) {
