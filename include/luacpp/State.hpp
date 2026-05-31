@@ -10,6 +10,7 @@
 #include "StackGuard.hpp"
 #include "ErrorHandling.hpp"
 #include "detail/Bind.hpp"
+#include "detail/Config.hpp"
 
 #include <string>
 #include <vector>
@@ -19,6 +20,10 @@
 #include <type_traits>
 #include <utility>
 #include <filesystem>
+
+#if LUACPP_HAS_SPAN
+#include <span>
+#endif
 
 struct lua_State;
 
@@ -355,7 +360,7 @@ public:
 	}
 
 	template <int NumRet = 0, typename T>
-	LuaError::Status executeFunctionWithArgsArray(std::string_view name, T* args, size_t numArgs) {
+	LuaError::Status executeFunctionWithArgsArray(std::string_view name, const T* args, size_t numArgs) {
 		if (!loadFunction(name.data())) {
 			// loadFunction already popped the non-function value on failure.
 			reportError(LuaError{
@@ -383,13 +388,45 @@ public:
 	}
 
 	template <typename T>
-	[[nodiscard]] std::optional<T> executeFunctionWithArgsArrayReturning(std::string_view name, T* args, size_t numArgs) {
+	[[nodiscard]] std::optional<T> executeFunctionWithArgsArrayReturning(std::string_view name, const T* args, size_t numArgs) {
 		if (executeFunctionWithArgsArray<1>(name, args, numArgs) != LuaError::Status::Ok) {
 			return std::nullopt;
 		}
 		return popTypedReturn<T>();
 	}
 
+#if LUACPP_HAS_SPAN
+	/**
+	 * @brief std::span overload of executeFunctionWithArgsArray (C++20+).
+	 *
+	 * Additive convenience that supersedes the (pointer, length) signature: the
+	 * caller passes a single std::span instead of splitting a range into a
+	 * pointer and a length. CTAD makes building one from any contiguous
+	 * container a one-liner — e.g. executeFunctionWithArgsArray(name,
+	 * std::span(vec)). Element type is deduced; a span of const elements is
+	 * accepted (the values are only read and pushed).
+	 *
+	 * Only declared when the consumer compiles with C++20 and <span> support
+	 * (LUACPP_HAS_SPAN). The C++17 (pointer, length) overload above is always
+	 * present and unaffected. Forced off by defining LUACPP_NO_MODERN.
+	 */
+	template <int NumRet = 0, typename T, std::size_t Extent>
+	LuaError::Status executeFunctionWithArgsArray(std::string_view name, std::span<T, Extent> args) {
+		return executeFunctionWithArgsArray<NumRet, std::remove_const_t<T>>(
+		    name, args.data(), args.size());
+	}
+
+	/// std::span overload of executeFunctionWithArgsArrayReturning (C++20+).
+	/// See the span overload of executeFunctionWithArgsArray for the rationale.
+	/// Templated on Extent so both fixed-extent (e.g. from std::array) and
+	/// dynamic-extent spans bind without an explicit conversion.
+	template <typename T, std::size_t Extent>
+	[[nodiscard]] std::optional<std::remove_const_t<T>>
+	executeFunctionWithArgsArrayReturning(std::string_view name, std::span<T, Extent> args) {
+		return executeFunctionWithArgsArrayReturning<std::remove_const_t<T>>(
+		    name, args.data(), args.size());
+	}
+#endif // LUACPP_HAS_SPAN
 
 	template <typename... Args>
 	int setReturnValue(Args... args) {
