@@ -5,6 +5,11 @@
 
 #include "TestSupport.hpp"
 
+#include <array>
+#if LUACPP_HAS_SPAN
+#include <span>
+#endif
+
 //#include <lua/lua.hpp>
 struct lua_State;
 
@@ -189,6 +194,52 @@ TEST_F(StateTest, simpleNativeFunction) {
 	EXPECT_EQ(*rc, 5);
 	EXPECT_EQ(script.getStackSize(), 0);
 }
+
+namespace {
+constexpr const char* kSumAllSrc = R"(
+	function sumAll(...)
+		local s = 0
+		for _, v in ipairs({...}) do s = s + v end
+		return s
+	end
+)";
+} // namespace
+
+// Baseline coverage for the (pointer, length) overload — previously untested.
+TEST_F(StateTest, executeFunctionWithArgsArrayPointerLength) {
+	State script(State::LibBase); // ipairs lives in the base library
+	script.loadAndExecuteScript(kSumAllSrc);
+
+	const int args[] = {1, 2, 3, 4, 5};
+	auto rc = script.executeFunctionWithArgsArrayReturning<int>("sumAll", args, 5);
+	ASSERT_TRUE(rc.has_value());
+	EXPECT_EQ(*rc, 15);
+	EXPECT_EQ(script.getStackSize(), 0);
+}
+
+#if LUACPP_HAS_SPAN
+// The std::span overload must produce the same result as (pointer, length),
+// and must accept a span of const elements (read-only argument range).
+TEST_F(StateTest, executeFunctionWithArgsArraySpan) {
+	State script(State::LibBase); // ipairs lives in the base library
+	script.loadAndExecuteScript(kSumAllSrc);
+
+	const std::array<int, 5> args{1, 2, 3, 4, 5};
+
+	// Status-only overload.
+	EXPECT_EQ(script.executeFunctionWithArgsArray("sumAll", std::span(args)),
+	          LuaError::Status::Ok);
+	EXPECT_EQ(script.getStackSize(), 0);
+
+	// Returning overload — span<const int> deduces a non-const optional<int>.
+	auto rc = script.executeFunctionWithArgsArrayReturning("sumAll", std::span(args));
+	ASSERT_TRUE(rc.has_value());
+	EXPECT_EQ(*rc, 15);
+	static_assert(std::is_same_v<decltype(rc), std::optional<int>>,
+	              "span<const int> overload must strip const from the result type");
+	EXPECT_EQ(script.getStackSize(), 0);
+}
+#endif // LUACPP_HAS_SPAN
 
 // Regression: executeScript previously popped the pcall error message off the
 // stack without routing it anywhere. After the ErrorHandler refactor both
