@@ -37,12 +37,20 @@ const char* describe(LuaError::Status status) noexcept {
 	return "Unknown";
 }
 
+namespace {
+
 // Lua's standard error format is "<source>:<line>: <text>". The space after
 // the line-colon is the reliable boundary — text can contain anything,
 // including more ": ", and source can contain ":" (Windows paths). We find
 // the FIRST ": " from the left, then walk back to the previous ":" — what's
 // between must be the line number for the parse to succeed.
-std::optional<LuaMessage::Parsed> LuaMessage::parsePrefix(const std::string& raw) {
+struct Parsed {
+	std::string_view source;
+	int              line;
+	std::string_view text;
+};
+
+std::optional<Parsed> parsePrefix(const std::string& raw) {
 	const auto sep = raw.find(": ");
 	if (sep == std::string::npos || sep == 0) return std::nullopt;
 
@@ -57,37 +65,31 @@ std::optional<LuaMessage::Parsed> LuaMessage::parsePrefix(const std::string& raw
 	const auto r = std::from_chars(lineBegin, lineEnd, lineNum);
 	if (r.ec != std::errc{} || r.ptr != lineEnd) return std::nullopt;
 
-	return LuaMessage::Parsed{
-	    std::string(raw.data(), lineColon),
+	return Parsed{
+	    std::string_view(raw.data(), lineColon),
 	    lineNum,
-	    std::string(raw.data() + sep + 2, raw.size() - sep - 2),
+	    std::string_view(raw.data() + sep + 2, raw.size() - sep - 2),
 	};
 }
 
-const std::optional<LuaMessage::Parsed>& LuaMessage::parsed() const {
-	if (!m_parseAttempted) {
-		m_parsed = parsePrefix(m_raw);
-		m_parseAttempted = true;
-	}
-	return m_parsed;
-}
+} // namespace
 
 std::optional<std::string> LuaMessage::source() const {
-	const auto& p = parsed();
+	auto p = parsePrefix(m_raw);
 	if (!p) return std::nullopt;
-	return p->source;
+	return std::string(p->source);
 }
 
 std::optional<int> LuaMessage::line() const {
-	const auto& p = parsed();
+	auto p = parsePrefix(m_raw);
 	if (!p) return std::nullopt;
 	return p->line;
 }
 
 std::string LuaMessage::text() const {
-	const auto& p = parsed();
+	auto p = parsePrefix(m_raw);
 	if (!p) return m_raw;
-	return p->text;
+	return std::string(p->text);
 }
 
 std::ostream& operator<<(std::ostream& os, const LuaMessage& m) {
