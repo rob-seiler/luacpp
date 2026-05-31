@@ -46,8 +46,8 @@ int main() {
     Lua::State lua;
 
     lua.loadAndExecuteScript(src);
-    const int x = lua.readVariable<int>("x");
-    return 0;
+    auto x = lua.readVariable<int>("x"); // std::optional<int>
+    return (x && *x == 12) ? 0 : 1;
 }
 ```
 

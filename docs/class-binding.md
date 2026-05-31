@@ -23,7 +23,10 @@ int main() {
     lua.bindConstructor<Vector, float, float>("Vector");
 
     lua.loadAndExecuteScript("v = Vector(1, 2) + Vector(3, 4)");
-    Vector* v = lua.readVariable<Vector*>("v"); // v->x == 4, v->y == 6
+    auto v = lua.readVariable<Vector*>("v"); // std::optional<Vector*>
+    if (v) {
+        // (*v)->x == 4, (*v)->y == 6
+    }
     return 0;
 }
 ```
