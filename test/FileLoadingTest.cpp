@@ -2,8 +2,6 @@
 
 #include <luacpp/State.hpp>
 
-#include <lua/lua.hpp>  // for LUA_OK, LUA_ERRFILE, LUA_ERRSYNTAX, LUA_ERRRUN
-
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -23,55 +21,61 @@ Lua::File dataFile(const char* name) {
 
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
-	int status = lua.loadAndExecuteScript(dataFile("valid.lua"));
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript(dataFile("valid.lua"));
 
-	ASSERT_EQ(status, LUA_OK);
-	EXPECT_TRUE(lua.getErrorList().empty());
+	EXPECT_TRUE(errors.entries().empty());
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 	EXPECT_EQ(lua.readVariable<std::string>("greeting"), "hello from file");
 }
 
-TEST(FileLoadingTest, MissingFile_ReturnsErrFileAndCapturesPath) {
+TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 	State lua;
-	int status = lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
 
-	ASSERT_EQ(status, LUA_ERRFILE);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
+	EXPECT_EQ(err.category, LuaError::Category::Load);
+	EXPECT_EQ(err.status, LuaError::Status::FileError);
 	// Lua's standard error format for ERRFILE is
 	//   "cannot open <path>: <reason>"
 	// We don't pin the entire message (varies by libc) but the path must be in it.
-	EXPECT_NE(errors.front().find("does_not_exist_xyz.lua"), std::string::npos)
-		<< "error message did not reference the failing path: " << errors.front();
+	EXPECT_NE(err.message.find("does_not_exist_xyz.lua"), std::string::npos)
+		<< "error message did not reference the failing path: " << err.message;
 }
 
-TEST(FileLoadingTest, SyntaxError_ReturnsErrSyntaxAndReferencesFile) {
+TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 	State lua;
-	int status = lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
 
-	ASSERT_EQ(status, LUA_ERRSYNTAX);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
+	EXPECT_EQ(err.category, LuaError::Category::Load);
+	EXPECT_EQ(err.status, LuaError::Status::SyntaxError);
 	// chunkname (= '@path') means the file name appears in the error message
 	// — that is the whole point of the file-source overload vs. piping the
 	// file's bytes through loadAndExecuteScript(const char*).
-	EXPECT_NE(errors.front().find("syntax_error.lua"), std::string::npos)
-		<< "syntax error did not reference the file: " << errors.front();
+	EXPECT_NE(err.message.find("syntax_error.lua"), std::string::npos)
+		<< "syntax error did not reference the file: " << err.message;
 }
 
-TEST(FileLoadingTest, RuntimeError_ReturnsErrRunAndPinpointsLine) {
+TEST(FileLoadingTest, RuntimeError_ReportsRuntimeErrorPinpointingLine) {
 	State lua;
-	int status = lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
-	ASSERT_EQ(status, LUA_ERRRUN);
-	const auto& errors = lua.getErrorList();
-	ASSERT_FALSE(errors.empty());
+	ASSERT_FALSE(errors.entries().empty());
+	const auto& err = errors.entries().front();
+	EXPECT_EQ(err.category, LuaError::Category::Runtime);
+	EXPECT_EQ(err.status, LuaError::Status::RuntimeError);
 	// runtime_error.lua calls error("boom...") on line 4. The traceback must
 	// reference both the file and the line.
-	EXPECT_NE(errors.front().find("runtime_error.lua"), std::string::npos)
-		<< "runtime error did not reference the file: " << errors.front();
-	EXPECT_NE(errors.front().find(":4"), std::string::npos)
-		<< "runtime error did not reference line 4: " << errors.front();
+	EXPECT_NE(err.message.find("runtime_error.lua"), std::string::npos)
+		<< "runtime error did not reference the file: " << err.message;
+	EXPECT_NE(err.message.find(":4"), std::string::npos)
+		<< "runtime error did not reference line 4: " << err.message;
 }
 
 TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
@@ -91,7 +95,7 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	// replace with the path(std::u8string_view) constructor that became
 	// the canonical UTF-8 entry point in C++20.
 	const Lua::File path = std::filesystem::temp_directory_path() /
-		std::filesystem::u8path(u8"luacpp_t\u00e9st_\u4e2d\u6587.lua");
+		std::filesystem::u8path(u8"luacpp_tést_中文.lua");
 	{
 		std::ofstream out(path, std::ios::binary);
 		ASSERT_TRUE(out.is_open()) << "ifstream could not create the fixture — "
@@ -101,26 +105,29 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	}
 
 	State lua;
-	const int status = lua.loadAndExecuteScript(path);
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript(path);
 
 	std::error_code rmErr;
 	std::filesystem::remove(path, rmErr);  // best-effort cleanup; ignore failure
 
-	ASSERT_EQ(status, LUA_OK)
+	ASSERT_TRUE(errors.entries().empty())
 		<< "non-ASCII path failed to load: "
-		<< (lua.getErrorList().empty() ? std::string("<no error message>") : lua.getErrorList().front());
+		<< errors.entries().front().message;
 	EXPECT_EQ(lua.readVariable<int>("x"), 7);
 }
 
 TEST(FileLoadingTest, RegistryRoundtrip_LoadFromFileThenExecute) {
 	State lua;
+	auto& errors = lua.installLogger<MemoryLogger>();
 	const char* key = "stored_script";
 
-	int loadStatus = lua.loadScript(key, dataFile("valid.lua"));
-	ASSERT_EQ(loadStatus, static_cast<int>(Registry::ErrorCode::Ok));
+	lua.loadScript(key, dataFile("valid.lua"));
+	ASSERT_TRUE(errors.entries().empty()) << "loadScript failed unexpectedly";
 
-	int execStatus = lua.executeScript(key);
-	ASSERT_EQ(execStatus, LUA_OK);
+	lua.executeScript(key);
+	ASSERT_TRUE(errors.entries().empty()) << "executeScript failed unexpectedly";
+
 	EXPECT_EQ(lua.readVariable<int>("x"), 42);
 }
 

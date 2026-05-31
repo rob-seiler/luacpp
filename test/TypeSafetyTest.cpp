@@ -5,6 +5,8 @@
 #include <luacpp/Basics.hpp>
 #include <lua/lua.hpp>
 
+#include "TestSupport.hpp"
+
 namespace Lua {
 
 // ============================================================================
@@ -42,10 +44,10 @@ TEST(TypeSafetyTest, CheckUserData_CorrectType) {
 
     // Create a valid Point
     const char* src = "p = Point(3, 4)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     // Should retrieve successfully
-    Point* p = lua.readVariable<Point*>("p");
+    Point* p = readVar<Point*>(lua, "p");
     ASSERT_NE(p, nullptr);
     EXPECT_FLOAT_EQ(p->x, 3.0f);
     EXPECT_FLOAT_EQ(p->y, 4.0f);
@@ -69,9 +71,10 @@ TEST(TypeSafetyTest, CheckUserData_WrongType_ThrowsError) {
     });
 
     // Pass Counter where Point is expected - should error
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "c = Counter(42); result = testWrongType(c)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0); // Should fail with type error from luaL_checkudata
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
@@ -88,9 +91,10 @@ TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
     });
 
     // Pass nil - should error
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNil(nil)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0); // Should fail
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
@@ -107,9 +111,10 @@ TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
     });
 
     // Pass number - should error
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNumber(42)";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0); // Should fail
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(TypeSafetyTest, CheckUserData_StringValue_ThrowsError) {
@@ -125,9 +130,10 @@ TEST(TypeSafetyTest, CheckUserData_StringValue_ThrowsError) {
     });
 
     // Pass string - should error
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "result = testString('hello')";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0); // Should fail
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
@@ -155,21 +161,22 @@ TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
 
     // Correct usage
     const char* src1 = "p = Point(3, 4); x = getX(p)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src1), 0);
-    float x = lua.readVariable<float>("x");
-    EXPECT_FLOAT_EQ(x, 3.0f);
+    lua.loadAndExecuteScript(src1);
+    EXPECT_FLOAT_EQ(readVar<float>(lua, "x"), 3.0f);
 
     const char* src2 = "c = Counter(42); v = getValue(c)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src2), 0);
-    int v = lua.readVariable<int>("v");
-    EXPECT_EQ(v, 42);
+    lua.loadAndExecuteScript(src2);
+    EXPECT_EQ(readVar<int>(lua, "v"), 42);
 
-    // Wrong type usage
+    // Wrong type usage — install ThrowHandler AFTER the successful calls
+    // above so the success path is not affected.
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src3 = "x = getX(c)"; // Pass Counter to Point function
-    EXPECT_NE(lua.loadAndExecuteScript(src3), 0);
+    EXPECT_THROW(lua.loadAndExecuteScript(src3), LuaException);
 
     const char* src4 = "v = getValue(p)"; // Pass Point to Counter function
-    EXPECT_NE(lua.loadAndExecuteScript(src4), 0);
+    EXPECT_THROW(lua.loadAndExecuteScript(src4), LuaException);
 }
 
 // ============================================================================
@@ -183,7 +190,7 @@ TEST(TypeSafetyTest, Basics_CheckUserData_Behavior) {
 
     // Create a Point and push to stack
     const char* src = "p = Point(5, 6); return p";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     lua_State* L = lua.getState();
     lua_getglobal(L, "p");
@@ -206,7 +213,7 @@ TEST(TypeSafetyTest, Basics_AsUserData_vs_CheckUserData) {
     lua.bindConstructor<Point, float, float>("Point");
 
     const char* src = "p = Point(7, 8); n = 42";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     lua_State* L = lua.getState();
 
@@ -262,9 +269,8 @@ TEST(TypeSafetyTest, Documentation_CheckUserDataNeverReturnsNull) {
     });
 
     const char* src = "p = Point(3, 4); result = safeFunction(p)";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    float result = lua.readVariable<float>("result");
-    EXPECT_FLOAT_EQ(result, 7.0f);
+    lua.loadAndExecuteScript(src);
+    EXPECT_FLOAT_EQ(readVar<float>(lua, "result"), 7.0f);
 }
 
 TEST(TypeSafetyTest, Documentation_AsUserDataCanReturnNull) {
@@ -296,11 +302,11 @@ TEST(TypeSafetyTest, Documentation_AsUserDataCanReturnNull) {
         isStr = tryGetUserdata("hello")
         isNil = tryGetUserdata(nil)
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    EXPECT_FALSE(lua.readVariable<bool>("isNum"));
-    EXPECT_FALSE(lua.readVariable<bool>("isStr"));
-    EXPECT_FALSE(lua.readVariable<bool>("isNil"));
+    EXPECT_FALSE(readVar<bool>(lua, "isNum"));
+    EXPECT_FALSE(readVar<bool>(lua, "isStr"));
+    EXPECT_FALSE(readVar<bool>(lua, "isNil"));
 }
 
 } // namespace Lua

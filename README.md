@@ -46,8 +46,8 @@ int main() {
     Lua::State lua;
 
     lua.loadAndExecuteScript(src);
-    const int x = lua.readVariable<int>("x");
-    return 0;
+    auto x = lua.readVariable<int>("x"); // std::optional<int>
+    return (x && *x == 12) ? 0 : 1;
 }
 ```
 
@@ -80,20 +80,46 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 ### v0.3.0 — Embedding hardening
 
-- **Improved error handling** — headline feature. Currently only `loadAndExecuteScript` populates the error list; other execution paths discard Lua's error message. Planned: a `protected_call`-style abstraction that surfaces the Lua error message and (where available) a traceback across every script-execution path. Note: the string-source variant of `loadAndExecuteScript` still uses `luaL_dostring`, which collapses every non-zero Lua status into `1` — the differentiated codes (`LUA_ERRSYNTAX`, `LUA_ERRRUN`, …) currently only surface via the new file-loading overload.
-- **`std::optional`, multi-return, and tuple support** — extend `Stack<T>` and `pushResult` so bound methods can return `std::tuple<...>` as multiple Lua values and accept `std::optional<T>` arguments. Low effort, high comfort gain.
+- **Lua traceback support** via opt-in `pcall` message handler.
+- **Stable metatable names** — replace the `typeid(T).name()` default.
+- **`WarningLogger`** — slot for Lua 5.4+ `warn()` analogous to `ErrorLogger`.
 
-### v0.4.0 — Class-binding polish
+### v0.4.0 — Class binding expansion
 
-- **Stable metatable names** — replace the implicit `typeid(T).name()` default with a portable, ABI-independent key. Mismatches across shared-library boundaries on Windows today silently produce two unrelated metatables for the same type.
-- **Coroutine support.**
+- **Inheritance / base classes** for bound types.
+- **Smart pointer ownership** — `unique_ptr<T>` / `shared_ptr<T>` / `weak_ptr<T>`.
+- **Read-only and computed properties.**
+- **Enum binding.**
+- **`std::optional`, multi-return, and tuple support** in `Stack<T>` / `pushResult`.
+- **Integer / double subtype distinction** in `Stack<T>` and `Generic`.
+- **Bitwise operator auto-detection** in `Metatable<T>` — `__band`/`__bor`/`__bxor`/`__bnot`/`__shl`/`__shr`.
+
+### v0.5.0 — Coroutines
+
+- **Coroutine creation / resume / yield** from C++.
+- **Yieldable native functions** via `lua_yieldk` continuations.
+
+### v0.6.0 — Lua values from C++
+
+- **`LuaRef`** — persistent strong references to Lua tables / functions / userdata.
+- **Function overload resolution** by Lua argument types.
 
 ### Later / unscheduled
 
-- **Custom Lua allocator support** — let the host install a `lua_Alloc` for tracking, pooling, or constraining Lua's memory.
-- **Improved debug hooks** — richer abstractions around `lua_sethook`.
-- **Faster member access on bound classes** — for types with methods only (no properties), set `__index` directly to a methods table so Lua resolves lookups via `rawget` instead of crossing into a C dispatcher (`propertyIndexDispatcher`). Several times cheaper in hot loops; worth measuring before generalising.
-- **Reflection-based auto-binding (C++26, P2996)** — a single `shareInLua<T>(state)` call that registers every public data member and member function on `T`'s metatable, with opt-out annotations (`[[=Lua::reflect::skip]]`, `[[=Lua::reflect::rename("...")]]`). Blocked on mainline Clang/GCC/MSVC support for P2996.
+- **Custom Lua allocator support.**
+- **Improved debug hooks.**
+- **Faster member access on bound classes** — methods-only fast path via `__index` rawget.
+- **Reflection-based auto-binding** (C++26, P2996).
+- **Sequence container binding** — `std::vector` / `std::array` as array-style tables.
+- **`std::variant` and `std::any` conversion.**
+- **`__close` support** for Lua 5.4+ to-be-closed variables.
+- **Sandbox helpers** — instruction-count / memory limits.
+- **Lua value pretty-printing and serialization.**
+- **Hot-reload helpers.**
+- **`luaL_Buffer` wrapper** for efficient string building from C++.
+- **Custom `package.searcher` registration** — asset-pack / network module loaders.
+- **Weak table helpers** — `__mode = "k"/"v"/"kv"` convenience.
+- **Coroutine recycling** via `lua_resetthread` (Lua 5.4+).
 
 ## License
 

@@ -83,7 +83,7 @@ TEST(DestructorTest, NonTrivialDestructor_IsCalled) {
             r2 = Resource(200)
             r3 = Resource(300)
         )";
-        EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+        lua.loadAndExecuteScript(src);
 
         // Constructors should have been called
         EXPECT_EQ(g_constructorCalls, 3);
@@ -112,7 +112,7 @@ TEST(DestructorTest, ForceGarbageCollection) {
         -- Force garbage collection
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     // All 5 objects should be created
     EXPECT_EQ(g_constructorCalls, 5);
@@ -143,7 +143,7 @@ TEST(DestructorTest, PartialGarbageCollection) {
         -- Force GC to collect r3
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     EXPECT_EQ(g_constructorCalls, 3);
 
@@ -180,7 +180,7 @@ TEST(DestructorTest, ComplexResourceManagement) {
 
             collectgarbage("collect")
         )";
-        EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+        lua.loadAndExecuteScript(src);
 
         EXPECT_EQ(g_constructorCalls, 10);
         EXPECT_EQ(g_destructorCalls, 5); // First 5 should be destroyed
@@ -203,11 +203,11 @@ TEST(DestructorTest, TrivialType_NoGCRegistered) {
         t = Trivial(42)
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
-    TrivialType* t = lua.readVariable<TrivialType*>("t");
-    ASSERT_NE(t, nullptr);
-    EXPECT_EQ(t->value, 42);
+    auto tOpt = lua.readVariable<TrivialType*>("t");
+    ASSERT_TRUE(tOpt.has_value());
+    EXPECT_EQ((*tOpt)->value, 42);
 }
 
 TEST(DestructorTest, NestedScopes) {
@@ -234,7 +234,7 @@ TEST(DestructorTest, NestedScopes) {
 
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     EXPECT_EQ(g_constructorCalls, 2);
     EXPECT_EQ(g_destructorCalls, 1); // Only 888 destroyed
@@ -262,7 +262,7 @@ TEST(DestructorTest, TableWithUserdata) {
         objects.b = nil
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     EXPECT_EQ(g_constructorCalls, 3);
     EXPECT_EQ(g_destructorCalls, 1); // b destroyed
@@ -286,7 +286,7 @@ TEST(DestructorTest, ReplacingReferences) {
 
         collectgarbage("collect")
     )";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+    lua.loadAndExecuteScript(src);
 
     EXPECT_EQ(g_constructorCalls, 3);
     EXPECT_EQ(g_destructorCalls, 2); // 100 and 200 destroyed, 300 still alive
@@ -332,7 +332,7 @@ TEST(DestructorTest, ManyObjects) {
                 objects[i] = Resource(i)
             end
         )";
-        EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
+        lua.loadAndExecuteScript(src);
 
         EXPECT_EQ(g_constructorCalls, 100);
         EXPECT_EQ(g_destructorCalls, 0);

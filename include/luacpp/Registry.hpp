@@ -2,6 +2,7 @@
 #define LUACPP_REGISTRY_HPP
 
 #include "Basics.hpp"
+#include "ErrorHandling.hpp"
 #include "Generic.hpp"
 #include "Table.hpp"
 #include "Stack.hpp"
@@ -16,25 +17,15 @@ namespace Lua {
 
 class Registry : public Table {
 public:
-	enum class ErrorCode {
-		Ok = 0,
-		Yield = 1,
-		RuntimeError = 2,
-		SyntaxError = 3,
-		MemoryError = 4,
-		ErrorError = 5,
-		FileError = 6 ///< file could not be opened (LUA_ERRFILE)
-	};
-
 	Registry(lua_State* L);
 
-	ErrorCode loadScript(Generic key, const char* src);
-	ErrorCode loadScriptFromFile(Generic key, const std::filesystem::path& path);
+	LuaError::Status loadScript(Generic key, const char* src);
+	LuaError::Status loadScriptFromFile(Generic key, const std::filesystem::path& path);
 
 	template <typename T>
-	ErrorCode loadScript(T key, const char* src) {
-		ErrorCode res = loadString(m_state, src);
-		if (res == ErrorCode::Ok) {
+	LuaError::Status loadScript(T key, const char* src) {
+		LuaError::Status res = loadString(m_state, src);
+		if (res == LuaError::Status::Ok) {
 			Stack<T>::push(m_state, key);
 			Basics::insert(m_state, -2);
 			setTableRaw(m_state, m_tableIndex);
@@ -43,9 +34,9 @@ public:
 	}
 
 	template <typename T>
-	ErrorCode loadScriptFromFile(T key, const std::filesystem::path& path) {
-		ErrorCode res = loadFile(m_state, path);
-		if (res == ErrorCode::Ok) {
+	LuaError::Status loadScriptFromFile(T key, const std::filesystem::path& path) {
+		LuaError::Status res = loadFile(m_state, path);
+		if (res == LuaError::Status::Ok) {
 			Stack<T>::push(m_state, key);
 			Basics::insert(m_state, -2);
 			setTableRaw(m_state, m_tableIndex);
@@ -53,15 +44,15 @@ public:
 		return res;
 	}
 
-	ErrorCode getScript(Generic key);
+	LuaError::Status getScript(Generic key);
 
 	template <typename T>
-	ErrorCode getScript(T key) {
+	LuaError::Status getScript(T key) {
 		if (getElement(key) != Type::Function) {
 			Basics::popStack(m_state, 1);
-			return ErrorCode::RuntimeError;
+			return LuaError::Status::RuntimeError;
 		}
-		return ErrorCode::Ok;
+		return LuaError::Status::Ok;
 	}
 
 	bool copyContent(Registry& other);
@@ -69,10 +60,10 @@ public:
 	// Public so State::loadAndExecuteScript(File) can share the same file-read
 	// implementation — see Registry.cpp for why we don't delegate to
 	// luaL_loadfile directly.
-	static ErrorCode loadFile(lua_State* state, const std::filesystem::path& path);
+	static LuaError::Status loadFile(lua_State* state, const std::filesystem::path& path);
 
 private:
-	static ErrorCode loadString(lua_State* state, const char* src);
+	static LuaError::Status loadString(lua_State* state, const char* src);
 	static bool isUserDefinedEntry(const Registry& registry);
 	static void copyEntry(lua_State* src, lua_State* dst);
 };

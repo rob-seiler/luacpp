@@ -4,6 +4,8 @@
 #include <luacpp/Table.hpp>
 #include <luacpp/Metatable.hpp>
 
+#include "TestSupport.hpp"
+
 namespace Lua {
 
 struct Vector {
@@ -37,8 +39,8 @@ TEST(MetatableTest, VectorUsage) {
         return 1;
     });
     const char* src = "v1 = createVector(1,2); v2 = createVector(3,4); result = v1 + v2";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    Vector* res = lua.readVariable<Vector*>("result");
+    lua.loadAndExecuteScript(src);
+    Vector* res = readVar<Vector*>(lua, "result");
     ASSERT_NE(res, nullptr);
     EXPECT_FLOAT_EQ(res->x, 4.0f);
     EXPECT_FLOAT_EQ(res->y, 6.0f);
@@ -54,8 +56,8 @@ TEST(MetatableTest, IntBoxUsage) {
         return 1;
     });
     const char* src = "b1 = createBox(5); b2 = createBox(7); result = b1 + b2";
-    EXPECT_EQ(lua.loadAndExecuteScript(src), 0);
-    IntBox* res = lua.readVariable<IntBox*>("result");
+    lua.loadAndExecuteScript(src);
+    IntBox* res = readVar<IntBox*>(lua, "result");
     ASSERT_NE(res, nullptr);
     EXPECT_EQ(res->value, 12);
 }
@@ -72,30 +74,29 @@ TEST(MetatableTest, VectorOtherOps) {
     });
 
     const char* subSrc = "v1 = createVector(5,7); v2 = createVector(2,3); result = v1 - v2";
-    EXPECT_EQ(lua.loadAndExecuteScript(subSrc), 0);
-    Vector* subRes = lua.readVariable<Vector*>("result");
+    lua.loadAndExecuteScript(subSrc);
+    Vector* subRes = readVar<Vector*>(lua, "result");
     ASSERT_NE(subRes, nullptr);
     EXPECT_FLOAT_EQ(subRes->x, 3.0f);
     EXPECT_FLOAT_EQ(subRes->y, 4.0f);
 
     const char* mulSrc = "v1 = createVector(2,3); v2 = createVector(3,4); result = v1 * v2";
-    EXPECT_EQ(lua.loadAndExecuteScript(mulSrc), 0);
-    Vector* mulRes = lua.readVariable<Vector*>("result");
+    lua.loadAndExecuteScript(mulSrc);
+    Vector* mulRes = readVar<Vector*>(lua, "result");
     ASSERT_NE(mulRes, nullptr);
     EXPECT_FLOAT_EQ(mulRes->x, 6.0f);
     EXPECT_FLOAT_EQ(mulRes->y, 12.0f);
 
     const char* unmSrc = "v1 = createVector(1,2); result = -v1";
-    EXPECT_EQ(lua.loadAndExecuteScript(unmSrc), 0);
-    Vector* unmRes = lua.readVariable<Vector*>("result");
+    lua.loadAndExecuteScript(unmSrc);
+    Vector* unmRes = readVar<Vector*>(lua, "result");
     ASSERT_NE(unmRes, nullptr);
     EXPECT_FLOAT_EQ(unmRes->x, -1.0f);
     EXPECT_FLOAT_EQ(unmRes->y, -2.0f);
 
     const char* eqSrc = "v1 = createVector(1,2); v2 = createVector(1,2); result = v1 == v2";
-    EXPECT_EQ(lua.loadAndExecuteScript(eqSrc), 0);
-    bool eqRes = lua.readVariable<bool>("result");
-    EXPECT_TRUE(eqRes);
+    lua.loadAndExecuteScript(eqSrc);
+    EXPECT_TRUE(readVar<bool>(lua, "result"));
 }
 
 TEST(MetatableTest, ErrorHandling_NilOperand) {
@@ -109,10 +110,10 @@ TEST(MetatableTest, ErrorHandling_NilOperand) {
         return 1;
     });
 
-    // Test with nil operand - should error, not crash
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 + nil";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);  // Should fail with error
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(MetatableTest, ErrorHandling_WrongType) {
@@ -133,9 +134,10 @@ TEST(MetatableTest, ErrorHandling_WrongType) {
     // avoid silently constructing a Vector from a scalar. Users who want a
     // real mixed-type operator must mark their ctor `explicit` or define
     // operator+(double) directly — see BindMixedOpTest for examples.)
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 + true";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);  // Should fail with error
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(MetatableTest, ErrorHandling_StringOperand) {
@@ -149,10 +151,10 @@ TEST(MetatableTest, ErrorHandling_StringOperand) {
         return 1;
     });
 
-    // Test with string operand - should error, not crash
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); result = v1 * 'hello'";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);  // Should fail with error
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(MetatableTest, ErrorHandling_TypeConfusion) {
@@ -175,10 +177,10 @@ TEST(MetatableTest, ErrorHandling_TypeConfusion) {
         return 1;
     });
 
-    // Test mixing different userdata types - should error, not corrupt memory
+    lua.setLogger(nullptr);
+    lua.installErrorHandler<ThrowHandler>();
     const char* src = "v1 = createVector(1,2); b1 = createBox(5); result = v1 + b1";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_NE(status, 0);  // Should fail with error due to type mismatch
+    EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(MetatableTest, DivisionByZero) {
@@ -196,10 +198,9 @@ TEST(MetatableTest, DivisionByZero) {
     // returns 0 per component, so the result is deterministic and free of
     // inf/nan.
     const char* src = "v1 = createVector(10,20); v2 = createVector(0,0); result = v1 / v2";
-    int status = lua.loadAndExecuteScript(src);
-    EXPECT_EQ(status, 0);
+    lua.loadAndExecuteScript(src);
 
-    Vector* res = lua.readVariable<Vector*>("result");
+    Vector* res = readVar<Vector*>(lua, "result");
     ASSERT_NE(res, nullptr);
     EXPECT_FLOAT_EQ(res->x, 0.0f);
     EXPECT_FLOAT_EQ(res->y, 0.0f);

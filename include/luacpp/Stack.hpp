@@ -3,6 +3,7 @@
 
 #include "Basics.hpp"
 
+#include <optional>
 #include <string>
 #include <type_traits>
 
@@ -87,6 +88,53 @@ struct Stack {
 			static_assert(sizeof(T) != sizeof(T), "Unsupported type");
 		}
 	}
+
+	/**
+	 * @brief Non-throwing read. Returns nullopt when the value at @p index
+	 *        does not match T:
+	 *          - class pointer T*: full userdata with a different (or no)
+	 *            metatable name yields nullopt
+	 *          - non-class pointer T* (void*, int*, …): anything other than
+	 *            Lua light userdata yields nullopt — full userdata is opaque
+	 *            without a metatable to identify the pointee type, so we
+	 *            refuse to misrepresent it as T*
+	 *          - value types: exact Lua-type match required (no number<->
+	 *            string coercion)
+	 *
+	 * Use at C++/host boundaries (readVariable) where a mismatch must be a
+	 * query result. get() is for callback context, where a mismatch should
+	 * raise a Lua error to the enclosing pcall.
+	 */
+	static std::optional<T> tryGet(lua_State* state, int index) {
+		if constexpr (std::is_pointer_v<T>) {
+			using PointeeType = std::remove_pointer_t<T>;
+			if constexpr (std::is_class_v<PointeeType>) {
+				static_assert(detail::metatable_visible<PointeeType>::value,
+					"Stack<T*>::tryGet for a class type requires "
+					"<luacpp/Metatable.hpp> to be included (typically pulled in "
+					"transitively via <luacpp/State.hpp>). Add the include and retry.");
+				void* ud = Basics::testUserData(state, index, Metatable<PointeeType>::metatableName());
+				if (ud == nullptr) return std::nullopt;
+				return static_cast<T>(ud);
+			} else {
+				// Non-class pointers — only accept light userdata. Full
+				// userdata has a metatable we have no way to verify here, so
+				// returning its raw pointer would silently violate the
+				// "wrong type → nullopt" contract this method advertises.
+				if (Basics::getType(state, index) != Type::LightUserData) {
+					return std::nullopt;
+				}
+				return static_cast<T>(Basics::asUserData(state, index));
+			}
+		} else {
+			// Value types: require an exact Lua-type match before extracting,
+			// so we don't lean on Lua's implicit number<->string coercion.
+			if (Basics::getTypeFor<T>() != Basics::getType(state, index)) {
+				return std::nullopt;
+			}
+			return get(state, index);
+		}
+	}
 };
 
 // Specialization for const std::string&
@@ -115,4 +163,4 @@ T getStackValue(lua_State* state, int index) {
 
 } // namespace Lua
 
-#endif // LUACPP_STACK_HPP
+#endif // LUACPP_STACK_HPP

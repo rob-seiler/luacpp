@@ -2,7 +2,7 @@
 
 #include <luacpp/State.hpp>
 
-#include <string>
+#include "TestSupport.hpp"
 
 namespace Lua {
 namespace {
@@ -11,35 +11,35 @@ class LibraryLoadingTest : public ::testing::Test {};
 
 TEST_F(LibraryLoadingTest, openLibrary_singleLibIsAvailable) {
 	State lua(State::LibMath);
-	EXPECT_EQ(lua.loadAndExecuteScript("hasMath = (math ~= nil)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("hasMath"));
+	lua.loadAndExecuteScript("hasMath = (math ~= nil)");
+	EXPECT_TRUE(readVar<bool>(lua, "hasMath"));
 }
 
 TEST_F(LibraryLoadingTest, openLibrary_unrequestedLibIsAbsent) {
 	State lua(State::LibMath);
-	EXPECT_EQ(lua.loadAndExecuteScript("hasIO = (io ~= nil)"), 0);
-	EXPECT_FALSE(lua.readVariable<bool>("hasIO"));
+	lua.loadAndExecuteScript("hasIO = (io ~= nil)");
+	EXPECT_FALSE(readVar<bool>(lua, "hasIO"));
 }
 
 TEST_F(LibraryLoadingTest, openLibrary_combinedMaskOpensExactlyThose) {
 	State lua(State::LibMath | State::LibString | State::LibTable);
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		opened = (math ~= nil) and (string ~= nil) and (table ~= nil)
 		closed = (io == nil) and (os == nil) and (coroutine == nil) and (debug == nil)
 		result = opened and closed
-	)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("result"));
+	)");
+	EXPECT_TRUE(readVar<bool>(lua, "result"));
 }
 
 TEST_F(LibraryLoadingTest, openLibrary_libAllOpensEverything) {
 	State lua(State::LibAll);
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		result =
 			math ~= nil and string ~= nil and table ~= nil and io ~= nil and
 			os ~= nil and coroutine ~= nil and utf8 ~= nil and debug ~= nil and
 			package ~= nil
-	)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("result"));
+	)");
+	EXPECT_TRUE(readVar<bool>(lua, "result"));
 }
 
 TEST_F(LibraryLoadingTest, openLibrary_libDebugBitOpensDebugNotSomethingElse) {
@@ -47,14 +47,14 @@ TEST_F(LibraryLoadingTest, openLibrary_libDebugBitOpensDebugNotSomethingElse) {
 	// LibDebug at bit 9 and LibTable at bit 3. Now LibDebug is at bit 3.
 	// This test pins that LibDebug really opens 'debug', not 'table' or 'utf8'.
 	State lua(State::LibDebug);
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		isDebug = (debug ~= nil)
 		isNotTable = (table == nil)
 		isNotUTF8 = (utf8 == nil)
-	)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("isDebug"));
-	EXPECT_TRUE(lua.readVariable<bool>("isNotTable"));
-	EXPECT_TRUE(lua.readVariable<bool>("isNotUTF8"));
+	)");
+	EXPECT_TRUE(readVar<bool>(lua, "isDebug"));
+	EXPECT_TRUE(readVar<bool>(lua, "isNotTable"));
+	EXPECT_TRUE(readVar<bool>(lua, "isNotUTF8"));
 }
 
 TEST_F(LibraryLoadingTest, preloadLibrary_notAvailableUntilRequire) {
@@ -62,25 +62,25 @@ TEST_F(LibraryLoadingTest, preloadLibrary_notAvailableUntilRequire) {
 	State lua(State::LibPackage);
 	lua.preloadLibrary(State::LibMath);
 
-	EXPECT_EQ(lua.loadAndExecuteScript("beforeRequire = (math == nil)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("beforeRequire"))
+	lua.loadAndExecuteScript("beforeRequire = (math == nil)");
+	EXPECT_TRUE(readVar<bool>(lua, "beforeRequire"))
 	    << "preloaded library must not be a global until require() is called";
 
-	EXPECT_EQ(lua.loadAndExecuteScript(
-		"local m = require('math'); afterRequire = (m.sqrt ~= nil)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("afterRequire"));
+	lua.loadAndExecuteScript(
+		"local m = require('math'); afterRequire = (m.sqrt ~= nil)");
+	EXPECT_TRUE(readVar<bool>(lua, "afterRequire"));
 }
 
 TEST_F(LibraryLoadingTest, preloadLibrary_combinedMask) {
 	State lua(State::LibPackage);
 	lua.preloadLibrary(State::LibMath | State::LibString);
 
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		local m = require('math')
 		local s = require('string')
 		result = (m.sqrt ~= nil) and (s.upper ~= nil)
-	)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("result"));
+	)");
+	EXPECT_TRUE(readVar<bool>(lua, "result"));
 }
 
 TEST_F(LibraryLoadingTest, openLibrary_andPreloadLibrary_coexist) {
@@ -88,23 +88,23 @@ TEST_F(LibraryLoadingTest, openLibrary_andPreloadLibrary_coexist) {
 	State lua(State::LibPackage | State::LibMath);
 	lua.preloadLibrary(State::LibString);
 
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		mathReady = (math ~= nil)
 		stringInitiallyAbsent = (string == nil)
 		local s = require('string')
 		stringNowReady = (s.upper ~= nil)
-	)"), 0);
-	EXPECT_TRUE(lua.readVariable<bool>("mathReady"));
-	EXPECT_TRUE(lua.readVariable<bool>("stringInitiallyAbsent"));
-	EXPECT_TRUE(lua.readVariable<bool>("stringNowReady"));
+	)");
+	EXPECT_TRUE(readVar<bool>(lua, "mathReady"));
+	EXPECT_TRUE(readVar<bool>(lua, "stringInitiallyAbsent"));
+	EXPECT_TRUE(readVar<bool>(lua, "stringNowReady"));
 }
 
 TEST_F(LibraryLoadingTest, addModuleSearchPath_prependsToPackagePath) {
 	State lua(State::LibPackage);
 	lua.addModuleSearchPath("/myapp/scripts/?.lua");
 
-	EXPECT_EQ(lua.loadAndExecuteScript("p = package.path"), 0);
-	const auto path = lua.readVariable<std::string>("p");
+	lua.loadAndExecuteScript("p = package.path");
+	const auto path = readVar<std::string>(lua, "p");
 	EXPECT_EQ(path.substr(0, 20), "/myapp/scripts/?.lua")
 	    << "pattern must be prepended to package.path";
 	EXPECT_EQ(path[20], ';') << "and separated from existing entries by ';'";
@@ -114,8 +114,8 @@ TEST_F(LibraryLoadingTest, addModuleSearchPath_forNativeModuleAffectsCPath) {
 	State lua(State::LibPackage);
 	lua.addModuleSearchPath("/myapp/native/?.so", /*forNativeModule=*/true);
 
-	EXPECT_EQ(lua.loadAndExecuteScript("c = package.cpath"), 0);
-	const auto cpath = lua.readVariable<std::string>("c");
+	lua.loadAndExecuteScript("c = package.cpath");
+	const auto cpath = readVar<std::string>(lua, "c");
 	EXPECT_EQ(cpath.substr(0, 18), "/myapp/native/?.so")
 	    << "pattern must be prepended to package.cpath when forNativeModule=true";
 }
@@ -124,12 +124,12 @@ TEST_F(LibraryLoadingTest, addModuleSearchPath_pathAndCPathStayIndependent) {
 	State lua(State::LibPackage);
 	lua.addModuleSearchPath("/lua-only/?.lua");
 
-	EXPECT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		p = package.path
 		c = package.cpath
-	)"), 0);
-	const auto path = lua.readVariable<std::string>("p");
-	const auto cpath = lua.readVariable<std::string>("c");
+	)");
+	const auto path = readVar<std::string>(lua, "p");
+	const auto cpath = readVar<std::string>(lua, "c");
 
 	EXPECT_NE(path.find("/lua-only/"), std::string::npos);
 	EXPECT_EQ(cpath.find("/lua-only/"), std::string::npos)
@@ -149,8 +149,8 @@ TEST_F(LibraryLoadingTest, addModuleSearchPath_multipleCallsAccumulateLatestFirs
 	lua.addModuleSearchPath("/first/?.lua");
 	lua.addModuleSearchPath("/second/?.lua");
 
-	EXPECT_EQ(lua.loadAndExecuteScript("p = package.path"), 0);
-	const auto path = lua.readVariable<std::string>("p");
+	lua.loadAndExecuteScript("p = package.path");
+	const auto path = readVar<std::string>(lua, "p");
 	const auto firstPos = path.find("/first/");
 	const auto secondPos = path.find("/second/");
 

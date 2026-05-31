@@ -15,8 +15,13 @@ And to read them back, `readVariable`:
 
 ```c++
 Lua::State state;
-double x = state.readVariable<double>("x");
+auto x = state.readVariable<double>("x"); // std::optional<double>
+if (x) {
+    // *x is the value
+}
 ```
+
+`readVariable` returns `std::optional<T>` so that "global not set" and "global has a different type" both surface as `nullopt` — querying for a value is not the same as treating its absence as an error.
 
 For interacting with function arguments and upvalues inside a callback there are dedicated helpers — `getArgument<T>(index)` and `getUpValue<T>(index)`.
 

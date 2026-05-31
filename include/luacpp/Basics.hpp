@@ -60,6 +60,8 @@ public:
 
 	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);
+	static int  getStackTop(lua_State* state);
+	static void setStackTop(lua_State* state, int newTop);
 
 	static void pushNil(lua_State* state);
 	static void pushBoolean(lua_State* state, bool value);
@@ -115,6 +117,20 @@ public:
 	 */
 	static void* checkUserData(lua_State* state, int index, const char* tname);
 
+	/**
+	 * @brief Get userdata pointer with type validation, WITHOUT throwing.
+	 * @param state The Lua state
+	 * @param index Stack index
+	 * @param tname Metatable name to check against
+	 * @return Pointer to validated userdata, or nullptr if the value is not
+	 *         userdata or carries a different metatable.
+	 * @note Wraps luaL_testudata. Use at C++/host boundaries (e.g. readVariable)
+	 *       where a type mismatch must be a query result, not a raised Lua
+	 *       error — raising here would have no enclosing pcall and would kill
+	 *       the program.
+	 */
+	static void* testUserData(lua_State* state, int index, const char* tname);
+
 	static bool asBoolean(lua_State* state, int index);
 	static double asNumber(lua_State* state, int index);
 	static int64_t asInteger(lua_State* state, int index);
@@ -139,4 +155,4 @@ public:
 
 } //namespace Lua
 
-#endif //LUACPP_BASICS_HPP
+#endif //LUACPP_BASICS_HPP

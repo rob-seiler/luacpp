@@ -2,8 +2,9 @@
 
 #include <luacpp/State.hpp>
 
+#include "TestSupport.hpp"
+
 #include <chrono>
-#include <string>
 #include <thread>
 
 namespace Lua {
@@ -33,12 +34,12 @@ TEST_F(UuidPluginTest, v4_returnsRfc4122FormattedString) {
 	State lua(State::LibBase | State::LibPackage);
 	addUuidModuleSearchPath(lua);
 
-	ASSERT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		local uuid = require("uuid")
 		id = uuid.v4()
-	)"), 0);
+	)");
 
-	const auto id = lua.readVariable<std::string>("id");
+	const auto id = readVar<std::string>(lua, "id");
 	ASSERT_EQ(id.size(), 36u) << "got: " << id;
 	EXPECT_EQ(id[8], '-');
 	EXPECT_EQ(id[13], '-');
@@ -53,10 +54,10 @@ TEST_F(UuidPluginTest, v7_hasVersion7AndTimeOrdering) {
 	State lua(State::LibBase | State::LibPackage);
 	addUuidModuleSearchPath(lua);
 
-	ASSERT_EQ(lua.loadAndExecuteScript(R"(
+	lua.loadAndExecuteScript(R"(
 		uuid = require("uuid")
 		a = uuid.v7()
-	)"), 0);
+	)");
 
 	// RFC 9562 v7 is monotonic across millisecond boundaries; within a
 	// single ms the trailing random bytes determine ordering, so two calls
@@ -64,10 +65,10 @@ TEST_F(UuidPluginTest, v7_hasVersion7AndTimeOrdering) {
 	// boundary to make the comparison below deterministic.
 	std::this_thread::sleep_for(std::chrono::milliseconds(2));
 
-	ASSERT_EQ(lua.loadAndExecuteScript("b = uuid.v7()"), 0);
+	lua.loadAndExecuteScript("b = uuid.v7()");
 
-	const auto a = lua.readVariable<std::string>("a");
-	const auto b = lua.readVariable<std::string>("b");
+	const auto a = readVar<std::string>(lua, "a");
+	const auto b = readVar<std::string>(lua, "b");
 
 	ASSERT_EQ(a.size(), 36u);
 	ASSERT_EQ(b.size(), 36u);
@@ -81,8 +82,10 @@ TEST_F(UuidPluginTest, requireFailsWithoutCustomCPath) {
 	// does not contain our build dir, so require("uuid") must fail. Confirms
 	// that the positive tests above genuinely exercise the path we set.
 	State lua(State::LibBase | State::LibPackage);
-	const int rc = lua.loadAndExecuteScript("loaded = require('uuid')");
-	EXPECT_NE(rc, 0) << "require should fail when the module path is not registered";
+	auto& errors = lua.installLogger<MemoryLogger>();
+	lua.loadAndExecuteScript("loaded = require('uuid')");
+	EXPECT_FALSE(errors.entries().empty())
+	    << "require should fail when the module path is not registered";
 }
 
 #endif // LUACPP_HAVE_UUID_MODULE

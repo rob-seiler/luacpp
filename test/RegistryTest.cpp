@@ -34,11 +34,11 @@ TEST_F(RegistryTest, setElement_getElement) {
 
 TEST_F(RegistryTest, loadScript) {
 	const char* script = "print(\"Hello, World!\")";
-	Registry::ErrorCode res = m_registry.loadScript(1, script);
-	ASSERT_EQ(res, Registry::ErrorCode::Ok);
+	LuaError::Status res = m_registry.loadScript(1, script);
+	ASSERT_EQ(res, LuaError::Status::Ok);
 
 	res = m_registry.getScript(1);
-	ASSERT_EQ(res, Registry::ErrorCode::Ok);
+	ASSERT_EQ(res, LuaError::Status::Ok);
 
 	//just test if the function gets executed
 	EXPECT_EQ(lua_pcall(m_state, 0, 0, 0), 0);
@@ -46,11 +46,26 @@ TEST_F(RegistryTest, loadScript) {
 
 TEST_F(RegistryTest, loadScript_invalidSyntax) {
 	const char* script = "print(\"Hello, World!\"";
-	Registry::ErrorCode res = m_registry.loadScript(1, script);
-	EXPECT_EQ(res, Registry::ErrorCode::SyntaxError);
+	LuaError::Status res = m_registry.loadScript(1, script);
+	EXPECT_EQ(res, LuaError::Status::SyntaxError);
 
 	res = m_registry.getScript(1);
-	EXPECT_EQ(res, Registry::ErrorCode::RuntimeError);
+	EXPECT_EQ(res, LuaError::Status::RuntimeError);
+}
+
+// Reviewer regression: the Generic-key overloads previously mapped any
+// unsupported key type (Nil, LightUserData, Table, ...) to MsgHandlerError
+// (LUA_ERRERR). That status means "error in the error handler" — nothing
+// to do with registry keys. InvalidKey is the honest classification.
+TEST_F(RegistryTest, loadScriptWithNilKeyReturnsInvalidKey) {
+	LuaError::Status res = m_registry.loadScript(Generic(nullptr), "x = 1");
+	EXPECT_EQ(res, LuaError::Status::InvalidKey);
+}
+
+TEST_F(RegistryTest, getScriptWithLightUserdataKeyReturnsInvalidKey) {
+	int dummy = 0;
+	LuaError::Status res = m_registry.getScript(Generic(static_cast<void*>(&dummy)));
+	EXPECT_EQ(res, LuaError::Status::InvalidKey);
 }
 
 TEST_F(RegistryTest, copyContent) {
@@ -81,4 +96,4 @@ TEST_F(RegistryTest, copyContent) {
 	lua_close(otherState);
 }
 
-} // namespace Lua
+} // namespace Lua
