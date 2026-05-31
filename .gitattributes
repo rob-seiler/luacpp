@@ -1,0 +1,11 @@
+# Repo convention: LF line endings for every text file.
+#
+# `text=auto` lets git detect text vs binary on add/checkout; `eol=lf` then
+# forces the stored and checked-out form to LF on every platform. Windows
+# checkouts will see LF in the working tree — no per-file CRLF flips, no
+# noisy whitespace diffs across platforms.
+
+* text=auto eol=lf
+
+# Binary blobs — never touch line endings.
+*.gz binary
