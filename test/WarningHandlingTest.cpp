@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <luacpp/Debug.hpp>
 #include <luacpp/State.hpp>
 #include <luacpp/WarningHandling.hpp>
+
+#include <lua/lua.hpp>
 
 #include <iostream>
 #include <sstream>
@@ -157,6 +160,49 @@ TEST(WarningLoggerTest, defaultLoggerWritesToCerrWithLuacppTag) {
 	EXPECT_NE(text.find("[lua warning]"),  std::string::npos)
 	    << "default logger should tag output so it's distinguishable";
 	EXPECT_NE(text.find("default-routed"), std::string::npos);
+}
+
+TEST(WarningLoggerTest, borrowedStateRejectsSetWarningLogger) {
+	// A State wrapping an externally-owned lua_State does not own the
+	// VM-global warning slot. Installing a sink there would clobber the
+	// owner's and dangle once the wrapper dies, so it is rejected outright.
+	lua_State* raw = luaL_newstate();
+	{
+		State borrowed(raw);
+		EXPECT_THROW(borrowed.setWarningLogger(std::make_unique<MemoryWarningLogger>()),
+		             std::logic_error);
+		EXPECT_THROW(borrowed.installWarningLogger<MemoryWarningLogger>(),
+		             std::logic_error);
+	}
+	lua_close(raw);
+}
+
+TEST(WarningLoggerTest, debugHookWrapperDoesNotClobberOwnersWarningLogger) {
+	// Regression: the debug-hook callback builds a transient State around the
+	// owner's lua_State. That borrowed wrapper must not touch lua_setwarnf —
+	// otherwise it overwrites the owner's sink and leaves a dangling `this`
+	// once the hook returns, so the next warn() would hit freed memory.
+	State lua(State::LibBase);
+	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+
+	int hookCalls = 0;
+	lua.registerDebugHook([&hookCalls](State&, const DebugInfo&) {
+		++hookCalls;  // a transient borrowed State is constructed for this call
+	}, MaskLine, 0);
+
+	// The hook fires per line; the warn() runs after several wrapper
+	// construct/destruct cycles. If any of them detached or replaced the
+	// owner's sink, this warning would be lost (or crash on a dangling this).
+	lua.loadAndExecuteScript(R"(
+		local a = 1
+		local b = 2
+		warn('still routed after hooks')
+	)");
+
+	EXPECT_GT(hookCalls, 0) << "debug hook should have fired";
+	ASSERT_EQ(warnings.entries().size(), 1u)
+	    << "owner's warning sink must survive the borrowed hook wrappers";
+	EXPECT_EQ(warnings.entries().front(), "still routed after hooks");
 }
 
 } // namespace

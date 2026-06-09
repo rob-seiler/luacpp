@@ -653,14 +653,20 @@ public:
 	/**
 	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
 	 *
-	 * Default = nullptr (warnings are off; Lua's warn() drops messages).
-	 * Installing a non-null logger turns warnings on implicitly — the act
-	 * of installing is the opt-in. Pass nullptr to detach the sink and
+	 * Owned States (constructed via State(Library)) start with a
+	 * StreamWarningLogger to std::cerr already installed; call this to swap
+	 * it. Installing a non-null logger turns warnings on implicitly — the
+	 * act of installing is the opt-in. Pass nullptr to detach the sink and
 	 * disable the warning system again.
 	 *
 	 * Scripts can still toggle reporting at runtime via the standard
 	 * control directives `warn("@off")` / `warn("@on")` even after a
 	 * logger is installed.
+	 *
+	 * \throws std::logic_error if called on a borrowed State (one
+	 *         constructed from an existing lua_State*). The warning slot is
+	 *         VM-global and belongs to the lua_State's creator; a borrowed
+	 *         wrapper must not install or replace it.
 	 *
 	 * \see WarningHandling.hpp for WarningLogger implementations
 	 *      (Stream/Memory/Callback variants).
@@ -669,6 +675,7 @@ public:
 
 	/// Convenience: construct a WarningLogger in place, install it, return
 	/// a reference for later inspection (typically MemoryWarningLogger).
+	/// Throws std::logic_error on a borrowed State, like setWarningLogger.
 	template <typename LoggerT, typename... Args>
 	LoggerT& installWarningLogger(Args&&... args) {
 		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);

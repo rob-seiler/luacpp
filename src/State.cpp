@@ -2,6 +2,7 @@
 #include <lua/lua.hpp>
 
 #include <cassert>
+#include <stdexcept> //std::logic_error
 #include <string>
 #include <limits> //std::numeric_limits
 
@@ -61,7 +62,11 @@ State::State(lua_State* state)
   m_errorLogger(std::make_unique<StreamLogger>()),
   m_errorHandler(nullptr)
 {
-	setWarningLogger(std::make_unique<StreamWarningLogger>());
+	// Deliberately no setWarningLogger here. lua_setwarnf is a single,
+	// VM-global slot owned by whoever created the lua_State. A borrowed
+	// wrapper (e.g. the transient State built around the debug-hook
+	// lua_State below) must not clobber it: doing so would overwrite the
+	// owner's sink and leave a dangling `this` once the wrapper dies.
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
@@ -73,6 +78,16 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
+	if (m_externalState) {
+		// The warning sink belongs to the lua_State's creator. A borrowed
+		// State has no owned slot to install into and could not clean up
+		// after itself either — there is no lua_getwarnf to restore a prior
+		// sink, so detaching on destruction would silently wipe the owner's.
+		throw std::logic_error(
+			"State::setWarningLogger: the warning sink is owned by the "
+			"lua_State's creator; a borrowed State (constructed from an "
+			"existing lua_State*) must not install or replace it");
+	}
 	m_warningLogger = std::move(logger);
 	m_warningBuffer.clear();
 	if (m_warningLogger) {
@@ -163,6 +178,10 @@ LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Stat
 
 State::~State() {
 	if (!m_externalState) {
+		// We own the VM: detach our trampoline before tearing it down so a
+		// warning fired during finalization can never reach a half-destroyed
+		// State. Belt-and-braces — lua_close follows immediately.
+		lua_setwarnf(m_state, nullptr, nullptr);
 		lua_close(m_state);
 		auto res = s_debugHooks.find(m_state);
 		if (res != s_debugHooks.end()) {
