@@ -21,6 +21,14 @@ bool hasInlineStorage(const std::string& s) {
 // negative values) carries its message inline and must NOT trigger a
 // stack pop — luaL_tolstring on whatever happens to be at -1 would
 // stringify a bogus value (or push nil on an empty stack).
+// Registry key (unique by address) under which an owning State stashes a
+// pointer to its ErrorPolicy, so borrowed wrappers of the same VM recover it.
+// The registry is per-VM and shared across coroutine threads, and reliably
+// reads nil when absent. (lua_getextraspace is unusable for this: lua_newstate
+// leaves it uninitialized — only thread copies are memcpy'd — so it cannot be
+// told apart from garbage on a foreign lua_State.)
+const char kErrorPolicyKey = 0;
+
 bool hasStackError(Lua::LuaError::Status s) {
 	using S = Lua::LuaError::Status;
 	switch (s) {
@@ -38,15 +46,14 @@ bool hasStackError(Lua::LuaError::Status s) {
 
 namespace Lua {
 
-std::map<lua_State*, State::DebugHookEntry> State::s_debugHooks;
+std::map<lua_State*, State::DebugHook> State::s_debugHooks;
 
 State::State(Library libraries)
 : m_state(luaL_newstate()),
   m_registry(m_state),
-  m_externalState(false),
-  m_errorPolicy(std::make_shared<ErrorPolicy>())
+  m_externalState(false)
 {
-	m_errorPolicy->logger = std::make_unique<StreamLogger>();
+	setupErrorPolicy(/*ownsVm=*/true);
 	// Default warning sink mirrors the error path: loud-to-cerr by default,
 	// users override via setWarningLogger / installWarningLogger. Without
 	// this, Lua 5.5's own warnfon would print to stderr in a different
@@ -58,34 +65,51 @@ State::State(Library libraries)
 State::State(lua_State* state)
 : m_state(state),
   m_registry(state),
-  m_externalState(true),
-  m_errorPolicy(std::make_shared<ErrorPolicy>())
+  m_externalState(true)
 {
-	// Borrowed wrapper around a user-created lua_State: there is no owner to
-	// inherit a policy from, so start with the library default (loud cerr
-	// logger, no handler), matching an owned State's baseline.
-	m_errorPolicy->logger = std::make_unique<StreamLogger>();
+	// Borrowed wrapper: if this VM was created by a luacpp State it published
+	// its error policy in the lua_State's extra space, and we share it — so
+	// the per-call wrappers the bind/metatable layer and the debug hook build
+	// honor the configured logger/handler instead of fresh defaults. A
+	// foreign lua_State (nothing published) gives us a private default.
+	setupErrorPolicy(/*ownsVm=*/false);
 
 	// Deliberately no setWarningLogger here. lua_setwarnf is a single,
 	// VM-global slot owned by whoever created the lua_State. A borrowed
-	// wrapper (e.g. the transient State built around the debug-hook
-	// lua_State below) must not clobber it: doing so would overwrite the
-	// owner's sink and leave a dangling `this` once the wrapper dies.
+	// wrapper (e.g. the transient State the bind layer builds per call) must
+	// not clobber it: that would overwrite the owner's sink and leave a
+	// dangling `this` once the wrapper dies.
 }
 
-State::State(lua_State* state, std::shared_ptr<ErrorPolicy> sharedErrorPolicy)
-: m_state(state),
-  m_registry(state),
-  m_externalState(true),
-  m_errorPolicy(std::move(sharedErrorPolicy))
-{
-	// Shares the owner's error policy: errors reported through this wrapper
-	// reach the same logger/handler the VM was configured with. Caveat: a
-	// throwing handler invoked from inside the debug hook unwinds into Lua's
-	// own catch(...) (ldo.c LUAI_TRY), which demotes it to a generic error
-	// status — the exception resurfaces cleanly at the outer API boundary.
-	// No setWarningLogger: the warn slot stays owned by the VM's creator.
-	if (!m_errorPolicy) m_errorPolicy = std::make_shared<ErrorPolicy>();
+void State::setupErrorPolicy(bool ownsVm) {
+	if (!ownsVm) {
+		// Recover a policy published by the owning State. Stack-neutral:
+		// lua_rawgetp pushes the value, we read and pop it.
+		const int t = lua_rawgetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
+		ErrorPolicy* shared = (t == LUA_TLIGHTUSERDATA)
+			? static_cast<ErrorPolicy*>(lua_touserdata(m_state, -1))
+			: nullptr;
+		lua_pop(m_state, 1);
+		if (shared) {
+			m_errorPolicy = shared;      // share the owning State's policy
+			return;
+		}
+	}
+
+	// Own a fresh policy: either we created the VM, or we borrowed one with no
+	// luacpp policy published. Baseline matches the documented default: a loud
+	// StreamLogger to cerr and no handler.
+	m_ownedPolicy = std::make_unique<ErrorPolicy>();
+	m_ownedPolicy->logger = std::make_unique<StreamLogger>();
+	m_errorPolicy = m_ownedPolicy.get();
+
+	if (ownsVm) {
+		// Publish for borrowed wrappers (bind/metatable per-call States, debug
+		// hook) of this VM. lua_close drops the registry entry; the policy
+		// itself outlives every such wrapper because we own the VM.
+		lua_pushlightuserdata(m_state, m_errorPolicy);
+		lua_rawsetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
+	}
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
@@ -324,16 +348,15 @@ void State::registerMethod(const char* name, Method method) {
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	// Capture the owner's error policy alongside the hook so the per-call
-	// wrapper below reports through the configured logger/handler.
-	s_debugHooks[m_state] = DebugHookEntry{std::move(hook), m_errorPolicy};
+	s_debugHooks[m_state] = hook;
 
-	// The C hook function
+	// The C hook function. The State(L) wrapper inherits this VM's error
+	// policy via the registry (published by the owning State).
 	auto chook = [](lua_State* L, lua_Debug* ar) {
 		auto res = s_debugHooks.find(L);
 		if (res != s_debugHooks.end()) {
-			State state(L, res->second.errorPolicy); // shares the owner's policy
-			res->second.hook(state, reinterpret_cast<const DebugInfo&>(*ar));
+			State state(L);
+			res->second(state, reinterpret_cast<const DebugInfo&>(*ar));
 		}
 	};
 

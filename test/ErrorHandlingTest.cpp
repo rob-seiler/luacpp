@@ -310,6 +310,23 @@ TEST(ErrorPolicyTest, debugHookWrapperSharesOwnersErrorPolicy) {
 	    << "owner's error handler must also observe the hook-reported error";
 }
 
+TEST(ErrorPolicyTest, borrowedWrapperOfOwnedVmSharesPolicyViaRegistry) {
+	// An owned State publishes its error policy under a private registry key;
+	// any borrowed wrapper of the SAME lua_State recovers it. This is the
+	// mechanism the bind/metatable layer and the debug hook rely on.
+	State owner(State::LibBase);
+	auto& log = owner.installLogger<MemoryLogger>();
+
+	{
+		State borrowed(owner.getState());        // wraps the owner's lua_State
+		borrowed.loadAndExecuteScript("x =");    // syntax error -> reported
+	} // borrowed must NOT detach/free anything it shares
+
+	ASSERT_FALSE(log.entries().empty())
+	    << "a borrowed wrapper of a luacpp-owned VM must share the owner's policy";
+	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
+}
+
 TEST(ErrorPolicyTest, borrowedStateAcceptsItsOwnErrorPolicy) {
 	// Unlike setWarningLogger (which throws on a borrowed State because the
 	// warn slot is VM-global), the error logger/handler are plain policy

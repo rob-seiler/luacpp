@@ -816,32 +816,28 @@ private:
 	*/
 	int callFunction(int numArgs, int numResults);
 
-	// A debug hook plus the owner's error policy, captured at registration.
-	// The trampoline builds a transient State around the hook's lua_State and
-	// hands it this policy, so a hook callback reports through the same
-	// logger/handler the VM was configured with (not fresh defaults).
-	struct DebugHookEntry {
-		DebugHook hook;
-		std::shared_ptr<ErrorPolicy> errorPolicy;
-	};
-	static std::map<lua_State*, DebugHookEntry> s_debugHooks; ///< one per lua state
+	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
 
-	// Borrowed-State ctor that shares an existing error policy. Used by the
-	// debug-hook trampoline so the per-call wrapper inherits the owner's
-	// logger/handler instead of installing silent defaults. Private: callers
-	// use State(Library) (owned) or State(lua_State*) (borrowed, own policy).
-	State(lua_State* state, std::shared_ptr<ErrorPolicy> sharedErrorPolicy);
+	// Resolves the error policy at construction. An owned State allocates a
+	// policy and publishes a pointer to it under a private registry key, so
+	// any borrowed wrapper of the same VM — the per-call State(lvm) the
+	// bind/metatable layer and the debug hook build — shares it. A borrowed
+	// wrapper of a foreign lua_State (none published) owns a private default
+	// instead. ownsVm == !m_externalState.
+	void setupErrorPolicy(bool ownsVm);
 
 	lua_State* m_state; ///< instance of the lua virtual machine
 	Registry m_registry; ///< registry for user defined functions
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
 
-	// Error response, shared per-VM. A borrowed State (e.g. the debug-hook
-	// wrapper) points at the owner's instance so callbacks honor the
-	// configured logger/handler. shared_ptr so the policy outlives any
-	// transient wrapper that still references it. Never null after construction.
-	std::shared_ptr<ErrorPolicy> m_errorPolicy;
+	// Per-VM error response (passive logger + active handler). m_ownedPolicy
+	// is non-null only when this State owns the policy (it created the VM, or
+	// it borrowed a VM that had none published); otherwise the policy lives in
+	// the owning State and we only view it. m_errorPolicy is the active view —
+	// always valid after construction — and is what report/set* go through.
+	std::unique_ptr<ErrorPolicy> m_ownedPolicy;
+	ErrorPolicy*                 m_errorPolicy = nullptr;
 
 	// Lua warning system state. m_warningBuffer assembles multi-piece
 	// messages (Lua may split a single warn() across several callbacks).
