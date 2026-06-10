@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <luacpp/Debug.hpp>
 #include <luacpp/ErrorHandling.hpp>
 #include <luacpp/State.hpp>
+
+#include <lua/lua.hpp>
 
 #include <memory>
 #include <sstream>
@@ -270,6 +273,56 @@ TEST(StateErrorSlotsTest, customCallbackHandlerCanInspectAndThrowConditionally) 
 
 	// Load error (syntax): callback throws.
 	EXPECT_THROW(lua.loadAndExecuteScript("x ="), LuaException);
+}
+
+// ---------------------------------------------------------------------------
+// Per-VM error policy sharing (owned State <-> borrowed debug-hook wrapper)
+// ---------------------------------------------------------------------------
+
+TEST(ErrorPolicyTest, debugHookWrapperSharesOwnersErrorPolicy) {
+	// The debug-hook trampoline builds a transient borrowed State around the
+	// owner's lua_State. It must share the owner's logger/handler — otherwise
+	// an error reported from inside a hook would silently hit fresh defaults
+	// (cerr logger, no handler) instead of the configured policy.
+	State lua(State::LibBase);
+	auto& log = lua.installLogger<MemoryLogger>();
+
+	int handlerHits = 0;
+	lua.installErrorHandler<CallbackHandler>(
+	    [&handlerHits](const LuaError&) { ++handlerHits; }); // non-throwing on purpose
+
+	bool triggered = false;
+	lua.registerDebugHook([&triggered](State& hooked, const DebugInfo&) {
+		if (triggered) return;       // Lua disables reentrant hooks, but be explicit
+		triggered = true;
+		// Report an error *through the borrowed wrapper*. A syntax error fails
+		// at load time (no nested execution), so the stack stays balanced.
+		hooked.loadAndExecuteScript("this is not valid lua %%%");
+	}, MaskLine, 0);
+
+	lua.loadAndExecuteScript("local a = 1");
+
+	EXPECT_TRUE(triggered) << "debug hook should have fired";
+	ASSERT_FALSE(log.entries().empty())
+	    << "error reported from inside the hook must reach the OWNER's logger";
+	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
+	EXPECT_GE(handlerHits, 1)
+	    << "owner's error handler must also observe the hook-reported error";
+}
+
+TEST(ErrorPolicyTest, borrowedStateAcceptsItsOwnErrorPolicy) {
+	// Unlike setWarningLogger (which throws on a borrowed State because the
+	// warn slot is VM-global), the error logger/handler are plain policy
+	// objects — a borrowed State has its own and may configure them freely.
+	lua_State* raw = luaL_newstate();
+	{
+		State borrowed(raw);
+		auto& log = borrowed.installLogger<MemoryLogger>();
+		borrowed.loadAndExecuteScript("x =");   // syntax error -> reported
+		EXPECT_FALSE(log.entries().empty())
+		    << "borrowed State's own logger must record its reported errors";
+	}
+	lua_close(raw);
 }
 
 } // namespace

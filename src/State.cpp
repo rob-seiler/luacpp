@@ -38,15 +38,15 @@ bool hasStackError(Lua::LuaError::Status s) {
 
 namespace Lua {
 
-std::map<lua_State*, State::DebugHook> State::s_debugHooks;
+std::map<lua_State*, State::DebugHookEntry> State::s_debugHooks;
 
 State::State(Library libraries)
 : m_state(luaL_newstate()),
   m_registry(m_state),
   m_externalState(false),
-  m_errorLogger(std::make_unique<StreamLogger>()),
-  m_errorHandler(nullptr)
+  m_errorPolicy(std::make_shared<ErrorPolicy>())
 {
+	m_errorPolicy->logger = std::make_unique<StreamLogger>();
 	// Default warning sink mirrors the error path: loud-to-cerr by default,
 	// users override via setWarningLogger / installWarningLogger. Without
 	// this, Lua 5.5's own warnfon would print to stderr in a different
@@ -59,9 +59,13 @@ State::State(lua_State* state)
 : m_state(state),
   m_registry(state),
   m_externalState(true),
-  m_errorLogger(std::make_unique<StreamLogger>()),
-  m_errorHandler(nullptr)
+  m_errorPolicy(std::make_shared<ErrorPolicy>())
 {
+	// Borrowed wrapper around a user-created lua_State: there is no owner to
+	// inherit a policy from, so start with the library default (loud cerr
+	// logger, no handler), matching an owned State's baseline.
+	m_errorPolicy->logger = std::make_unique<StreamLogger>();
+
 	// Deliberately no setWarningLogger here. lua_setwarnf is a single,
 	// VM-global slot owned by whoever created the lua_State. A borrowed
 	// wrapper (e.g. the transient State built around the debug-hook
@@ -69,12 +73,27 @@ State::State(lua_State* state)
 	// owner's sink and leave a dangling `this` once the wrapper dies.
 }
 
+State::State(lua_State* state, std::shared_ptr<ErrorPolicy> sharedErrorPolicy)
+: m_state(state),
+  m_registry(state),
+  m_externalState(true),
+  m_errorPolicy(std::move(sharedErrorPolicy))
+{
+	// Shares the owner's error policy: errors reported through this wrapper
+	// reach the same logger/handler the VM was configured with. Caveat: a
+	// throwing handler invoked from inside the debug hook unwinds into Lua's
+	// own catch(...) (ldo.c LUAI_TRY), which demotes it to a generic error
+	// status — the exception resurfaces cleanly at the outer API boundary.
+	// No setWarningLogger: the warn slot stays owned by the VM's creator.
+	if (!m_errorPolicy) m_errorPolicy = std::make_shared<ErrorPolicy>();
+}
+
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
-	m_errorLogger = std::move(logger);
+	m_errorPolicy->logger = std::move(logger);
 }
 
 void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
-	m_errorHandler = std::move(handler);
+	m_errorPolicy->handler = std::move(handler);
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
@@ -154,8 +173,8 @@ LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status 
 }
 
 void State::reportError(LuaError err) {
-	if (m_errorLogger)  m_errorLogger->log(err);
-	if (m_errorHandler) (*m_errorHandler)(err);
+	if (m_errorPolicy->logger)  m_errorPolicy->logger->log(err);
+	if (m_errorPolicy->handler) (*m_errorPolicy->handler)(err);
 }
 
 LuaError::Status State::reportStatus(LuaError::Category category, int rawStatus) {
@@ -305,14 +324,16 @@ void State::registerMethod(const char* name, Method method) {
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	s_debugHooks[m_state] = hook;
+	// Capture the owner's error policy alongside the hook so the per-call
+	// wrapper below reports through the configured logger/handler.
+	s_debugHooks[m_state] = DebugHookEntry{std::move(hook), m_errorPolicy};
 
 	// The C hook function
 	auto chook = [](lua_State* L, lua_Debug* ar) {
 		auto res = s_debugHooks.find(L);
 		if (res != s_debugHooks.end()) {
-			State state(L);
-			res->second(state, reinterpret_cast<const DebugInfo&>(*ar));
+			State state(L, res->second.errorPolicy); // shares the owner's policy
+			res->second.hook(state, reinterpret_cast<const DebugInfo&>(*ar));
 		}
 	};
 

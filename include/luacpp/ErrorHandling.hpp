@@ -229,6 +229,21 @@ private:
 	std::function<void(const LuaError&)> m_callback;
 };
 
+// ---------------------------------------------------------------------------
+// ErrorPolicy — the per-VM error response: passive logger + active handler.
+//
+// Bundled so it can be shared (via shared_ptr) between the owning State and
+// any borrowed State that wraps the same lua_State — notably the transient
+// wrapper Lua builds for a debug hook. A callback therefore observes the
+// same logging/handling the VM was configured with, instead of silently
+// falling back to a fresh StreamLogger + null handler.
+// ---------------------------------------------------------------------------
+
+struct ErrorPolicy {
+	std::unique_ptr<ErrorLogger>  logger  = nullptr; ///< passive observer; may be null
+	std::unique_ptr<ErrorHandler> handler = nullptr; ///< active reaction; may be null
+};
+
 } // namespace Lua
 
 #endif // LUACPP_ERRORHANDLING_HPP

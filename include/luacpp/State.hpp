@@ -614,6 +614,10 @@ public:
 	 * Default-constructed States carry a StreamLogger writing to std::cerr.
 	 * Pass nullptr to silence logging entirely.
 	 *
+	 * The logger (and handler) are part of a per-VM ErrorPolicy: a State
+	 * passed to a debug-hook callback shares the owning State's policy, so
+	 * configuring it here is observed from inside hooks too.
+	 *
 	 * \see ErrorHandling.hpp
 	 */
 	void setLogger(std::unique_ptr<ErrorLogger> logger);
@@ -812,14 +816,32 @@ private:
 	*/
 	int callFunction(int numArgs, int numResults);
 
-	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
+	// A debug hook plus the owner's error policy, captured at registration.
+	// The trampoline builds a transient State around the hook's lua_State and
+	// hands it this policy, so a hook callback reports through the same
+	// logger/handler the VM was configured with (not fresh defaults).
+	struct DebugHookEntry {
+		DebugHook hook;
+		std::shared_ptr<ErrorPolicy> errorPolicy;
+	};
+	static std::map<lua_State*, DebugHookEntry> s_debugHooks; ///< one per lua state
+
+	// Borrowed-State ctor that shares an existing error policy. Used by the
+	// debug-hook trampoline so the per-call wrapper inherits the owner's
+	// logger/handler instead of installing silent defaults. Private: callers
+	// use State(Library) (owned) or State(lua_State*) (borrowed, own policy).
+	State(lua_State* state, std::shared_ptr<ErrorPolicy> sharedErrorPolicy);
 
 	lua_State* m_state; ///< instance of the lua virtual machine
 	Registry m_registry; ///< registry for user defined functions
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
-	std::unique_ptr<ErrorLogger>  m_errorLogger;  ///< passive observer; may be null
-	std::unique_ptr<ErrorHandler> m_errorHandler; ///< active reaction; may be null
+
+	// Error response, shared per-VM. A borrowed State (e.g. the debug-hook
+	// wrapper) points at the owner's instance so callbacks honor the
+	// configured logger/handler. shared_ptr so the policy outlives any
+	// transient wrapper that still references it. Never null after construction.
+	std::shared_ptr<ErrorPolicy> m_errorPolicy;
 
 	// Lua warning system state. m_warningBuffer assembles multi-piece
 	// messages (Lua may split a single warn() across several callbacks).
