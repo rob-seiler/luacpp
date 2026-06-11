@@ -68,8 +68,8 @@ State::State(lua_State* state)
   m_externalState(true)
 {
 	// Borrowed wrapper: if this VM was created by a luacpp State it published
-	// its error policy in the lua_State's extra space, and we share it — so
-	// the per-call wrappers the bind/metatable layer and the debug hook build
+	// its error policy under a private registry key, and we share it — so the
+	// per-call wrappers the bind/metatable layer and the debug hook build
 	// honor the configured logger/handler instead of fresh defaults. A
 	// foreign lua_State (nothing published) gives us a private default.
 	setupErrorPolicy(/*ownsVm=*/false);
@@ -83,31 +83,30 @@ State::State(lua_State* state)
 
 void State::setupErrorPolicy(bool ownsVm) {
 	if (!ownsVm) {
-		// Recover a policy published by the owning State. Stack-neutral:
-		// lua_rawgetp pushes the value, we read and pop it.
+		// Recover the shared_ptr the owning State published and copy it, so
+		// the policy stays alive even if this wrapper outlives the owner.
+		// Stack-neutral: lua_rawgetp pushes the value, we read and pop it.
 		const int t = lua_rawgetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
-		ErrorPolicy* shared = (t == LUA_TLIGHTUSERDATA)
-			? static_cast<ErrorPolicy*>(lua_touserdata(m_state, -1))
-			: nullptr;
-		lua_pop(m_state, 1);
-		if (shared) {
-			m_errorPolicy = shared;      // share the owning State's policy
-			return;
+		if (t == LUA_TLIGHTUSERDATA) {
+			m_errorPolicy = *static_cast<std::shared_ptr<ErrorPolicy>*>(
+				lua_touserdata(m_state, -1));
 		}
+		lua_pop(m_state, 1);
+		if (m_errorPolicy) return;       // shared the owning State's policy
 	}
 
 	// Own a fresh policy: either we created the VM, or we borrowed one with no
 	// luacpp policy published. Baseline matches the documented default: a loud
 	// StreamLogger to cerr and no handler.
-	m_ownedPolicy = std::make_unique<ErrorPolicy>();
-	m_ownedPolicy->logger = std::make_unique<StreamLogger>();
-	m_errorPolicy = m_ownedPolicy.get();
+	m_errorPolicy = std::make_shared<ErrorPolicy>();
+	m_errorPolicy->logger = std::make_unique<StreamLogger>();
 
 	if (ownsVm) {
-		// Publish for borrowed wrappers (bind/metatable per-call States, debug
-		// hook) of this VM. lua_close drops the registry entry; the policy
-		// itself outlives every such wrapper because we own the VM.
-		lua_pushlightuserdata(m_state, m_errorPolicy);
+		// Publish a heap-held copy of the shared_ptr so borrowed wrappers
+		// (bind/metatable per-call States, debug hook) share ownership. The
+		// holder is freed in ~State after lua_close — see the destructor.
+		lua_pushlightuserdata(m_state,
+			new std::shared_ptr<ErrorPolicy>(m_errorPolicy));
 		lua_rawsetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
 	}
 }
@@ -221,11 +220,24 @@ LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Stat
 
 State::~State() {
 	if (!m_externalState) {
+		// Grab the heap-held policy shared_ptr (published in setupErrorPolicy)
+		// before the VM and its registry are gone. Freed *after* lua_close so
+		// finalizers running during close can still copy it; any borrowed
+		// wrapper that did so keeps the policy alive via its own shared_ptr.
+		std::shared_ptr<ErrorPolicy>* policyHolder = nullptr;
+		if (lua_rawgetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey) == LUA_TLIGHTUSERDATA) {
+			policyHolder = static_cast<std::shared_ptr<ErrorPolicy>*>(
+				lua_touserdata(m_state, -1));
+		}
+		lua_pop(m_state, 1);
+
 		// We own the VM: detach our trampoline before tearing it down so a
 		// warning fired during finalization can never reach a half-destroyed
 		// State. Belt-and-braces — lua_close follows immediately.
 		lua_setwarnf(m_state, nullptr, nullptr);
 		lua_close(m_state);
+		delete policyHolder;
+
 		auto res = s_debugHooks.find(m_state);
 		if (res != s_debugHooks.end()) {
 			s_debugHooks.erase(res);

@@ -327,6 +327,22 @@ TEST(ErrorPolicyTest, borrowedWrapperOfOwnedVmSharesPolicyViaRegistry) {
 	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
 }
 
+TEST(ErrorPolicyTest, sharedPolicyOutlivesOwnerDestruction) {
+	// A borrowed wrapper that shared the owner's policy holds a shared_ptr to
+	// it, so configuring the wrapper after the owner is gone must not touch
+	// freed memory. (The lua_State is closed with the owner, so only the
+	// pure-policy ops setLogger/setErrorHandler are meaningful here — these
+	// are exactly the ones a raw view pointer would have made a use-after-free.)
+	std::unique_ptr<State> borrowed;
+	{
+		State owner(State::LibBase);
+		borrowed = std::make_unique<State>(owner.getState()); // shares the policy
+	} // owner destroyed: lua_close + frees its registry-held shared_ptr
+
+	EXPECT_NO_THROW(borrowed->setLogger(std::make_unique<MemoryLogger>()));
+	EXPECT_NO_THROW(borrowed->setErrorHandler(std::make_unique<ThrowHandler>()));
+}
+
 TEST(ErrorPolicyTest, borrowedStateAcceptsItsOwnErrorPolicy) {
 	// Unlike setWarningLogger (which throws on a borrowed State because the
 	// warn slot is VM-global), the error logger/handler are plain policy

@@ -831,13 +831,11 @@ private:
 	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
 	std::vector<Method> m_callbacks; ///< list of registered methods
 
-	// Per-VM error response (passive logger + active handler). m_ownedPolicy
-	// is non-null only when this State owns the policy (it created the VM, or
-	// it borrowed a VM that had none published); otherwise the policy lives in
-	// the owning State and we only view it. m_errorPolicy is the active view —
-	// always valid after construction — and is what report/set* go through.
-	std::unique_ptr<ErrorPolicy> m_ownedPolicy;
-	ErrorPolicy*                 m_errorPolicy = nullptr;
+	// Per-VM error response (passive logger + active handler), shared between
+	// the owning State and any borrowed wrapper of the same lua_State. Held by
+	// shared_ptr — not a raw view — so the policy survives even if a borrowed
+	// wrapper outlives the owner. Never null after construction.
+	std::shared_ptr<ErrorPolicy> m_errorPolicy;
 
 	// Lua warning system state. m_warningBuffer assembles multi-piece
 	// messages (Lua may split a single warn() across several callbacks).
