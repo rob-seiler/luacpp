@@ -237,6 +237,14 @@ public:
 		registerNativeFunction(name, func, sizeof...(args));
 	}
 
+	/**
+	 * @brief Register a C++ callable to be callable from Lua under `name`.
+	 *
+	 * \throws std::logic_error if called on a borrowed State (one constructed
+	 *         from an existing lua_State*). The closure captures `this` and the
+	 *         callback list is instance-local, so only the State that owns the
+	 *         lua_State may register methods.
+	 */
 	void registerMethod(const char* name, Method method);
 
 	/**
@@ -252,6 +260,10 @@ public:
 	 * @param hook The function to call
 	 * @param mask The mask of events for which the hook should be called
 	 * @param count The number of instructions between each call of the hook
+	 * \throws std::logic_error if called on a borrowed State (one constructed
+	 *         from an existing lua_State*). The hook entry is keyed by the
+	 *         lua_State in a process-wide table that only an owning State's
+	 *         destructor cleans up, so only the owner may register hooks.
 	*/
 	void registerDebugHook(DebugHook hook, int mask, int count = 0);
 

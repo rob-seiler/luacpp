@@ -355,11 +355,32 @@ void State::registerNativeFunction(const char* name, NativeFunction func, int nu
 }
 
 void State::registerMethod(const char* name, Method method) {
+	if (m_externalState) {
+		// dispatchMethod captures `this` as a Lua upvalue and m_callbacks is
+		// instance-local; a borrowed State (especially a transient bind/hook
+		// wrapper) would leave the closure pointing at a freed object once it
+		// dies. Registration belongs to the State that owns the VM.
+		throw std::logic_error(
+			"State::registerMethod: methods may only be registered on a State "
+			"that owns its lua_State, not on a borrowed wrapper (one "
+			"constructed from an existing lua_State*)");
+	}
 	m_callbacks.push_back(method);
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
+	if (m_externalState) {
+		// The hook entry is keyed by m_state in the process-wide s_debugHooks
+		// and only erased by an owning State's destructor; a borrowed wrapper
+		// would leak its entry and leave lua_sethook set, so a later VM at the
+		// same address would fire a stale hook. Registration belongs to the
+		// State that owns the VM.
+		throw std::logic_error(
+			"State::registerDebugHook: hooks may only be registered on a State "
+			"that owns its lua_State, not on a borrowed wrapper (one "
+			"constructed from an existing lua_State*)");
+	}
 	s_debugHooks[m_state] = hook;
 
 	// The C hook function. The State(L) wrapper inherits this VM's error

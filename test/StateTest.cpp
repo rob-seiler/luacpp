@@ -6,6 +6,7 @@
 #include "TestSupport.hpp"
 
 #include <array>
+#include <stdexcept>
 #if LUACPP_HAS_SPAN
 #include <span>
 #endif
@@ -422,6 +423,28 @@ TEST_F(StateTest, registerDebugHook) {
 	}, MaskLine, 0);
 	script.loadAndExecuteScript(src);
 	EXPECT_EQ(callCount, 3);
+}
+
+TEST_F(StateTest, registerMethodRejectedOnBorrowedState) {
+	// A borrowed wrapper must not register methods: dispatchMethod captures
+	// `this` and m_callbacks is instance-local, so the closure would dangle
+	// once the wrapper dies. Only the VM-owning State may register.
+	State owner(State::LibNone);
+	State borrowed(owner.getState());
+	EXPECT_THROW(
+	    borrowed.registerMethod("nope", [](State&) { return 0; }),
+	    std::logic_error);
+}
+
+TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
+	// A borrowed wrapper must not register a debug hook: the s_debugHooks
+	// entry is keyed by the lua_State and only an owning State's destructor
+	// erases it, so a borrowed registration would leak and outlive the wrapper.
+	State owner(State::LibNone);
+	State borrowed(owner.getState());
+	EXPECT_THROW(
+	    borrowed.registerDebugHook([](State&, const DebugInfo&) {}, MaskLine, 0),
+	    std::logic_error);
 }
 
 TEST_F(StateTest, readTable) {
