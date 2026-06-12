@@ -44,11 +44,16 @@ enum class EventCodes : int {
 
 /*
 ** Event masks
+**
+** `inline` (not `static`) — `static` at namespace scope would force internal
+** linkage and per-TU copies; MSVC's module surface rejects exporting such
+** entities (C5304). `inline constexpr` gives one shared definition with
+** external linkage that the module re-exporter can carry.
 */
-constexpr static const int MaskCall = 1 << static_cast<int>(EventCodes::Call);
-constexpr static const int MaskReturn = 1 << static_cast<int>(EventCodes::Return);
-constexpr static const int MaskLine = 1 << static_cast<int>(EventCodes::Line);
-constexpr static const int MaskCount = 1 << static_cast<int>(EventCodes::Count);
+inline constexpr int MaskCall   = 1 << static_cast<int>(EventCodes::Call);
+inline constexpr int MaskReturn = 1 << static_cast<int>(EventCodes::Return);
+inline constexpr int MaskLine   = 1 << static_cast<int>(EventCodes::Line);
+inline constexpr int MaskCount  = 1 << static_cast<int>(EventCodes::Count);
 
 class Debug {
 public:
