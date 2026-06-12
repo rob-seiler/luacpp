@@ -669,15 +669,17 @@ public:
 	/**
 	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
 	 *
-	 * Owned States (constructed via State(Library)) start with a
-	 * StreamWarningLogger to std::cerr already installed; call this to swap
-	 * it. Installing a non-null logger turns warnings on implicitly — the
-	 * act of installing is the opt-in. Pass nullptr to detach the sink and
-	 * disable the warning system again.
+	 * Default = no luacpp logger installed. Owned States leave Lua's native
+	 * warnfon active, which writes `Lua warning: <msg>` to stderr — call
+	 * this to redirect warnings into your own pipeline. Installing a
+	 * non-null logger turns warnings on implicitly (the act of installing
+	 * is the opt-in). Pass nullptr to detach again; this disables the
+	 * warning system entirely — Lua's native warnfon cannot be restored,
+	 * the C API has no lua_getwarnf.
 	 *
-	 * Scripts can still toggle reporting at runtime via the standard
-	 * control directives `warn("@off")` / `warn("@on")` even after a
-	 * logger is installed.
+	 * Scripts can toggle reporting at runtime via the standard control
+	 * directives `warn("@off")` / `warn("@on")` regardless of whether a
+	 * luacpp logger is installed.
 	 *
 	 * \throws std::logic_error if called on a borrowed State (one
 	 *         constructed from an existing lua_State*). The warning slot is

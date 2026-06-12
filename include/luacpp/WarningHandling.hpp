@@ -13,12 +13,23 @@ namespace Lua {
 // ---------------------------------------------------------------------------
 // WarningLogger — sink for Lua's warning system (lua_setwarnf).
 //
-// Per-State, swappable. Default-constructed States install a
-// StreamWarningLogger to std::cerr, mirroring the loud-by-default policy of
-// ErrorLogger. Pass nullptr to State::setWarningLogger to silence warnings
-// entirely. Scripts can still toggle reporting at runtime via the standard
-// control directives `warn("@off")` / `warn("@on")` even after a logger is
-// installed.
+// Default = no luacpp logger installed. In that state Lua 5.5's own
+// warnfon is active and writes `Lua warning: <msg>` to stderr. Install one
+// of the loggers below via State::setWarningLogger / installWarningLogger
+// to redirect warnings into your own pipeline (memory, custom stream,
+// callback). Once installed, pass nullptr to detach again — note that
+// detaching disables warnings entirely; Lua's native warnfon cannot be
+// restored (the C API has no lua_getwarnf).
+//
+// Asymmetry with ErrorLogger is deliberate: Lua itself emits errors silently
+// (the C API returns a status), so luacpp installs a loud StreamLogger by
+// default to make failures visible. Warnings are already loud by default
+// thanks to Lua, so luacpp keeps hands off until asked.
+//
+// Scripts can toggle reporting at runtime via the standard control
+// directives `warn("@off")` / `warn("@on")`. They are honored both by
+// Lua's native warnfon (when no luacpp logger is installed) and by our
+// trampoline (when one is).
 //
 // Multi-piece messages: Lua may emit a warning in fragments (tocont = 1
 // on every fragment except the last). State assembles the fragments and

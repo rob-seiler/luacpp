@@ -54,11 +54,11 @@ State::State(Library libraries)
   m_externalState(false)
 {
 	setupErrorPolicy(/*ownsVm=*/true);
-	// Default warning sink mirrors the error path: loud-to-cerr by default,
-	// users override via setWarningLogger / installWarningLogger. Without
-	// this, Lua 5.5's own warnfon would print to stderr in a different
-	// format, bypassing the [lua warning] tag the library promises.
-	setWarningLogger(std::make_unique<StreamWarningLogger>());
+	// No default warning sink. Lua 5.5's own warnfon already routes warn()
+	// to stderr in "Lua warning: <msg>" form — installing our trampoline
+	// here would overwrite Lua's native handler irreversibly (there is no
+	// lua_getwarnf to restore it). Users who want the luacpp-tagged format
+	// or a non-stderr sink install one explicitly via setWarningLogger.
 	openLibrary(libraries);
 }
 
@@ -74,11 +74,8 @@ State::State(lua_State* state)
 	// foreign lua_State (nothing published) gives us a private default.
 	setupErrorPolicy(/*ownsVm=*/false);
 
-	// Deliberately no setWarningLogger here. lua_setwarnf is a single,
-	// VM-global slot owned by whoever created the lua_State. A borrowed
-	// wrapper (e.g. the transient State the bind layer builds per call) must
-	// not clobber it: that would overwrite the owner's sink and leave a
-	// dangling `this` once the wrapper dies.
+	// No setWarningLogger call here, same reason as the owning ctor — plus
+	// the borrowed-state guard in setWarningLogger itself would reject it.
 }
 
 void State::setupErrorPolicy(bool ownsVm) {

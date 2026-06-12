@@ -141,12 +141,19 @@ TEST(WarningLoggerTest, callbackWarningLoggerRejectsNullCallback) {
 	EXPECT_THROW(CallbackWarningLogger{nullptr}, std::invalid_argument);
 }
 
-TEST(WarningLoggerTest, defaultLoggerWritesToCerrWithLuacppTag) {
-	// Mirror of the error path: default-constructed State has a
-	// StreamWarningLogger to std::cerr installed. We rdbuf-swap cerr to
-	// capture the output and verify the "[lua warning]" tag — Lua 5.5's
-	// own default warnfon would print "Lua warning: ..." instead, so
-	// the tag also acts as evidence our logger is the one running.
+TEST(WarningLoggerTest, defaultLeavesLuaNativeWarnfonActive) {
+	// Asymmetry with ErrorLogger by design: the WarningLogger slot starts
+	// EMPTY on a freshly constructed State. Lua 5.5's own warnfon stays
+	// active and writes "Lua warning: <msg>" to stderr. The point of this
+	// test is to lock down that we are NOT auto-installing a luacpp sink —
+	// any future change that does would surface as our "[lua warning]" tag
+	// appearing in stderr, which we'd want to flag.
+	//
+	// Note: Lua's lua_writestringerror writes to stderr via the C runtime,
+	// bypassing std::cerr's streambuf. Capturing std::cerr therefore only
+	// proves that OUR trampoline didn't fire — Lua's native output flows
+	// straight to the test runner's stderr. That's enough for this check;
+	// a positive assertion on Lua's prefix would need freopen-trickery.
 	std::ostringstream captured;
 	std::streambuf* orig = std::cerr.rdbuf(captured.rdbuf());
 
@@ -157,9 +164,9 @@ TEST(WarningLoggerTest, defaultLoggerWritesToCerrWithLuacppTag) {
 
 	std::cerr.rdbuf(orig);
 	const std::string text = captured.str();
-	EXPECT_NE(text.find("[lua warning]"),  std::string::npos)
-	    << "default logger should tag output so it's distinguishable";
-	EXPECT_NE(text.find("default-routed"), std::string::npos);
+	EXPECT_EQ(text.find("[lua warning]"), std::string::npos)
+	    << "default WarningLogger slot must be empty — Lua's own warnfon "
+	       "should handle warn(), not a luacpp-tagged trampoline";
 }
 
 TEST(WarningLoggerTest, borrowedStateRejectsSetWarningLogger) {
