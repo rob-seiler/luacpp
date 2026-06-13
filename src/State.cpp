@@ -2,9 +2,11 @@
 #include <lua/lua.hpp>
 
 #include <cassert>
+#include <memory>    //std::unique_ptr (RAII guard around the registry holder)
+#include <new>       //std::bad_alloc (luaL_newstate failure)
 #include <stdexcept> //std::logic_error
 #include <string>
-#include <limits> //std::numeric_limits
+#include <limits>    //std::numeric_limits
 
 namespace {
 // Detects whether s.data() points into the std::string object itself (Short
@@ -46,20 +48,43 @@ bool hasStackError(Lua::LuaError::Status s) {
 
 namespace Lua {
 
+namespace {
+// luaL_newstate signals OOM by returning NULL. Convert that to a C++ throw
+// before any downstream member sees the null pointer — Registry's base
+// (Table) dereferences the state in its constructor, so we cannot defer
+// the check to the State ctor body where the member init list has already
+// run.
+lua_State* newStateOrThrow() {
+	auto* L = luaL_newstate();
+	if (!L) throw std::bad_alloc{};
+	return L;
+}
+} // namespace
+
 std::map<lua_State*, State::DebugHook> State::s_debugHooks;
 
 State::State(Library libraries)
-: m_state(luaL_newstate()),
+: m_state(newStateOrThrow()),
   m_registry(m_state),
   m_externalState(false)
 {
-	setupErrorPolicy(/*ownsVm=*/true);
-	// No default warning sink. Lua 5.5's own warnfon already routes warn()
-	// to stderr in "Lua warning: <msg>" form — installing our trampoline
-	// here would overwrite Lua's native handler irreversibly (there is no
-	// lua_getwarnf to restore it). Users who want the luacpp-tagged format
-	// or a non-stderr sink install one explicitly via setWarningLogger.
-	openLibrary(libraries);
+	// If any init step throws (setupErrorPolicy under registry-rehash OOM,
+	// openLibrary under similar pressure), the constructor fails and ~State
+	// will NOT run. Without this guard the lua_State we already own would
+	// leak. Close it explicitly and rethrow so the caller sees the original
+	// failure.
+	try {
+		setupErrorPolicy(/*ownsVm=*/true);
+		// No default warning sink. Lua 5.5's own warnfon already routes warn()
+		// to stderr in "Lua warning: <msg>" form — installing our trampoline
+		// here would overwrite Lua's native handler irreversibly (there is no
+		// lua_getwarnf to restore it). Users who want the luacpp-tagged format
+		// or a non-stderr sink install one explicitly via setWarningLogger.
+		openLibrary(libraries);
+	} catch (...) {
+		lua_close(m_state);
+		throw;
+	}
 }
 
 State::State(lua_State* state)
@@ -102,9 +127,17 @@ void State::setupErrorPolicy(bool ownsVm) {
 		// Publish a heap-held copy of the shared_ptr so borrowed wrappers
 		// (bind/metatable per-call States, debug hook) share ownership. The
 		// holder is freed in ~State after lua_close — see the destructor.
-		lua_pushlightuserdata(m_state,
-			new std::shared_ptr<ErrorPolicy>(m_errorPolicy));
+		//
+		// RAII guard: keep ownership of the holder until lua_rawsetp commits.
+		// lua_rawsetp can rehash the registry table and raise LUA_ERRMEM under
+		// OOM (in this C++-compiled Lua build, that propagates as a throw).
+		// Without the guard the heap allocation would leak — lua_pushlightuserdata
+		// only treats the holder as an opaque void*, not as owned storage.
+		// release() commits ownership to Lua once both calls succeeded.
+		auto holder = std::make_unique<std::shared_ptr<ErrorPolicy>>(m_errorPolicy);
+		lua_pushlightuserdata(m_state, holder.get());
 		lua_rawsetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
+		holder.release();
 	}
 }
 
