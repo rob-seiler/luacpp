@@ -798,6 +798,14 @@ private:
 	LuaError::Status reportStatus(LuaError::Category category, int rawStatus);
 	LuaError::Status reportStatus(LuaError::Category category, LuaError::Status status);
 
+	// Throw std::logic_error when this State does not own its lua_State.
+	// Used by VM-mutating APIs (warning sink, registered closures, debug
+	// hooks) that cannot safely run on a borrowed wrapper — the wrapper
+	// would either clobber the owner's setup or leak/dangle once it dies.
+	// `api` is the qualified name shown in the exception (e.g. "setWarningLogger");
+	// the call site keeps its own comment explaining the specific why.
+	void requireOwnedState(const char* api) const;
+
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
 
@@ -855,9 +863,13 @@ private:
 	// messages (Lua may split a single warn() across several callbacks).
 	// m_warningsEnabled mirrors Lua's @on/@off control directive — installing
 	// a logger flips it true; scripts may flip it back via warn("@off").
+	// m_warningIsSinglePiece records whether the current warning arrived as
+	// one shot (first piece's tocont == 0); only single-piece messages may
+	// be control directives per Lua's checkcontrol (lauxlib.c).
 	std::unique_ptr<WarningLogger> m_warningLogger;
 	std::string                    m_warningBuffer;
 	bool                           m_warningsEnabled = false;
+	bool                           m_warningIsSinglePiece = false;
 
 	// Trampoline matching lua_WarnFunction signature. Forwards to the
 	// per-State handleWarning() via the ud pointer set in lua_setwarnf.

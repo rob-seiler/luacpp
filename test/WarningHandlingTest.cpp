@@ -97,6 +97,43 @@ TEST(WarningLoggerTest, controlMessagesNeverReachLogger) {
 	EXPECT_EQ(warnings.entries().front(), "real");
 }
 
+// Reviewer regression: Lua's checkcontrol (lauxlib.c) gates control-message
+// detection on the FIRST piece's tocont — a multi-piece warning whose first
+// fragment starts with '@' is content, not a control directive, even though
+// the assembled string starts with '@'. The earlier impl inspected only the
+// assembled string and silently dropped such messages.
+TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
+	State lua(State::LibBase);
+	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+
+	// warn(a, b) emits two pieces: '@off' (tocont=1) then ' rest' (tocont=0).
+	// Lua's native warnfon would print "Lua warning: @off rest" because
+	// checkcontrol rejects the first piece (tocont != 0). luacpp must do the
+	// same — forward the assembled message to the logger, not eat it.
+	lua.loadAndExecuteScript("warn('@off', ' rest')");
+
+	ASSERT_EQ(warnings.entries().size(), 1u)
+	    << "multi-piece warning starting with '@' is content, not a control "
+	       "directive (Lua's checkcontrol gates on first piece's tocont == 0)";
+	EXPECT_EQ(warnings.entries().front(), "@off rest");
+}
+
+// Sibling case: single-piece '@off' must continue to mute, even though the
+// terminal piece's tocont == 0 is the only signal that distinguishes it from
+// the content case above. Pins the fix's other branch.
+TEST(WarningLoggerTest, singlePieceAtOffStillMutes) {
+	State lua(State::LibBase);
+	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+
+	lua.loadAndExecuteScript(R"(
+		warn('@off')
+		warn('muted')
+	)");
+
+	EXPECT_TRUE(warnings.entries().empty())
+	    << "single-piece warn('@off') must still toggle muting off";
+}
+
 TEST(WarningLoggerTest, setWarningLoggerNullDisablesWarnings) {
 	State lua(State::LibBase);
 	{

@@ -16,11 +16,6 @@ bool hasInlineStorage(const std::string& s) {
 	return data >= begin && data < begin + sizeof(std::string);
 }
 
-// Statuses for which Lua left an error object on the top of the stack.
-// Everything else (Ok, Yield, and the synthetic luacpp-side codes with
-// negative values) carries its message inline and must NOT trigger a
-// stack pop — luaL_tolstring on whatever happens to be at -1 would
-// stringify a bogus value (or push nil on an empty stack).
 // Registry key (unique by address) under which an owning State stashes a
 // pointer to its ErrorPolicy, so borrowed wrappers of the same VM recover it.
 // The registry is per-VM and shared across coroutine threads, and reliably
@@ -29,6 +24,11 @@ bool hasInlineStorage(const std::string& s) {
 // told apart from garbage on a foreign lua_State.)
 const char kErrorPolicyKey = 0;
 
+// Statuses for which Lua left an error object on the top of the stack.
+// Everything else (Ok, Yield, and the synthetic luacpp-side codes with
+// negative values) carries its message inline and must NOT trigger a
+// stack pop — luaL_tolstring on whatever happens to be at -1 would
+// stringify a bogus value (or push nil on an empty stack).
 bool hasStackError(Lua::LuaError::Status s) {
 	using S = Lua::LuaError::Status;
 	switch (s) {
@@ -117,16 +117,11 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	if (m_externalState) {
-		// The warning sink belongs to the lua_State's creator. A borrowed
-		// State has no owned slot to install into and could not clean up
-		// after itself either — there is no lua_getwarnf to restore a prior
-		// sink, so detaching on destruction would silently wipe the owner's.
-		throw std::logic_error(
-			"State::setWarningLogger: the warning sink is owned by the "
-			"lua_State's creator; a borrowed State (constructed from an "
-			"existing lua_State*) must not install or replace it");
-	}
+	// The warning sink belongs to the lua_State's creator. A borrowed State
+	// has no owned slot to install into and could not clean up after itself
+	// either — there is no lua_getwarnf to restore a prior sink, so detaching
+	// on destruction would silently wipe the owner's.
+	requireOwnedState("setWarningLogger");
 	m_warningLogger = std::move(logger);
 	m_warningBuffer.clear();
 	if (m_warningLogger) {
@@ -148,6 +143,16 @@ void State::warnFunctionTrampoline(void* ud, const char* msg, int tocont) {
 }
 
 void State::handleWarning(const char* msg, int tocont) {
+	// On the first piece, record whether the warning arrived as a single
+	// shot. This is the gate Lua's checkcontrol (lauxlib.c) uses to decide
+	// whether a leading '@' may be a control directive: only single-piece
+	// messages qualify. A multi-piece warning starting with '@' (e.g.
+	// warn('@x', 'y')) is plain content and must reach the logger.
+	const bool isFirstPiece = m_warningBuffer.empty();
+	if (isFirstPiece) {
+		m_warningIsSinglePiece = (tocont == 0);
+	}
+
 	m_warningBuffer.append(msg);
 	if (tocont) return; // more pieces follow; wait for the terminal call
 
@@ -156,10 +161,11 @@ void State::handleWarning(const char* msg, int tocont) {
 	std::string assembled;
 	assembled.swap(m_warningBuffer);
 
-	// Control directives: leading '@' is reserved by Lua's warning protocol.
-	// The two we honor are @on/@off; anything else (e.g. an editor-specific
-	// pragma) is silently dropped, matching the default Lua warn function.
-	if (!assembled.empty() && assembled.front() == '@') {
+	// Control directives: leading '@' is reserved by Lua's warning protocol,
+	// but ONLY when the message was single-piece (see m_warningIsSinglePiece).
+	// We honor @on/@off; any other single-piece @-message is silently dropped,
+	// matching the default Lua warn function.
+	if (m_warningIsSinglePiece && !assembled.empty() && assembled.front() == '@') {
 		if      (assembled == "@on")  m_warningsEnabled = true;
 		else if (assembled == "@off") m_warningsEnabled = false;
 		return;
@@ -213,6 +219,14 @@ LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Stat
 		       "reportStatus: synthetic status routed through stack-popping path");
 	}
 	return status;
+}
+
+void State::requireOwnedState(const char* api) const {
+	if (!m_externalState) return;
+	throw std::logic_error(
+		std::string("State::") + api +
+		" requires a State that owns its lua_State; cannot be called on a "
+		"borrowed wrapper (one constructed from an existing lua_State*)");
 }
 
 State::~State() {
@@ -352,32 +366,22 @@ void State::registerNativeFunction(const char* name, NativeFunction func, int nu
 }
 
 void State::registerMethod(const char* name, Method method) {
-	if (m_externalState) {
-		// dispatchMethod captures `this` as a Lua upvalue and m_callbacks is
-		// instance-local; a borrowed State (especially a transient bind/hook
-		// wrapper) would leave the closure pointing at a freed object once it
-		// dies. Registration belongs to the State that owns the VM.
-		throw std::logic_error(
-			"State::registerMethod: methods may only be registered on a State "
-			"that owns its lua_State, not on a borrowed wrapper (one "
-			"constructed from an existing lua_State*)");
-	}
+	// dispatchMethod captures `this` as a Lua upvalue and m_callbacks is
+	// instance-local; a borrowed State (especially a transient bind/hook
+	// wrapper) would leave the closure pointing at a freed object once it
+	// dies. Registration belongs to the State that owns the VM.
+	requireOwnedState("registerMethod");
 	m_callbacks.push_back(method);
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	if (m_externalState) {
-		// The hook entry is keyed by m_state in the process-wide s_debugHooks
-		// and only erased by an owning State's destructor; a borrowed wrapper
-		// would leak its entry and leave lua_sethook set, so a later VM at the
-		// same address would fire a stale hook. Registration belongs to the
-		// State that owns the VM.
-		throw std::logic_error(
-			"State::registerDebugHook: hooks may only be registered on a State "
-			"that owns its lua_State, not on a borrowed wrapper (one "
-			"constructed from an existing lua_State*)");
-	}
+	// The hook entry is keyed by m_state in the process-wide s_debugHooks
+	// and only erased by an owning State's destructor; a borrowed wrapper
+	// would leak its entry and leave lua_sethook set, so a later VM at the
+	// same address would fire a stale hook. Registration belongs to the
+	// State that owns the VM.
+	requireOwnedState("registerDebugHook");
 	s_debugHooks[m_state] = hook;
 
 	// The C hook function. The State(L) wrapper inherits this VM's error
