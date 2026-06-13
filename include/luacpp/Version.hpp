@@ -55,11 +55,7 @@ private:
 	uint8_t m_patch;
 };
 
-// `inline` (not `static`) — `static` at namespace scope would force internal
-// linkage and per-TU copies, which MSVC's module exporter rejects (C5304: a
-// using-declaration cannot expose an internal-linkage entity outside a
-// module). The combo `inline constexpr` gives one shared definition with
-// external linkage that the module surface can re-export safely.
+// External linkage so the module surface can re-export it.
 inline constexpr Version LuaCppVersion{0, 2, 0};
 
 } // namespace Lua

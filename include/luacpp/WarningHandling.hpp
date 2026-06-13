@@ -13,37 +13,19 @@ namespace Lua {
 // ---------------------------------------------------------------------------
 // WarningLogger — sink for Lua's warning system (lua_setwarnf).
 //
-// Default = no luacpp logger installed. In that state Lua 5.5's own
-// warnfon is active and writes `Lua warning: <msg>` to stderr. Install one
-// of the loggers below via State::setWarningLogger / installWarningLogger
-// to redirect warnings into your own pipeline (memory, custom stream,
-// callback). Once installed, pass nullptr to detach again — note that
-// detaching disables warnings entirely; Lua's native warnfon cannot be
-// restored (the C API has no lua_getwarnf).
+// Opt-in. Default = no luacpp logger installed; Lua's native warnfon
+// continues to print "Lua warning: <msg>" to stderr. Install one of the
+// loggers below to route warnings into your own pipeline. Passing nullptr
+// detaches and disables the warning system — Lua's native handler can't
+// be reinstalled (no lua_getwarnf in the C API).
 //
-// Asymmetry with ErrorLogger is deliberate: Lua itself emits errors silently
-// (the C API returns a status), so luacpp installs a loud StreamLogger by
-// default to make failures visible. Warnings are already loud by default
-// thanks to Lua, so luacpp keeps hands off until asked.
+// Scripts toggle reporting at runtime via `warn("@off")` / `warn("@on")`,
+// regardless of whether a luacpp logger is installed. Control messages
+// stay internal to State and never reach the logger.
 //
-// Scripts can toggle reporting at runtime via the standard control
-// directives `warn("@off")` / `warn("@on")`. They are honored both by
-// Lua's native warnfon (when no luacpp logger is installed) and by our
-// trampoline (when one is).
-//
-// Multi-piece messages: Lua may emit a warning in fragments (tocont = 1
-// on every fragment except the last). State assembles the fragments and
-// surfaces a single complete message per warning to the logger.
-//
-// Control messages (those starting with '@') are handled internally and
-// never forwarded — they are the warning system's own protocol, not
-// content a logger would want to record.
-//
-// Warnings live in their own header (not ErrorHandling.hpp) because Lua's
-// warning subsystem is API-distinct from the error path: warnings come
-// from lua_setwarnf, never abort execution, and carry only plain string
-// content — they share nothing with LuaError's category/status/prefix
-// machinery.
+// Multi-piece messages (Lua may emit fragments with tocont = 1 on every
+// fragment except the last) are assembled in State and surface to the
+// logger as one complete message per warning.
 // ---------------------------------------------------------------------------
 
 class WarningLogger {

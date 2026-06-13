@@ -49,11 +49,8 @@ bool hasStackError(Lua::LuaError::Status s) {
 namespace Lua {
 
 namespace {
-// luaL_newstate signals OOM by returning NULL. Convert that to a C++ throw
-// before any downstream member sees the null pointer — Registry's base
-// (Table) dereferences the state in its constructor, so we cannot defer
-// the check to the State ctor body where the member init list has already
-// run.
+// luaL_newstate returns NULL on OOM. We surface that as std::bad_alloc in
+// the init list because m_registry's constructor dereferences the state.
 lua_State* newStateOrThrow() {
 	auto* L = luaL_newstate();
 	if (!L) throw std::bad_alloc{};
@@ -68,23 +65,18 @@ State::State(Library libraries)
   m_registry(m_state),
   m_externalState(false)
 {
-	// If any init step throws (setupErrorPolicy under registry-rehash OOM,
-	// openLibrary under similar pressure), the constructor fails and ~State
-	// will NOT run. Without this guard the lua_State we already own would
-	// leak. Close it explicitly and rethrow so the caller sees the original
-	// failure.
+	// ~State does not run if the constructor throws; close the VM ourselves
+	// so it does not leak when policy or library init fails.
 	try {
 		setupErrorPolicy(/*ownsVm=*/true);
-		// No default warning sink. Lua 5.5's own warnfon already routes warn()
-		// to stderr in "Lua warning: <msg>" form — installing our trampoline
-		// here would overwrite Lua's native handler irreversibly (there is no
-		// lua_getwarnf to restore it). Users who want the luacpp-tagged format
-		// or a non-stderr sink install one explicitly via setWarningLogger.
 		openLibrary(libraries);
 	} catch (...) {
 		lua_close(m_state);
 		throw;
 	}
+	// We intentionally don't install a default WarningLogger — Lua's own
+	// warnfon already prints to stderr, and lua_setwarnf has no get-counterpart
+	// to restore the native handler if a user later sets ours to null.
 }
 
 State::State(lua_State* state)
@@ -92,15 +84,11 @@ State::State(lua_State* state)
   m_registry(state),
   m_externalState(true)
 {
-	// Borrowed wrapper: if this VM was created by a luacpp State it published
-	// its error policy under a private registry key, and we share it — so the
-	// per-call wrappers the bind/metatable layer and the debug hook build
-	// honor the configured logger/handler instead of fresh defaults. A
-	// foreign lua_State (nothing published) gives us a private default.
+	// Borrowed wrapper: pick up the owning State's error policy from the
+	// registry if one was published there, otherwise fall back to a fresh
+	// default. Lets per-call wrappers (bind layer, debug hook) honor the
+	// configured logger/handler instead of reverting to defaults.
 	setupErrorPolicy(/*ownsVm=*/false);
-
-	// No setWarningLogger call here, same reason as the owning ctor — plus
-	// the borrowed-state guard in setWarningLogger itself would reject it.
 }
 
 void State::setupErrorPolicy(bool ownsVm) {
@@ -124,16 +112,10 @@ void State::setupErrorPolicy(bool ownsVm) {
 	m_errorPolicy->logger = std::make_unique<StreamLogger>();
 
 	if (ownsVm) {
-		// Publish a heap-held copy of the shared_ptr so borrowed wrappers
-		// (bind/metatable per-call States, debug hook) share ownership. The
-		// holder is freed in ~State after lua_close — see the destructor.
-		//
-		// RAII guard: keep ownership of the holder until lua_rawsetp commits.
-		// lua_rawsetp can rehash the registry table and raise LUA_ERRMEM under
-		// OOM (in this C++-compiled Lua build, that propagates as a throw).
-		// Without the guard the heap allocation would leak — lua_pushlightuserdata
-		// only treats the holder as an opaque void*, not as owned storage.
-		// release() commits ownership to Lua once both calls succeeded.
+		// Publish a heap holder for the shared_ptr so borrowed wrappers can
+		// find and copy it. The unique_ptr keeps ownership across the two Lua
+		// calls in case lua_rawsetp throws (registry-rehash OOM); release()
+		// commits the lifetime to Lua, which frees the holder in ~State.
 		auto holder = std::make_unique<std::shared_ptr<ErrorPolicy>>(m_errorPolicy);
 		lua_pushlightuserdata(m_state, holder.get());
 		lua_rawsetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey);
@@ -150,10 +132,8 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	// The warning sink belongs to the lua_State's creator. A borrowed State
-	// has no owned slot to install into and could not clean up after itself
-	// either — there is no lua_getwarnf to restore a prior sink, so detaching
-	// on destruction would silently wipe the owner's.
+	// Owner-only: lua_setwarnf has no get-counterpart, so a borrowed wrapper
+	// could not restore the owner's sink on detach.
 	requireOwnedState("setWarningLogger");
 	m_warningLogger = std::move(logger);
 	m_warningBuffer.clear();
@@ -176,28 +156,25 @@ void State::warnFunctionTrampoline(void* ud, const char* msg, int tocont) {
 }
 
 void State::handleWarning(const char* msg, int tocont) {
-	// On the first piece, record whether the warning arrived as a single
-	// shot. This is the gate Lua's checkcontrol (lauxlib.c) uses to decide
-	// whether a leading '@' may be a control directive: only single-piece
-	// messages qualify. A multi-piece warning starting with '@' (e.g.
-	// warn('@x', 'y')) is plain content and must reach the logger.
+	// Lua's checkcontrol treats a leading '@' as a control directive only
+	// when the warning arrived in one piece (first call has tocont == 0).
+	// We mirror that: track the first piece's tocont, only consult it at
+	// the terminal call.
 	const bool isFirstPiece = m_warningBuffer.empty();
 	if (isFirstPiece) {
 		m_warningIsSinglePiece = (tocont == 0);
 	}
 
 	m_warningBuffer.append(msg);
-	if (tocont) return; // more pieces follow; wait for the terminal call
+	if (tocont) return;
 
-	// Take ownership of the accumulated message, then reset the buffer so
-	// the next warning starts fresh even if the logger throws.
+	// Take ownership of the accumulated message so the next warning starts
+	// fresh even if the logger throws.
 	std::string assembled;
 	assembled.swap(m_warningBuffer);
 
-	// Control directives: leading '@' is reserved by Lua's warning protocol,
-	// but ONLY when the message was single-piece (see m_warningIsSinglePiece).
-	// We honor @on/@off; any other single-piece @-message is silently dropped,
-	// matching the default Lua warn function.
+	// @on / @off toggle reporting; any other single-piece @-message is
+	// silently dropped (matches Lua's default warn function).
 	if (m_warningIsSinglePiece && !assembled.empty() && assembled.front() == '@') {
 		if      (assembled == "@on")  m_warningsEnabled = true;
 		else if (assembled == "@off") m_warningsEnabled = false;
@@ -264,10 +241,10 @@ void State::requireOwnedState(const char* api) const {
 
 State::~State() {
 	if (!m_externalState) {
-		// Grab the heap-held policy shared_ptr (published in setupErrorPolicy)
-		// before the VM and its registry are gone. Freed *after* lua_close so
-		// finalizers running during close can still copy it; any borrowed
-		// wrapper that did so keeps the policy alive via its own shared_ptr.
+		// Locate the policy holder so we can free it after lua_close —
+		// finalizers running during close may still need to copy the
+		// shared_ptr (any borrowed wrapper that does keeps the policy alive
+		// via its own copy).
 		std::shared_ptr<ErrorPolicy>* policyHolder = nullptr;
 		if (lua_rawgetp(m_state, LUA_REGISTRYINDEX, &kErrorPolicyKey) == LUA_TLIGHTUSERDATA) {
 			policyHolder = static_cast<std::shared_ptr<ErrorPolicy>*>(
@@ -275,9 +252,8 @@ State::~State() {
 		}
 		lua_pop(m_state, 1);
 
-		// We own the VM: detach our trampoline before tearing it down so a
-		// warning fired during finalization can never reach a half-destroyed
-		// State. Belt-and-braces — lua_close follows immediately.
+		// Detach the warning trampoline before close so any warn() fired
+		// during finalization can't land on a half-destroyed State.
 		lua_setwarnf(m_state, nullptr, nullptr);
 		lua_close(m_state);
 		delete policyHolder;
@@ -399,21 +375,18 @@ void State::registerNativeFunction(const char* name, NativeFunction func, int nu
 }
 
 void State::registerMethod(const char* name, Method method) {
-	// dispatchMethod captures `this` as a Lua upvalue and m_callbacks is
-	// instance-local; a borrowed State (especially a transient bind/hook
-	// wrapper) would leave the closure pointing at a freed object once it
-	// dies. Registration belongs to the State that owns the VM.
+	// Owner-only: dispatchMethod captures `this` in a Lua upvalue, and
+	// m_callbacks is instance-local — a borrowed wrapper would dangle once
+	// it dies.
 	requireOwnedState("registerMethod");
 	m_callbacks.push_back(method);
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	// The hook entry is keyed by m_state in the process-wide s_debugHooks
-	// and only erased by an owning State's destructor; a borrowed wrapper
-	// would leak its entry and leave lua_sethook set, so a later VM at the
-	// same address would fire a stale hook. Registration belongs to the
-	// State that owns the VM.
+	// Owner-only: s_debugHooks is keyed by m_state process-wide and only
+	// erased by an owning State's destructor — a borrowed wrapper would
+	// leak its entry.
 	requireOwnedState("registerDebugHook");
 	s_debugHooks[m_state] = hook;
 
