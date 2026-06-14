@@ -6,8 +6,7 @@
 namespace Lua {
 namespace detail {
 
-std::unordered_map<lua_State*, StateContext>           StateRegistry::s_contexts;
-std::map<lua_State*, StateRegistry::DebugHook>         StateRegistry::s_debugHooks;
+std::unordered_map<lua_State*, StateContext> StateRegistry::s_contexts;
 
 lua_State* StateRegistry::newVM() {
 	lua_State* state = luaL_newstate();
@@ -46,21 +45,19 @@ void StateRegistry::release(StateContext* ctx) noexcept {
 	if (ctx->closing) return;
 
 	ctx->closing = true;
+	// Detach both Lua-side callbacks before close so finalizers can't trigger
+	// our trampolines on a half-destroyed context.
 	lua_setwarnf(ctx->state, nullptr, nullptr);
+	lua_sethook (ctx->state, nullptr, 0, 0);
+
 	lua_State* state = ctx->state;
-	s_debugHooks.erase(state);
-	lua_close(state);          // may construct + destroy nested wrappers
-	s_contexts.erase(state);   // invalidates `ctx`
+	lua_close(state);         // may construct + destroy nested wrappers
+	s_contexts.erase(state);  // invalidates `ctx`
 }
 
-void StateRegistry::setDebugHook(lua_State* state, DebugHook hook) {
-	s_debugHooks[state] = std::move(hook);
-}
-
-StateRegistry::DebugHook StateRegistry::findDebugHook(lua_State* state) {
-	auto it = s_debugHooks.find(state);
-	if (it == s_debugHooks.end()) return {};
-	return it->second;
+StateContext* StateRegistry::find(lua_State* state) noexcept {
+	auto it = s_contexts.find(state);
+	return it != s_contexts.end() ? &it->second : nullptr;
 }
 
 } // namespace detail

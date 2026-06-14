@@ -5,7 +5,6 @@
 #include "../ErrorHandling.hpp"
 
 #include <functional>
-#include <map>
 #include <unordered_map>
 
 struct lua_State;
@@ -16,6 +15,8 @@ class State;
 
 namespace detail {
 
+using DebugHook = std::function<void(State&, const DebugInfo&)>;
+
 // Per-VM shared state for all State wrappers around the same lua_State.
 // Intrusive refcount drives lifecycle: the last release calls lua_close
 // and erases the entry from the registry. The `closing` flag guards
@@ -24,6 +25,7 @@ namespace detail {
 struct StateContext {
 	lua_State* const state;
 	ErrorPolicy      policy;
+	DebugHook        debugHook; // empty when none installed
 	unsigned         refCount;
 	bool             closing;
 
@@ -39,8 +41,6 @@ struct StateContext {
 // the module surface.
 class StateRegistry {
 public:
-	using DebugHook = std::function<void(State&, const DebugInfo&)>;
-
 	// Create a fresh lua_State via luaL_newstate. Throws std::bad_alloc
 	// on failure. Exposed here so both State ctors can funnel through
 	// the registry symmetrically (owning ctor passes this through to
@@ -61,14 +61,13 @@ public:
 	// ownership of the lua_State into the context.
 	static void release(StateContext* ctx) noexcept;
 
-	// Debug-hook bookkeeping — keyed by lua_State*, lives next to the
-	// context map because both are VM-keyed process-global state.
-	static void      setDebugHook(lua_State* state, DebugHook hook);
-	static DebugHook findDebugHook(lua_State* state);
+	// Non-owning lookup. Returns nullptr when no context exists for the
+	// given lua_State. Used by the debug-hook trampoline to reach the
+	// installed hook without taking a refcount.
+	static StateContext* find(lua_State* state) noexcept;
 
 private:
 	static std::unordered_map<lua_State*, StateContext> s_contexts;
-	static std::map<lua_State*, DebugHook>              s_debugHooks;
 };
 
 } // namespace detail

@@ -310,21 +310,20 @@ void State::registerMethod(const char* name, Method method) {
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	// Owner-only: the hook closure below carries no instance reference, but
-	// the registry entry is keyed by lua_State and erased by the main
-	// State's release of its context — a secondary wrapper installing here
-	// would leave the hook outliving its intent.
+	// Owner-only: the hook lives in the StateContext and is detached by the
+	// main State's release of its context — a secondary wrapper installing
+	// here would leave the hook outliving its intent.
 	requireOwnedState("registerDebugHook");
-	detail::StateRegistry::setDebugHook(m_state, std::move(hook));
+	m_context->debugHook = std::move(hook);
 
 	// The C hook function. The State(L) wrapper here joins the shared
 	// StateContext, so it sees the same error policy as the registering
 	// State without any extra plumbing.
 	auto chook = [](lua_State* L, lua_Debug* ar) {
-		auto h = detail::StateRegistry::findDebugHook(L);
-		if (h) {
+		auto* ctx = detail::StateRegistry::find(L);
+		if (ctx && ctx->debugHook) {
 			State state(L);
-			h(state, reinterpret_cast<const DebugInfo&>(*ar));
+			ctx->debugHook(state, reinterpret_cast<const DebugInfo&>(*ar));
 		}
 	};
 
