@@ -343,19 +343,20 @@ TEST(ErrorPolicyTest, sharedPolicyOutlivesOwnerDestruction) {
 	EXPECT_NO_THROW(borrowed->setErrorHandler(std::make_unique<ThrowHandler>()));
 }
 
-TEST(ErrorPolicyTest, borrowedStateAcceptsItsOwnErrorPolicy) {
-	// Unlike setWarningLogger (which throws on a borrowed State because the
-	// warn slot is VM-global), the error logger/handler are plain policy
-	// objects — a borrowed State has its own and may configure them freely.
+TEST(ErrorPolicyTest, wrappedRawLuaStateConfiguresLoggerFreely) {
+	// The error logger is a plain policy object; any wrapper (including the
+	// first wrapper around a raw lua_State) configures it on the shared
+	// context. The wrapper takes ownership of the VM and closes it on
+	// destruction — no manual lua_close after.
 	lua_State* raw = luaL_newstate();
 	{
-		State borrowed(raw);
-		auto& log = borrowed.installLogger<MemoryLogger>();
-		borrowed.loadAndExecuteScript("x =");   // syntax error -> reported
+		State wrapper(raw);
+		auto& log = wrapper.installLogger<MemoryLogger>();
+		wrapper.loadAndExecuteScript("x =");   // syntax error -> reported
 		EXPECT_FALSE(log.entries().empty())
-		    << "borrowed State's own logger must record its reported errors";
+		    << "logger must record errors reported through the shared policy";
 	}
-	lua_close(raw);
+	// wrapper destructor closed `raw` — no manual lua_close.
 }
 
 } // namespace

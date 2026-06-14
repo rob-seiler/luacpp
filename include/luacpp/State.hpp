@@ -12,6 +12,7 @@
 #include "WarningHandling.hpp"
 #include "detail/Bind.hpp"
 #include "detail/Config.hpp"
+#include "detail/StateRegistry.hpp"
 
 #include <string>
 #include <vector>
@@ -823,26 +824,22 @@ private:
 	*/
 	int callFunction(int numArgs, int numResults);
 
-	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
+	// Alias so existing call-sites read naturally. The struct definition
+	// lives in detail::StateRegistry, which owns the VM-keyed registry.
+	using StateContext = detail::StateContext;
 
-	// Resolves the error policy at construction. An owned State allocates a
-	// policy and publishes a pointer to it under a private registry key, so
-	// any borrowed wrapper of the same VM — the per-call State(lvm) the
-	// bind/metatable layer and the debug hook build — shares it. A borrowed
-	// wrapper of a foreign lua_State (none published) owns a private default
-	// instead. ownsVm == !m_externalState.
-	void setupErrorPolicy(bool ownsVm);
+	// Declaration order matters: m_state is the cached pointer, m_context
+	// is the intrusive ref into the registry, m_registry needs m_state.
+	lua_State*          m_state;
+	StateContext*       m_context;
+	Registry            m_registry;
+	std::vector<Method> m_callbacks;
 
-	lua_State* m_state; ///< instance of the lua virtual machine
-	Registry m_registry; ///< registry for user defined functions
-	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
-	std::vector<Method> m_callbacks; ///< list of registered methods
-
-	// Per-VM error response (passive logger + active handler), shared between
-	// the owning State and any borrowed wrapper of the same lua_State. Held by
-	// shared_ptr — not a raw view — so the policy survives even if a borrowed
-	// wrapper outlives the owner. Never null after construction.
-	std::shared_ptr<ErrorPolicy> m_errorPolicy;
+	// True iff this State's ctor was the one that inserted the context
+	// entry. Used by APIs whose per-instance state can't be transferred —
+	// registerMethod (`this` upvalue capture), registerDebugHook, and
+	// setWarningLogger (trampoline ud=this).
+	bool                m_isMain;
 
 	// Warning sink + assembly state for multi-piece warn() messages.
 	// m_warningsEnabled tracks the @on/@off toggle. m_warningIsSinglePiece

@@ -206,19 +206,16 @@ TEST(WarningLoggerTest, defaultLeavesLuaNativeWarnfonActive) {
 	       "should handle warn(), not a luacpp-tagged trampoline";
 }
 
-TEST(WarningLoggerTest, borrowedStateRejectsSetWarningLogger) {
-	// A State wrapping an externally-owned lua_State does not own the
-	// VM-global warning slot. Installing a sink there would clobber the
-	// owner's and dangle once the wrapper dies, so it is rejected outright.
-	lua_State* raw = luaL_newstate();
-	{
-		State borrowed(raw);
-		EXPECT_THROW(borrowed.setWarningLogger(std::make_unique<MemoryWarningLogger>()),
-		             std::logic_error);
-		EXPECT_THROW(borrowed.installWarningLogger<MemoryWarningLogger>(),
-		             std::logic_error);
-	}
-	lua_close(raw);
+TEST(WarningLoggerTest, secondaryWrapperRejectsSetWarningLogger) {
+	// The first State to register a context is "main"; subsequent wrappers
+	// around the same lua_State share its state but cannot install the
+	// warning trampoline (its ud captures the main's `this`).
+	State main(State::LibBase);
+	State secondary(main.getState());
+	EXPECT_THROW(secondary.setWarningLogger(std::make_unique<MemoryWarningLogger>()),
+	             std::logic_error);
+	EXPECT_THROW(secondary.installWarningLogger<MemoryWarningLogger>(),
+	             std::logic_error);
 }
 
 TEST(WarningLoggerTest, debugHookWrapperDoesNotClobberOwnersWarningLogger) {

@@ -2,10 +2,12 @@
 
 #include <luacpp/State.hpp>
 #include <luacpp/TypeMismatchException.hpp>
+#include <lua/lua.hpp>
 
 #include "TestSupport.hpp"
 
 #include <array>
+#include <memory>
 #include <stdexcept>
 #if LUACPP_HAS_SPAN
 #include <span>
@@ -445,6 +447,45 @@ TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
 	EXPECT_THROW(
 	    borrowed.registerDebugHook([](State&, const DebugInfo&) {}, MaskLine, 0),
 	    std::logic_error);
+}
+
+// The VM survives the original owning wrapper as long as any other State
+// instance still references its context. The shared_ptr<StateContext>
+// reference counting drives lua_close, so the actual last-to-die wrapper
+// triggers it — regardless of which one was the original creator.
+TEST_F(StateTest, vmStaysAliveWhileBorrowedReferencesExist) {
+	auto owner = std::make_unique<State>(State::LibNone);
+	owner->loadAndExecuteScript("greeting = 'hello'");
+	lua_State* L = owner->getState();
+
+	State borrowed(L);  // shares the context, ref-count becomes 2
+
+	owner.reset();      // ref-count drops to 1; VM must still be alive
+
+	// If lua_close had run, this would be UB; with ref-counted lifetime
+	// the VM survives until `borrowed` itself goes out of scope.
+	auto g = borrowed.readVariable<std::string>("greeting");
+	ASSERT_TRUE(g.has_value());
+	EXPECT_EQ(*g, "hello");
+}
+
+// Wrapping a user-created lua_State transfers ownership to luacpp: the
+// wrapper's destructor calls lua_close on the VM, and the caller must NOT
+// call lua_close themselves afterwards.
+TEST_F(StateTest, wrappingRawLuaStateTransfersOwnership) {
+	lua_State* L = luaL_newstate();
+	ASSERT_NE(L, nullptr);
+
+	{
+		State wrapper(L);
+		wrapper.loadAndExecuteScript("x = 42");
+		auto x = wrapper.readVariable<int>("x");
+		ASSERT_TRUE(x.has_value());
+		EXPECT_EQ(*x, 42);
+	}
+	// wrapper destructor closes L. The lua_State is now invalid; reaching
+	// this point without a crash proves the wrapper handled its own cleanup.
+	SUCCEED();
 }
 
 TEST_F(StateTest, readTable) {

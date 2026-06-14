@@ -332,10 +332,10 @@ TEST_F(ExternalStringTest, anchorOwned_oomMidSequence_releasesObject) {
 		{
 			State lua(raw);
 			lua.transferOwnership(DestructionCounter{});
+			// Budget needs to cover the State's own lua_close in its dtor too.
+			probe.budget = kHugeBudget;
 		}
 		allocsForTransfer = probe.requestsServed - before;
-		probe.budget = kHugeBudget;
-		lua_close(raw);
 	}
 	ASSERT_GT(allocsForTransfer, 0);
 
@@ -359,9 +359,8 @@ TEST_F(ExternalStringTest, anchorOwned_oomMidSequence_releasesObject) {
 			} catch (...) {
 				// Expected when the budget runs out mid-anchor.
 			}
+			counter.budget = kHugeBudget; // let the dtor's lua_close run
 		}
-		counter.budget = kHugeBudget; // let lua_close drain its own allocations
-		lua_close(raw);
 
 		EXPECT_EQ(DestructionCounter::liveCount, 0)
 		    << "Leak when only " << allowedExtra << " of " << allocsForTransfer
