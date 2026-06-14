@@ -22,13 +22,13 @@ namespace detail {
 // against re-entrant lua_close from __gc-driven wrappers that briefly
 // acquire and release the context during finalization.
 struct StateContext {
-	lua_State* const L;
+	lua_State* const state;
 	ErrorPolicy      policy;
 	unsigned         refCount;
 	bool             closing;
 
-	explicit StateContext(lua_State* state) noexcept
-		: L(state), refCount(0), closing(false) {}
+	explicit StateContext(lua_State* s) noexcept
+		: state(s), refCount(0), closing(false) {}
 
 	StateContext(const StateContext&) = delete;
 	StateContext& operator=(const StateContext&) = delete;
@@ -47,13 +47,14 @@ public:
 	// acquire, borrowed ctor passes the user's lua_State).
 	static lua_State* newVM();
 
-	// Look up or create the context for `L`, incrementing refCount. Sets
-	// `isMain` to true if this call inserted the entry — the caller is then
-	// the wrapper that holds per-instance state (registerMethod's `this`
-	// upvalue, the warning trampoline's ud). On allocation failure during
-	// insert, closes `L` and rethrows: a failed wrapper construction takes
-	// the lua_State down with it (transfer-of-ownership semantics).
-	static StateContext* acquire(lua_State* L, bool& isMain);
+	// Look up or create the context for `state`, incrementing refCount.
+	// Sets `isMain` to true if this call inserted the entry — the caller
+	// is then the wrapper that holds per-instance state (registerMethod's
+	// `this` upvalue, the warning trampoline's ud). On allocation failure
+	// during insert, closes `state` and rethrows: a failed wrapper
+	// construction takes the lua_State down with it (transfer-of-ownership
+	// semantics).
+	static StateContext* acquire(lua_State* state, bool& isMain);
 
 	// Decrement refCount; when it reaches zero, close the VM and erase
 	// the map entry. luacpp always closes — both State ctors transfer
@@ -62,8 +63,8 @@ public:
 
 	// Debug-hook bookkeeping — keyed by lua_State*, lives next to the
 	// context map because both are VM-keyed process-global state.
-	static void      setDebugHook(lua_State* L, DebugHook hook);
-	static DebugHook findDebugHook(lua_State* L);
+	static void      setDebugHook(lua_State* state, DebugHook hook);
+	static DebugHook findDebugHook(lua_State* state);
 
 private:
 	static std::unordered_map<lua_State*, StateContext> s_contexts;
