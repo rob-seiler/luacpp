@@ -841,19 +841,24 @@ private:
 	// setWarningLogger (trampoline ud=this).
 	bool                m_isMain;
 
-	// Warning sink + assembly state for multi-piece warn() messages.
-	// m_warningsEnabled tracks the @on/@off toggle. m_warningInProgress
-	// marks the span from the first piece through the terminal piece, so we
-	// can detect "first piece" without using m_warningBuffer.empty() as a
-	// proxy (which would misclassify an empty first piece followed by
-	// another piece). m_warningIsSinglePiece records the first piece's
-	// tocont so handleWarning can apply Lua's "control only if single-piece"
-	// rule at the terminal call.
-	std::unique_ptr<WarningLogger> m_warningLogger;
-	std::string                    m_warningBuffer;
-	bool                           m_warningsEnabled = false;
-	bool                           m_warningInProgress = false;
-	bool                           m_warningIsSinglePiece = false;
+	// Warning subsystem state. Grouped because the five fields move together
+	// across handleWarning's pieces — keeping them as a sub-struct makes the
+	// boundary visible and lets a future fourth flag/field land in one place.
+	//
+	// inProgress marks the span from the first piece through the terminal
+	// piece — we cannot infer "first piece" from buffer.empty() alone (an
+	// empty first piece would leave the buffer empty and let the second
+	// piece masquerade as the first). currentIsSingle captures the first
+	// piece's tocont so the terminal call can apply Lua's "control only if
+	// single-piece" rule.
+	struct WarningState {
+		std::unique_ptr<WarningLogger> logger;
+		std::string                    buffer;
+		bool                           enabled         = false;
+		bool                           inProgress      = false;
+		bool                           currentIsSingle = false;
+	};
+	WarningState m_warning;
 
 	// lua_WarnFunction trampoline; forwards to handleWarning via ud = this.
 	static void warnFunctionTrampoline(void* ud, const char* msg, int tocont);

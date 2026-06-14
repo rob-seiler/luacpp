@@ -74,18 +74,18 @@ void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
 	// Owner-only: lua_setwarnf has no get-counterpart, so a borrowed wrapper
 	// could not restore the owner's sink on detach.
 	requireOwnedState("setWarningLogger");
-	m_warningLogger = std::move(logger);
-	m_warningBuffer.clear();
-	m_warningInProgress = false;
-	if (m_warningLogger) {
+	m_warning.logger = std::move(logger);
+	m_warning.buffer.clear();
+	m_warning.inProgress = false;
+	if (m_warning.logger) {
 		// Installing a logger is explicit opt-in: enable warnings even though
 		// Lua starts the system disabled. Scripts can still flip via @off.
-		m_warningsEnabled = true;
+		m_warning.enabled = true;
 		lua_setwarnf(m_state, &State::warnFunctionTrampoline, this);
 	} else {
 		// Detach: Lua disables the warning system entirely until a new
 		// function is installed. Matches lua_setwarnf(L, NULL, NULL).
-		m_warningsEnabled = false;
+		m_warning.enabled = false;
 		lua_setwarnf(m_state, nullptr, nullptr);
 	}
 }
@@ -99,34 +99,34 @@ void State::handleWarning(const char* msg, int tocont) {
 	// Lua's checkcontrol treats a leading '@' as a control directive only
 	// when the warning arrived in one piece (first call has tocont == 0).
 	// We mirror that: capture the first piece's tocont, consult it at the
-	// terminal call. m_warningInProgress (not buffer.empty()) decides what
-	// counts as the first piece — an empty first piece would otherwise leave
-	// the buffer empty and let the second piece masquerade as the first.
-	if (!m_warningInProgress) {
-		m_warningIsSinglePiece = (tocont == 0);
-		m_warningInProgress = true;
+	// terminal call. inProgress (not buffer.empty()) decides what counts as
+	// the first piece — an empty first piece would otherwise leave the
+	// buffer empty and let the second piece masquerade as the first.
+	if (!m_warning.inProgress) {
+		m_warning.currentIsSingle = (tocont == 0);
+		m_warning.inProgress = true;
 	}
 
-	m_warningBuffer.append(msg);
+	m_warning.buffer.append(msg);
 	if (tocont) return;
 
 	// Terminal piece: reset the in-progress flag so the next warning starts
 	// fresh, then take ownership of the assembled message in case the logger
 	// throws.
-	m_warningInProgress = false;
+	m_warning.inProgress = false;
 	std::string assembled;
-	assembled.swap(m_warningBuffer);
+	assembled.swap(m_warning.buffer);
 
 	// @on / @off toggle reporting; any other single-piece @-message is
 	// silently dropped (matches Lua's default warn function).
-	if (m_warningIsSinglePiece && !assembled.empty() && assembled.front() == '@') {
-		if      (assembled == "@on")  m_warningsEnabled = true;
-		else if (assembled == "@off") m_warningsEnabled = false;
+	if (m_warning.currentIsSingle && !assembled.empty() && assembled.front() == '@') {
+		if      (assembled == "@on")  m_warning.enabled = true;
+		else if (assembled == "@off") m_warning.enabled = false;
 		return;
 	}
 
-	if (m_warningsEnabled && m_warningLogger) {
-		m_warningLogger->log(assembled);
+	if (m_warning.enabled && m_warning.logger) {
+		m_warning.logger->log(assembled);
 	}
 }
 
@@ -188,7 +188,7 @@ State::~State() {
 	// If this State installed a warning logger, detach the trampoline before
 	// `this` becomes invalid — another wrapper may still hold a refcount and
 	// keep the VM alive past us.
-	if (m_warningLogger) {
+	if (m_warning.logger) {
 		lua_setwarnf(m_state, nullptr, nullptr);
 	}
 	// Drop our refcount. If we were the last, release closes the VM and

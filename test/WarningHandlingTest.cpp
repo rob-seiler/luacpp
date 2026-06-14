@@ -118,7 +118,7 @@ TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 	EXPECT_EQ(warnings.entries().front(), "@off rest");
 }
 
-// Reviewer regression: when the FIRST piece is empty, an empty m_warningBuffer
+// Reviewer regression: when the FIRST piece is empty, an empty buffer
 // can't be used as a "is this the first piece" proxy — the second piece would
 // also see an empty buffer and be misclassified as the first. With the bug, a
 // multi-piece warning whose first piece is empty and whose second piece is
