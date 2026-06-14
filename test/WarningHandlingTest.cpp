@@ -118,6 +118,30 @@ TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 	EXPECT_EQ(warnings.entries().front(), "@off rest");
 }
 
+// Reviewer regression: when the FIRST piece is empty, an empty m_warningBuffer
+// can't be used as a "is this the first piece" proxy — the second piece would
+// also see an empty buffer and be misclassified as the first. With the bug, a
+// multi-piece warning whose first piece is empty and whose second piece is
+// '@off' was silently treated as a single-piece control directive, muting all
+// subsequent warnings.
+TEST(WarningLoggerTest, emptyFirstPieceDoesNotConfuseControlGate) {
+	State lua(State::LibBase);
+	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+
+	// First piece is '' with tocont=1, second is '@off' with tocont=0. Per
+	// Lua's checkcontrol this is content (assembled message "@off"), not a
+	// control directive. Subsequent warn() must still reach the logger.
+	lua.loadAndExecuteScript("warn('', '@off')");
+	lua.loadAndExecuteScript("warn('still listening')");
+
+	ASSERT_EQ(warnings.entries().size(), 2u)
+	    << "empty first piece must not be confused with a fresh start — "
+	       "the multi-piece '@off' message must remain content, and warnings "
+	       "must still be enabled afterwards";
+	EXPECT_EQ(warnings.entries().front(), "@off");
+	EXPECT_EQ(warnings.entries().back(),  "still listening");
+}
+
 // Sibling case: single-piece '@off' must continue to mute, even though the
 // terminal piece's tocont == 0 is the only signal that distinguishes it from
 // the content case above. Pins the fix's other branch.

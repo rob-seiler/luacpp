@@ -76,6 +76,7 @@ void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
 	requireOwnedState("setWarningLogger");
 	m_warningLogger = std::move(logger);
 	m_warningBuffer.clear();
+	m_warningInProgress = false;
 	if (m_warningLogger) {
 		// Installing a logger is explicit opt-in: enable warnings even though
 		// Lua starts the system disabled. Scripts can still flip via @off.
@@ -97,18 +98,22 @@ void State::warnFunctionTrampoline(void* ud, const char* msg, int tocont) {
 void State::handleWarning(const char* msg, int tocont) {
 	// Lua's checkcontrol treats a leading '@' as a control directive only
 	// when the warning arrived in one piece (first call has tocont == 0).
-	// We mirror that: track the first piece's tocont, only consult it at
-	// the terminal call.
-	const bool isFirstPiece = m_warningBuffer.empty();
-	if (isFirstPiece) {
+	// We mirror that: capture the first piece's tocont, consult it at the
+	// terminal call. m_warningInProgress (not buffer.empty()) decides what
+	// counts as the first piece — an empty first piece would otherwise leave
+	// the buffer empty and let the second piece masquerade as the first.
+	if (!m_warningInProgress) {
 		m_warningIsSinglePiece = (tocont == 0);
+		m_warningInProgress = true;
 	}
 
 	m_warningBuffer.append(msg);
 	if (tocont) return;
 
-	// Take ownership of the accumulated message so the next warning starts
-	// fresh even if the logger throws.
+	// Terminal piece: reset the in-progress flag so the next warning starts
+	// fresh, then take ownership of the assembled message in case the logger
+	// throws.
+	m_warningInProgress = false;
 	std::string assembled;
 	assembled.swap(m_warningBuffer);
 

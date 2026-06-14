@@ -842,12 +842,17 @@ private:
 	bool                m_isMain;
 
 	// Warning sink + assembly state for multi-piece warn() messages.
-	// m_warningsEnabled tracks the @on/@off toggle. m_warningIsSinglePiece
-	// remembers the first piece's tocont so handleWarning can apply Lua's
-	// "control only if single-piece" rule.
+	// m_warningsEnabled tracks the @on/@off toggle. m_warningInProgress
+	// marks the span from the first piece through the terminal piece, so we
+	// can detect "first piece" without using m_warningBuffer.empty() as a
+	// proxy (which would misclassify an empty first piece followed by
+	// another piece). m_warningIsSinglePiece records the first piece's
+	// tocont so handleWarning can apply Lua's "control only if single-piece"
+	// rule at the terminal call.
 	std::unique_ptr<WarningLogger> m_warningLogger;
 	std::string                    m_warningBuffer;
 	bool                           m_warningsEnabled = false;
+	bool                           m_warningInProgress = false;
 	bool                           m_warningIsSinglePiece = false;
 
 	// lua_WarnFunction trampoline; forwards to handleWarning via ud = this.
