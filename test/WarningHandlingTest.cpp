@@ -230,16 +230,37 @@ TEST(WarningLoggerTest, defaultLeavesLuaNativeWarnfonActive) {
 	       "should handle warn(), not a luacpp-tagged trampoline";
 }
 
-TEST(WarningLoggerTest, secondaryWrapperRejectsSetWarningLogger) {
-	// The first State to register a context is "main"; subsequent wrappers
-	// around the same lua_State share its state but cannot install the
-	// warning trampoline (its ud captures the main's `this`).
+TEST(WarningLoggerTest, anyWrapperConfiguresSharedWarningSink) {
+	// The warning sink lives in the shared per-VM context (trampoline ud =
+	// StateContext*), so secondary wrappers can install/replace it just like
+	// they can configure the error policy. Same unified-policy semantic as
+	// setLogger / setErrorHandler.
 	State main(State::LibBase);
 	State secondary(main.getState());
-	EXPECT_THROW(secondary.setWarningLogger(std::make_unique<MemoryWarningLogger>()),
-	             std::logic_error);
-	EXPECT_THROW(secondary.installWarningLogger<MemoryWarningLogger>(),
-	             std::logic_error);
+
+	auto& warnings = secondary.installWarningLogger<MemoryWarningLogger>();
+	main.loadAndExecuteScript("warn('via secondary-installed sink')");
+
+	ASSERT_EQ(warnings.entries().size(), 1u);
+	EXPECT_EQ(warnings.entries().front(), "via secondary-installed sink");
+}
+
+TEST(WarningLoggerTest, warningSinkSurvivesMainStateDestruction) {
+	// Reviewer regression: the old design detached lua_setwarnf in ~State of
+	// the main wrapper, leaving the still-live VM permanently warning-dead
+	// when a borrowed wrapper kept it alive. Warning sink lives in the
+	// shared context now; it must keep working after the main is gone.
+	auto main = std::make_unique<State>(State::LibBase);
+	auto& warnings = main->installWarningLogger<MemoryWarningLogger>();
+	State borrowed(main->getState());
+
+	main.reset();                // main dies; VM survives via `borrowed`'s ref
+	borrowed.loadAndExecuteScript("warn('post-main')");
+
+	ASSERT_EQ(warnings.entries().size(), 1u)
+	    << "warning sink must survive main wrapper's destruction "
+	       "when borrowed wrappers keep the VM alive";
+	EXPECT_EQ(warnings.entries().front(), "post-main");
 }
 
 TEST(WarningLoggerTest, debugHookWrapperDoesNotClobberOwnersWarningLogger) {

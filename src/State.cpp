@@ -71,62 +71,23 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	// Owner-only: lua_setwarnf has no get-counterpart, so a borrowed wrapper
-	// could not restore the owner's sink on detach.
-	requireOwnedState("setWarningLogger");
-	m_warning.logger = std::move(logger);
-	m_warning.buffer.clear();
-	m_warning.inProgress = false;
-	if (m_warning.logger) {
+	// No requireOwnedState — the warning sink lives in the shared per-VM
+	// StateContext and the trampoline's ud points there, so the sink
+	// survives any wrapper's death. Any wrapper may configure it (same
+	// semantic as setLogger / setErrorHandler).
+	m_context->warningLogger = std::move(logger);
+	m_context->warningBuffer.clear();
+	m_context->warningInProgress = false;
+	if (m_context->warningLogger) {
 		// Installing a logger is explicit opt-in: enable warnings even though
 		// Lua starts the system disabled. Scripts can still flip via @off.
-		m_warning.enabled = true;
-		lua_setwarnf(m_state, &State::warnFunctionTrampoline, this);
+		m_context->warningsEnabled = true;
+		lua_setwarnf(m_state, &detail::warningTrampoline, m_context);
 	} else {
 		// Detach: Lua disables the warning system entirely until a new
 		// function is installed. Matches lua_setwarnf(L, NULL, NULL).
-		m_warning.enabled = false;
+		m_context->warningsEnabled = false;
 		lua_setwarnf(m_state, nullptr, nullptr);
-	}
-}
-
-void State::warnFunctionTrampoline(void* ud, const char* msg, int tocont) {
-	if (!ud || !msg) return;
-	static_cast<State*>(ud)->handleWarning(msg, tocont);
-}
-
-void State::handleWarning(const char* msg, int tocont) {
-	// Lua's checkcontrol treats a leading '@' as a control directive only
-	// when the warning arrived in one piece (first call has tocont == 0).
-	// We mirror that: capture the first piece's tocont, consult it at the
-	// terminal call. inProgress (not buffer.empty()) decides what counts as
-	// the first piece — an empty first piece would otherwise leave the
-	// buffer empty and let the second piece masquerade as the first.
-	if (!m_warning.inProgress) {
-		m_warning.currentIsSingle = (tocont == 0);
-		m_warning.inProgress = true;
-	}
-
-	m_warning.buffer.append(msg);
-	if (tocont) return;
-
-	// Terminal piece: reset the in-progress flag so the next warning starts
-	// fresh, then take ownership of the assembled message in case the logger
-	// throws.
-	m_warning.inProgress = false;
-	std::string assembled;
-	assembled.swap(m_warning.buffer);
-
-	// @on / @off toggle reporting; any other single-piece @-message is
-	// silently dropped (matches Lua's default warn function).
-	if (m_warning.currentIsSingle && !assembled.empty() && assembled.front() == '@') {
-		if      (assembled == "@on")  m_warning.enabled = true;
-		else if (assembled == "@off") m_warning.enabled = false;
-		return;
-	}
-
-	if (m_warning.enabled && m_warning.logger) {
-		m_warning.logger->log(assembled);
 	}
 }
 
@@ -185,14 +146,16 @@ void State::requireOwnedState(const char* api) const {
 }
 
 State::~State() {
-	// If this State installed a warning logger, detach the trampoline before
-	// `this` becomes invalid — another wrapper may still hold a refcount and
-	// keep the VM alive past us.
-	if (m_warning.logger) {
-		lua_setwarnf(m_state, nullptr, nullptr);
+	// If this State registered a debug hook, tear it down on our death —
+	// the lambda may capture references whose lifetimes are tied to this
+	// wrapper or its outer scope. We hold the requireOwnedState gate on
+	// registerDebugHook precisely so this point is unambiguous.
+	if (m_isMain) {
+		m_context->debugHook = {};
+		lua_sethook(m_state, nullptr, 0, 0);
 	}
 	// Drop our refcount. If we were the last, release closes the VM and
-	// erases the context + debug-hook entries.
+	// erases the context entry.
 	detail::StateRegistry::release(m_context);
 }
 

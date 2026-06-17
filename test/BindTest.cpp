@@ -177,6 +177,39 @@ TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
     EXPECT_FLOAT_EQ((*p)->y, 4.0f);
 }
 
+// Reviewer regression: bound ctors, methods, properties and metamethods all
+// construct a transient `State L(lvm)` in their C trampolines. Inside a
+// coroutine, lvm is the coroutine's lua_State (not the registered main
+// thread). Before the fix the wrapper adopted the coroutine thread as a
+// fresh VM and on scope exit called lua_close on a still-running thread —
+// access violation, UB. The registry now resolves any lua_State to its main
+// thread (via LUA_RIDX_MAINTHREAD) so sub-thread wrappers join the existing
+// context instead of adopting a sibling VM.
+TEST(BindConstructorTest, boundCtorSurvivesCoroutineInvocation) {
+    State lua(State::LibBase | State::LibCoroutine);
+    Metatable<Point>::registerMetatable(lua);
+    lua.bindConstructor<Point, float, float>("Point");
+
+    // Construct Point INSIDE a coroutine — invokeConstructor's `State L(lvm)`
+    // receives the coroutine thread. Before the fix this called lua_close on
+    // the still-running coroutine thread when L destructed.
+    lua.loadAndExecuteScript(R"(
+        co = coroutine.create(function()
+            return Point(7, 11)
+        end)
+        ok, p = coroutine.resume(co)
+    )");
+
+    auto ok = lua.readVariable<bool>("ok");
+    ASSERT_TRUE(ok.has_value());
+    EXPECT_TRUE(*ok) << "coroutine.resume failed; bound ctor in coroutine is broken";
+    auto p = lua.readVariable<Point*>("p");
+    ASSERT_TRUE(p.has_value());
+    ASSERT_NE(*p, nullptr);
+    EXPECT_FLOAT_EQ((*p)->x, 7.0f);
+    EXPECT_FLOAT_EQ((*p)->y, 11.0f);
+}
+
 // Regression: readVariable<T*> on a userdata carrying a DIFFERENT metatable
 // must return nullopt, not raise a Lua error. The read happens at the host
 // boundary (no enclosing pcall), so an erroring luaL_checkudata would kill

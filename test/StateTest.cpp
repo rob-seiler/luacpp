@@ -449,6 +449,28 @@ TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
 	    std::logic_error);
 }
 
+// Reviewer regression: the debug hook lives in the shared context now, but
+// it captures references whose lifetime is tied to the main State (or its
+// outer scope). When the main wrapper dies while a borrowed wrapper keeps
+// the VM alive, the hook must be torn down — otherwise the next Lua event
+// invokes the lambda with dangling captures.
+TEST_F(StateTest, debugHookDetachedOnMainDestructionEvenIfVmSurvives) {
+	int callCount = 0;
+	auto main = std::make_unique<State>(State::LibNone);
+	main->registerDebugHook(
+	    [&callCount](State&, const DebugInfo&) { ++callCount; },
+	    MaskLine, 0);
+
+	State borrowed(main->getState());
+	main.reset();   // main dies; VM lives via `borrowed`
+
+	const int before = callCount;
+	borrowed.loadAndExecuteScript("a = 1\nb = 2\nc = 3");
+	EXPECT_EQ(callCount, before)
+	    << "debug hook must be detached when its registering main dies, "
+	       "even if the VM survives via other wrappers";
+}
+
 // The VM survives the original owning wrapper as long as any other State
 // instance still references its context. The shared_ptr<StateContext>
 // reference counting drives lua_close, so the actual last-to-die wrapper

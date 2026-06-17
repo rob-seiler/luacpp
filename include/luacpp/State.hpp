@@ -96,6 +96,24 @@ public:
 	};
 
 	State(Library libraries = LibNone);
+
+	/**
+	 * @brief Wrap an existing lua_State and join (or take ownership of) its
+	 *        shared per-VM context.
+	 *
+	 * If `state` belongs to a VM already wrapped by another `State` (or is a
+	 * coroutine sub-thread of one), this wrapper joins that VM's context and
+	 * shares its error/warning policy. When the last wrapper for the VM dies,
+	 * the context closes the VM.
+	 *
+	 * If `state` is a foreign VM not yet known to luacpp, this constructor
+	 * transfers ownership: when this wrapper (or its last live co-wrapper)
+	 * is destroyed, lua_close is called on `state`. **Do not call lua_close
+	 * on `state` yourself after wrapping it.** Likewise, if this constructor
+	 * throws (only possible under registry-insert OOM), the lua_State is
+	 * closed before the exception propagates — do not reuse `state` in a
+	 * catch handler.
+	 */
 	State(lua_State* state);
 	State(const State&) = delete;
 	// Move is deleted on purpose. registerMethod() captures `this` as an
@@ -627,9 +645,10 @@ public:
 	 * Default-constructed States carry a StreamLogger writing to std::cerr.
 	 * Pass nullptr to silence logging entirely.
 	 *
-	 * The logger (and handler) are part of a per-VM ErrorPolicy: a State
-	 * passed to a debug-hook callback shares the owning State's policy, so
-	 * configuring it here is observed from inside hooks too.
+	 * The logger lives in the **shared per-VM ErrorPolicy** — calling this
+	 * on any wrapper (main or borrowed) configures the sink for ALL wrappers
+	 * around the same lua_State. A borrowed wrapper's setLogger replaces the
+	 * owner's sink for the lifetime of the VM, not just for itself.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
@@ -653,6 +672,9 @@ public:
 	 * flow control. The logger runs before the handler, so a throwing handler
 	 * does not erase the log record.
 	 *
+	 * Like setLogger, the handler lives in the **shared per-VM ErrorPolicy**
+	 * and affects all wrappers around the same lua_State.
+	 *
 	 * \see ErrorHandling.hpp
 	 */
 	void setErrorHandler(std::unique_ptr<ErrorHandler> handler);
@@ -675,14 +697,16 @@ public:
 	 * nullptr disables the warning system. See WarningHandling.hpp for the
 	 * full opt-in / control-directive story.
 	 *
-	 * \throws std::logic_error on a borrowed State (the warning slot is
-	 *         VM-global and belongs to the lua_State's creator).
+	 * Like setLogger / setErrorHandler, the sink lives in the **shared
+	 * per-VM context** (the trampoline's ud points to the context, not to
+	 * any individual State). Any wrapper may install it; the sink survives
+	 * the registering wrapper's destruction and only goes away when the VM
+	 * itself closes.
 	 */
 	void setWarningLogger(std::unique_ptr<WarningLogger> logger);
 
 	/// Convenience: construct a WarningLogger in place, install it, return
 	/// a reference for later inspection (typically MemoryWarningLogger).
-	/// Throws std::logic_error on a borrowed State, like setWarningLogger.
 	template <typename LoggerT, typename... Args>
 	LoggerT& installWarningLogger(Args&&... args) {
 		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
@@ -841,28 +865,9 @@ private:
 	// setWarningLogger (trampoline ud=this).
 	bool                m_isMain;
 
-	// Warning subsystem state. Grouped because the five fields move together
-	// across handleWarning's pieces — keeping them as a sub-struct makes the
-	// boundary visible and lets a future fourth flag/field land in one place.
-	//
-	// inProgress marks the span from the first piece through the terminal
-	// piece — we cannot infer "first piece" from buffer.empty() alone (an
-	// empty first piece would leave the buffer empty and let the second
-	// piece masquerade as the first). currentIsSingle captures the first
-	// piece's tocont so the terminal call can apply Lua's "control only if
-	// single-piece" rule.
-	struct WarningState {
-		std::unique_ptr<WarningLogger> logger;
-		std::string                    buffer;
-		bool                           enabled         = false;
-		bool                           inProgress      = false;
-		bool                           currentIsSingle = false;
-	};
-	WarningState m_warning;
-
-	// lua_WarnFunction trampoline; forwards to handleWarning via ud = this.
-	static void warnFunctionTrampoline(void* ud, const char* msg, int tocont);
-	void handleWarning(const char* msg, int tocont);
+	// Warning subsystem state lives in detail::StateContext (shared per-VM):
+	// the lua_setwarnf trampoline's ud points there, so the sink survives
+	// any individual wrapper's death and any wrapper can configure it.
 };
 
 } // namespace Lua

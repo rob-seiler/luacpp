@@ -3,8 +3,11 @@
 
 #include "../Debug.hpp"
 #include "../ErrorHandling.hpp"
+#include "../WarningHandling.hpp"
 
 #include <functional>
+#include <memory>
+#include <string>
 #include <unordered_map>
 
 struct lua_State;
@@ -25,16 +28,33 @@ using DebugHook = std::function<void(State&, const DebugInfo&)>;
 struct StateContext {
 	lua_State* const state;
 	ErrorPolicy      policy;
-	DebugHook        debugHook; // empty when none installed
+	DebugHook        debugHook;       // empty when none installed
 	unsigned         refCount;
 	bool             closing;
+
+	// Warning subsystem state — lives with the VM (not the registering
+	// State) because lua_setwarnf is VM-global and the trampoline's ud
+	// points here. Any wrapper can configure the sink for all wrappers,
+	// same as the error policy.
+	std::unique_ptr<WarningLogger> warningLogger;
+	std::string                    warningBuffer;
+	bool                           warningsEnabled        = false;
+	bool                           warningInProgress      = false;
+	bool                           warningCurrentIsSingle = false;
 
 	explicit StateContext(lua_State* s) noexcept
 		: state(s), refCount(0), closing(false) {}
 
 	StateContext(const StateContext&) = delete;
 	StateContext& operator=(const StateContext&) = delete;
+
+	// Multi-piece warn() assembly + @on/@off control. Called from the
+	// lua_setwarnf trampoline with ud = this.
+	void handleWarning(const char* msg, int tocont);
 };
+
+// lua_WarnFunction-shaped trampoline; forwards to ctx->handleWarning.
+void warningTrampoline(void* ud, const char* msg, int tocont);
 
 // Process-global, VM-keyed bookkeeping. All members static; no instance
 // needed and none constructed. Internal to luacpp — not re-exported by
