@@ -86,6 +86,12 @@ public:
 	// installed hook without taking a refcount.
 	static StateContext* find(lua_State* state) noexcept;
 
+	// Bump refCount on an already-resolved context. Used by the
+	// State(StateContext*, lua_State*) private ctor to skip the second
+	// mainThreadOf+lookup that a plain acquire(state) would do, when the
+	// caller (typically a Lua trampoline) already has the ctx from find().
+	static StateContext* retain(StateContext* ctx) noexcept;
+
 private:
 	static std::unordered_map<lua_State*, StateContext> s_contexts;
 };

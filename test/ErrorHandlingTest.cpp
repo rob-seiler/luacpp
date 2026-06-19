@@ -327,17 +327,17 @@ TEST(ErrorPolicyTest, borrowedWrapperOfOwnedVmSharesPolicyViaRegistry) {
 	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
 }
 
-TEST(ErrorPolicyTest, sharedPolicyOutlivesOwnerDestruction) {
-	// A borrowed wrapper that shared the owner's policy holds a shared_ptr to
-	// it, so configuring the wrapper after the owner is gone must not touch
-	// freed memory. (The lua_State is closed with the owner, so only the
-	// pure-policy ops setLogger/setErrorHandler are meaningful here — these
-	// are exactly the ones a raw view pointer would have made a use-after-free.)
+TEST(ErrorPolicyTest, sharedPolicyOutlivesMainStateDestruction) {
+	// The error policy lives in the shared StateContext, kept alive by the
+	// context's intrusive refCount. When the main wrapper dies but a borrowed
+	// wrapper still holds a refcount, the context (and its policy) survive —
+	// configuring the policy through the borrowed wrapper must not touch
+	// freed memory.
 	std::unique_ptr<State> borrowed;
 	{
-		State owner(State::LibBase);
-		borrowed = std::make_unique<State>(owner.getState()); // shares the policy
-	} // owner destroyed: lua_close + frees its registry-held shared_ptr
+		State main(State::LibBase);
+		borrowed = std::make_unique<State>(main.getState());
+	} // main destroyed; borrowed keeps refcount, ctx+VM stay alive
 
 	EXPECT_NO_THROW(borrowed->setLogger(std::make_unique<MemoryLogger>()));
 	EXPECT_NO_THROW(borrowed->setErrorHandler(std::make_unique<ThrowHandler>()));

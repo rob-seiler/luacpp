@@ -60,6 +60,22 @@ State::State(lua_State* state)
   m_context(detail::StateRegistry::acquire(m_state, m_isMain)),
   m_registry(m_state)
 {
+	// No body try/catch: m_registry's underlying Table ctor throws only if
+	// the wrapped index is not a table. Since we always pass
+	// LUA_REGISTRYINDEX (a guaranteed table per Lua's invariants), this is
+	// unreachable on a sane lua_State. If we ever wrap something else, this
+	// asymmetry with the owning ctor (which has a try/catch around its
+	// post-init work) needs the same RAII discipline.
+}
+
+State::State(detail::StateContext* ctx, lua_State* state)
+: m_state(state),
+  // m_isMain stays at default false — by construction this is a borrowed
+  // view (the trampoline that called us is inside a callback on a VM that
+  // is already wrapped by a main).
+  m_context(detail::StateRegistry::retain(ctx)),
+  m_registry(m_state)
+{
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
@@ -78,6 +94,7 @@ void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
 	m_context->warningLogger = std::move(logger);
 	m_context->warningBuffer.clear();
 	m_context->warningInProgress = false;
+	m_context->warningCurrentIsSingle = false;
 	if (m_context->warningLogger) {
 		// Installing a logger is explicit opt-in: enable warnings even though
 		// Lua starts the system disabled. Scripts can still flip via @off.
@@ -288,9 +305,12 @@ void State::registerDebugHook(DebugHook hook, int mask, int count) {
 	// StateContext, so it sees the same error policy as the registering
 	// State without any extra plumbing.
 	auto chook = [](lua_State* L, lua_Debug* ar) {
+		// One mainThreadOf+map-lookup via find(); the borrowed-view ctor
+		// then retains the resolved ctx directly instead of repeating the
+		// resolution from scratch.
 		auto* ctx = detail::StateRegistry::find(L);
 		if (ctx && ctx->debugHook) {
-			State state(L);
+			State state(ctx, L);
 			ctx->debugHook(state, reinterpret_cast<const DebugInfo&>(*ar));
 		}
 	};

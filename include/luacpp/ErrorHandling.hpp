@@ -232,11 +232,12 @@ private:
 // ---------------------------------------------------------------------------
 // ErrorPolicy — the per-VM error response: passive logger + active handler.
 //
-// Bundled so it can be shared (via shared_ptr) between the owning State and
-// any borrowed State that wraps the same lua_State — notably the transient
-// wrapper Lua builds for a debug hook. A callback therefore observes the
-// same logging/handling the VM was configured with, instead of silently
-// falling back to a fresh StreamLogger + null handler.
+// Bundled so all State wrappers around the same lua_State observe the same
+// configuration. ErrorPolicy lives by value inside detail::StateContext, which
+// every wrapper reaches via a raw pointer guarded by the context's intrusive
+// refCount. A callback (e.g. the transient wrapper Lua builds for a debug
+// hook) therefore sees the logging/handling the VM was configured with,
+// instead of silently falling back to a fresh StreamLogger + null handler.
 // ---------------------------------------------------------------------------
 
 struct ErrorPolicy {

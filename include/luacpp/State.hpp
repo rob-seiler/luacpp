@@ -115,6 +115,16 @@ public:
 	 * catch handler.
 	 */
 	State(lua_State* state);
+
+private:
+	// Internal: borrowed wrapper from a pre-resolved context. Skips
+	// StateRegistry::acquire's mainThreadOf+lookup by retaining the given
+	// ctx directly. Used by Lua trampolines that already called find().
+	// The caller MUST pass a ctx whose lua_State matches `state` (the
+	// trampoline got both from find on the same incoming pointer).
+	State(detail::StateContext* ctx, lua_State* state);
+
+public:
 	State(const State&) = delete;
 	// Move is deleted on purpose. registerMethod() captures `this` as an
 	// upvalue inside a Lua C-closure; once moved, every previously registered
@@ -852,18 +862,33 @@ private:
 	// lives in detail::StateRegistry, which owns the VM-keyed registry.
 	using StateContext = detail::StateContext;
 
-	// Declaration order matters: m_state is the cached pointer, m_context
-	// is the intrusive ref into the registry, m_registry needs m_state.
+	// Declaration order matters:
+	//   m_state    — cached pointer, init list source for the others
+	//   m_isMain   — MUST be declared before m_context (see below). Default-
+	//                initialized to false; m_context's initializer overwrites
+	//                it via the bool& out-param in StateRegistry::acquire.
+	//                With this order, the default-init runs first and the
+	//                acquire write persists. If a maintainer were to move
+	//                m_isMain after m_context (or omit the `= false`), an
+	//                added default initializer would run AFTER acquire's
+	//                write and clobber it — every State would report
+	//                non-main, registerMethod/registerDebugHook would always
+	//                throw, and ~State would never tear down the debug hook.
+	//   m_context  — intrusive ref into the registry
+	//   m_registry — needs m_state
 	lua_State*          m_state;
+	bool                m_isMain = false;
 	StateContext*       m_context;
 	Registry            m_registry;
 	std::vector<Method> m_callbacks;
 
-	// True iff this State's ctor was the one that inserted the context
-	// entry. Used by APIs whose per-instance state can't be transferred —
-	// registerMethod (`this` upvalue capture), registerDebugHook, and
-	// setWarningLogger (trampoline ud=this).
-	bool                m_isMain;
+	// Per-instance flag (kept on State, NOT in the shared context): true iff
+	// this wrapper inserted the context entry. registerMethod and
+	// registerDebugHook still gate on this — dispatchMethod captures `this`
+	// as a Lua upvalue and m_callbacks is per-State, so only the original
+	// wrapper has a stable address for those callbacks. setWarningLogger
+	// does NOT gate on this: warning state now lives in the shared context
+	// and the trampoline's ud points there, so any wrapper may configure it.
 
 	// Warning subsystem state lives in detail::StateContext (shared per-VM):
 	// the lua_setwarnf trampoline's ud points there, so the sink survives

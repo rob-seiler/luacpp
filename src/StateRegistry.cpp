@@ -50,7 +50,15 @@ StateContext* StateRegistry::acquire(lua_State* state, bool& isMain) {
 		return &iter->second;
 	} catch (...) {
 		s_contexts.erase(key);
-		lua_close(key);
+		// Close-on-throw only when the caller passed the main thread itself —
+		// that's the ownership-transfer case (State(Library) via newVM, or
+		// State(L) wrapping a foreign main thread). When the caller passed
+		// a coroutine sub-thread of a not-yet-known foreign VM, we don't
+		// own the broader VM and must not close it; lua_close on a sub-
+		// thread is UB per Lua's docs anyway.
+		if (state == key) {
+			lua_close(state);
+		}
 		throw;
 	}
 }
@@ -76,6 +84,11 @@ void StateRegistry::release(StateContext* ctx) noexcept {
 StateContext* StateRegistry::find(lua_State* state) noexcept {
 	auto it = s_contexts.find(mainThreadOf(state));
 	return it != s_contexts.end() ? &it->second : nullptr;
+}
+
+StateContext* StateRegistry::retain(StateContext* ctx) noexcept {
+	++ctx->refCount;
+	return ctx;
 }
 
 void StateContext::handleWarning(const char* msg, int tocont) {

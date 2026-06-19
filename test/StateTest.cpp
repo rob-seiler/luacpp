@@ -472,9 +472,9 @@ TEST_F(StateTest, debugHookDetachedOnMainDestructionEvenIfVmSurvives) {
 }
 
 // The VM survives the original owning wrapper as long as any other State
-// instance still references its context. The shared_ptr<StateContext>
-// reference counting drives lua_close, so the actual last-to-die wrapper
-// triggers it — regardless of which one was the original creator.
+// instance still references its context. The intrusive refCount on
+// StateContext drives lua_close, so the actual last-to-die wrapper triggers
+// it — regardless of which one was the original creator.
 TEST_F(StateTest, vmStaysAliveWhileBorrowedReferencesExist) {
 	auto owner = std::make_unique<State>(State::LibNone);
 	owner->loadAndExecuteScript("greeting = 'hello'");
