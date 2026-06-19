@@ -43,10 +43,8 @@ State::State(Library libraries)
   m_context(detail::StateRegistry::acquire(m_state, m_isMain)),
   m_registry(m_state)
 {
-	// If openLibrary throws, manually release — member dtors don't run when a
-	// constructor body throws, and our raw m_context pointer has no RAII
-	// handle. release drops the refcount we just took; since we just
-	// inserted, this triggers lua_close + erase.
+	// Manual release on body-throw: ~State doesn't run when a ctor body
+	// throws and m_context has no RAII handle.
 	try {
 		openLibrary(libraries);
 	} catch (...) {
@@ -60,22 +58,17 @@ State::State(lua_State* state)
   m_context(detail::StateRegistry::acquire(m_state, m_isMain)),
   m_registry(m_state)
 {
-	// No body try/catch: m_registry's underlying Table ctor throws only if
-	// the wrapped index is not a table. Since we always pass
-	// LUA_REGISTRYINDEX (a guaranteed table per Lua's invariants), this is
-	// unreachable on a sane lua_State. If we ever wrap something else, this
-	// asymmetry with the owning ctor (which has a try/catch around its
-	// post-init work) needs the same RAII discipline.
+	// No body try/catch: m_registry wraps LUA_REGISTRYINDEX, always a table,
+	// so its ctor can't throw on a sane lua_State.
 }
 
 State::State(detail::StateContext* ctx, lua_State* state)
 : m_state(state),
-  // m_isMain stays at default false — by construction this is a borrowed
-  // view (the trampoline that called us is inside a callback on a VM that
-  // is already wrapped by a main).
   m_context(detail::StateRegistry::retain(ctx)),
   m_registry(m_state)
 {
+	// m_isMain stays default-false — this overload is the borrowed-view
+	// path used by Lua trampolines.
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
@@ -87,22 +80,16 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	// No requireOwnedState — the warning sink lives in the shared per-VM
-	// StateContext and the trampoline's ud points there, so the sink
-	// survives any wrapper's death. Any wrapper may configure it (same
-	// semantic as setLogger / setErrorHandler).
 	m_context->warningLogger = std::move(logger);
 	m_context->warningBuffer.clear();
 	m_context->warningInProgress = false;
 	m_context->warningCurrentIsSingle = false;
 	if (m_context->warningLogger) {
-		// Installing a logger is explicit opt-in: enable warnings even though
-		// Lua starts the system disabled. Scripts can still flip via @off.
+		// Installing a logger is the opt-in that enables warnings — Lua
+		// starts the system disabled. Scripts can still flip via @off.
 		m_context->warningsEnabled = true;
 		lua_setwarnf(m_state, &detail::warningTrampoline, m_context);
 	} else {
-		// Detach: Lua disables the warning system entirely until a new
-		// function is installed. Matches lua_setwarnf(L, NULL, NULL).
 		m_context->warningsEnabled = false;
 		lua_setwarnf(m_state, nullptr, nullptr);
 	}
@@ -163,16 +150,12 @@ void State::requireOwnedState(const char* api) const {
 }
 
 State::~State() {
-	// If this State registered a debug hook, tear it down on our death —
-	// the lambda may capture references whose lifetimes are tied to this
-	// wrapper or its outer scope. We hold the requireOwnedState gate on
-	// registerDebugHook precisely so this point is unambiguous.
+	// Tear down any debug hook with the main wrapper that registered it —
+	// the lambda may capture references whose lifetime is tied to its scope.
 	if (m_isMain) {
 		m_context->debugHook = {};
 		lua_sethook(m_state, nullptr, 0, 0);
 	}
-	// Drop our refcount. If we were the last, release closes the VM and
-	// erases the context entry.
 	detail::StateRegistry::release(m_context);
 }
 
@@ -286,28 +269,20 @@ void State::registerNativeFunction(const char* name, NativeFunction func, int nu
 }
 
 void State::registerMethod(const char* name, Method method) {
-	// Owner-only: dispatchMethod captures `this` in a Lua upvalue, and
-	// m_callbacks is instance-local — a borrowed wrapper would dangle once
-	// it dies.
+	// Owner-only: dispatchMethod captures `this`, m_callbacks is per-State.
 	requireOwnedState("registerMethod");
 	m_callbacks.push_back(method);
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	// Owner-only: the hook lives in the StateContext and is detached by the
-	// main State's release of its context — a secondary wrapper installing
-	// here would leave the hook outliving its intent.
+	// Owner-only so the hook's tied to a clear lifetime — ~main tears it
+	// down before any captured references can dangle.
 	requireOwnedState("registerDebugHook");
 	m_context->debugHook = std::move(hook);
 
-	// The C hook function. The State(L) wrapper here joins the shared
-	// StateContext, so it sees the same error policy as the registering
-	// State without any extra plumbing.
 	auto chook = [](lua_State* L, lua_Debug* ar) {
-		// One mainThreadOf+map-lookup via find(); the borrowed-view ctor
-		// then retains the resolved ctx directly instead of repeating the
-		// resolution from scratch.
+		// Single lookup; the borrowed-view ctor retains the resolved ctx.
 		auto* ctx = detail::StateRegistry::find(L);
 		if (ctx && ctx->debugHook) {
 			State state(ctx, L);

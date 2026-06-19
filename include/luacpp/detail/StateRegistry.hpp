@@ -21,21 +21,18 @@ namespace detail {
 using DebugHook = std::function<void(State&, const DebugInfo&)>;
 
 // Per-VM shared state for all State wrappers around the same lua_State.
-// Intrusive refcount drives lifecycle: the last release calls lua_close
-// and erases the entry from the registry. The `closing` flag guards
-// against re-entrant lua_close from __gc-driven wrappers that briefly
-// acquire and release the context during finalization.
+// Lifetime is driven by an intrusive refCount; `closing` guards re-entry
+// from __gc finalizers that briefly construct and drop transient wrappers
+// inside lua_close.
 struct StateContext {
 	lua_State* const state;
 	ErrorPolicy      policy;
-	DebugHook        debugHook;       // empty when none installed
+	DebugHook        debugHook;        // empty when none installed
 	unsigned         refCount;
 	bool             closing;
 
-	// Warning subsystem state — lives with the VM (not the registering
-	// State) because lua_setwarnf is VM-global and the trampoline's ud
-	// points here. Any wrapper can configure the sink for all wrappers,
-	// same as the error policy.
+	// Warning subsystem state lives here so any wrapper can configure the
+	// sink (the trampoline's ud is StateContext*, not State*).
 	std::unique_ptr<WarningLogger> warningLogger;
 	std::string                    warningBuffer;
 	bool                           warningsEnabled        = false;
@@ -48,48 +45,34 @@ struct StateContext {
 	StateContext(const StateContext&) = delete;
 	StateContext& operator=(const StateContext&) = delete;
 
-	// Multi-piece warn() assembly + @on/@off control. Called from the
-	// lua_setwarnf trampoline with ud = this.
+	// Multi-piece warn() assembly + @on/@off control.
 	void handleWarning(const char* msg, int tocont);
 };
 
 // lua_WarnFunction-shaped trampoline; forwards to ctx->handleWarning.
 void warningTrampoline(void* ud, const char* msg, int tocont);
 
-// Process-global, VM-keyed bookkeeping. All members static; no instance
-// needed and none constructed. Internal to luacpp — not re-exported by
-// the module surface.
+// Process-global, VM-keyed bookkeeping. Internal to luacpp.
 class StateRegistry {
 public:
-	// Create a fresh lua_State via luaL_newstate. Throws std::bad_alloc
-	// on failure. Exposed here so both State ctors can funnel through
-	// the registry symmetrically (owning ctor passes this through to
-	// acquire, borrowed ctor passes the user's lua_State).
+	// Fresh VM via luaL_newstate. Throws bad_alloc on failure.
 	static lua_State* newVM();
 
-	// Look up or create the context for `state`, incrementing refCount.
-	// Sets `isMain` to true if this call inserted the entry — the caller
-	// is then the wrapper that holds per-instance state (registerMethod's
-	// `this` upvalue, the warning trampoline's ud). On allocation failure
-	// during insert, closes `state` and rethrows: a failed wrapper
-	// construction takes the lua_State down with it (transfer-of-ownership
-	// semantics).
+	// Look up or create the context for `state`, ++refCount. Sets `isMain`
+	// to true if this call inserted the entry. On insert failure, closes
+	// `state` iff it was a main thread (sub-thread callers don't own the
+	// broader VM); rethrows.
 	static StateContext* acquire(lua_State* state, bool& isMain);
 
-	// Decrement refCount; when it reaches zero, close the VM and erase
-	// the map entry. luacpp always closes — both State ctors transfer
-	// ownership of the lua_State into the context.
+	// --refCount; on zero, close the VM and erase the entry.
 	static void release(StateContext* ctx) noexcept;
 
-	// Non-owning lookup. Returns nullptr when no context exists for the
-	// given lua_State. Used by the debug-hook trampoline to reach the
-	// installed hook without taking a refcount.
+	// Non-owning lookup. Returns nullptr when no context exists.
 	static StateContext* find(lua_State* state) noexcept;
 
-	// Bump refCount on an already-resolved context. Used by the
-	// State(StateContext*, lua_State*) private ctor to skip the second
-	// mainThreadOf+lookup that a plain acquire(state) would do, when the
-	// caller (typically a Lua trampoline) already has the ctx from find().
+	// ++refCount on a ctx the caller already resolved (typically via
+	// find() in a Lua trampoline). Lets the borrowed-view State ctor
+	// skip a redundant mainThreadOf+map-lookup.
 	static StateContext* retain(StateContext* ctx) noexcept;
 
 private:

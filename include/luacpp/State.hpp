@@ -98,21 +98,13 @@ public:
 	State(Library libraries = LibNone);
 
 	/**
-	 * @brief Wrap an existing lua_State and join (or take ownership of) its
-	 *        shared per-VM context.
+	 * @brief Wrap an existing lua_State, joining its shared per-VM context
+	 *        if known, otherwise taking ownership of a foreign main thread.
 	 *
-	 * If `state` belongs to a VM already wrapped by another `State` (or is a
-	 * coroutine sub-thread of one), this wrapper joins that VM's context and
-	 * shares its error/warning policy. When the last wrapper for the VM dies,
-	 * the context closes the VM.
-	 *
-	 * If `state` is a foreign VM not yet known to luacpp, this constructor
-	 * transfers ownership: when this wrapper (or its last live co-wrapper)
-	 * is destroyed, lua_close is called on `state`. **Do not call lua_close
-	 * on `state` yourself after wrapping it.** Likewise, if this constructor
-	 * throws (only possible under registry-insert OOM), the lua_State is
-	 * closed before the exception propagates — do not reuse `state` in a
-	 * catch handler.
+	 * Foreign main-thread case is an ownership transfer: the wrapper (or its
+	 * last co-wrapper) closes the VM. **Do not lua_close `state` yourself.**
+	 * Construction throws (registry-insert OOM): the main thread is closed
+	 * before propagating; sub-threads are left untouched.
 	 */
 	State(lua_State* state);
 
@@ -650,15 +642,11 @@ public:
 	}
 
 	/**
-	 * \brief Install the passive observer for LuaErrors ("where to record").
+	 * \brief Install the passive observer for LuaErrors. Default = StreamLogger
+	 *        to std::cerr; nullptr silences logging.
 	 *
-	 * Default-constructed States carry a StreamLogger writing to std::cerr.
-	 * Pass nullptr to silence logging entirely.
-	 *
-	 * The logger lives in the **shared per-VM ErrorPolicy** — calling this
-	 * on any wrapper (main or borrowed) configures the sink for ALL wrappers
-	 * around the same lua_State. A borrowed wrapper's setLogger replaces the
-	 * owner's sink for the lifetime of the VM, not just for itself.
+	 * Lives in the shared per-VM ErrorPolicy: any wrapper configures the
+	 * sink for all wrappers around the same lua_State.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
@@ -675,15 +663,11 @@ public:
 	}
 
 	/**
-	 * \brief Install the active reaction for LuaErrors ("what to do about it").
+	 * \brief Install the active reaction for LuaErrors. Default = nullptr
+	 *        (logger still runs). Logger fires before the handler, so a
+	 *        throwing handler does not erase the log record.
 	 *
-	 * Default = nullptr (no reaction; logger still runs). Set ThrowHandler
-	 * to escalate errors as C++ exceptions, or a CallbackHandler for custom
-	 * flow control. The logger runs before the handler, so a throwing handler
-	 * does not erase the log record.
-	 *
-	 * Like setLogger, the handler lives in the **shared per-VM ErrorPolicy**
-	 * and affects all wrappers around the same lua_State.
+	 * Shares lifetime with the ErrorPolicy — see setLogger.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
@@ -701,17 +685,11 @@ public:
 
 	/**
 	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
+	 *        Default = none (Lua's own warnfon prints to stderr). nullptr
+	 *        disables the warning system entirely.
 	 *
-	 * Default is no luacpp logger — Lua's own warnfon prints to stderr.
-	 * Installing a non-null logger routes warnings here instead; passing
-	 * nullptr disables the warning system. See WarningHandling.hpp for the
-	 * full opt-in / control-directive story.
-	 *
-	 * Like setLogger / setErrorHandler, the sink lives in the **shared
-	 * per-VM context** (the trampoline's ud points to the context, not to
-	 * any individual State). Any wrapper may install it; the sink survives
-	 * the registering wrapper's destruction and only goes away when the VM
-	 * itself closes.
+	 * Lives in the shared per-VM context (trampoline ud = StateContext*).
+	 * See WarningHandling.hpp for the opt-in / control-directive story.
 	 */
 	void setWarningLogger(std::unique_ptr<WarningLogger> logger);
 
@@ -858,41 +836,16 @@ private:
 	*/
 	int callFunction(int numArgs, int numResults);
 
-	// Alias so existing call-sites read naturally. The struct definition
-	// lives in detail::StateRegistry, which owns the VM-keyed registry.
 	using StateContext = detail::StateContext;
 
-	// Declaration order matters:
-	//   m_state    — cached pointer, init list source for the others
-	//   m_isMain   — MUST be declared before m_context (see below). Default-
-	//                initialized to false; m_context's initializer overwrites
-	//                it via the bool& out-param in StateRegistry::acquire.
-	//                With this order, the default-init runs first and the
-	//                acquire write persists. If a maintainer were to move
-	//                m_isMain after m_context (or omit the `= false`), an
-	//                added default initializer would run AFTER acquire's
-	//                write and clobber it — every State would report
-	//                non-main, registerMethod/registerDebugHook would always
-	//                throw, and ~State would never tear down the debug hook.
-	//   m_context  — intrusive ref into the registry
-	//   m_registry — needs m_state
+	// m_isMain MUST stay declared before m_context: m_context's initializer
+	// writes m_isMain via a bool& out-param, and a default-init that runs
+	// AFTER would silently clobber the write (every State becomes non-main).
 	lua_State*          m_state;
 	bool                m_isMain = false;
 	StateContext*       m_context;
 	Registry            m_registry;
 	std::vector<Method> m_callbacks;
-
-	// Per-instance flag (kept on State, NOT in the shared context): true iff
-	// this wrapper inserted the context entry. registerMethod and
-	// registerDebugHook still gate on this — dispatchMethod captures `this`
-	// as a Lua upvalue and m_callbacks is per-State, so only the original
-	// wrapper has a stable address for those callbacks. setWarningLogger
-	// does NOT gate on this: warning state now lives in the shared context
-	// and the trampoline's ud points there, so any wrapper may configure it.
-
-	// Warning subsystem state lives in detail::StateContext (shared per-VM):
-	// the lua_setwarnf trampoline's ud points there, so the sink survives
-	// any individual wrapper's death and any wrapper can configure it.
 };
 
 } // namespace Lua

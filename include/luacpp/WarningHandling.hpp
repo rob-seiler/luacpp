@@ -10,23 +10,16 @@
 
 namespace Lua {
 
-// ---------------------------------------------------------------------------
 // WarningLogger — sink for Lua's warning system (lua_setwarnf).
 //
-// Opt-in. Default = no luacpp logger installed; Lua's native warnfon
-// continues to print "Lua warning: <msg>" to stderr. Install one of the
-// loggers below to route warnings into your own pipeline. Passing nullptr
-// detaches and disables the warning system — Lua's native handler can't
-// be reinstalled (no lua_getwarnf in the C API).
+// Opt-in: install via State::setWarningLogger to route warnings into your
+// pipeline. Default = no luacpp logger; Lua's native warnfon prints to
+// stderr. Passing nullptr detaches and disables warnings entirely (Lua's
+// native handler can't be restored — no lua_getwarnf in the C API).
 //
-// Scripts toggle reporting at runtime via `warn("@off")` / `warn("@on")`,
-// regardless of whether a luacpp logger is installed. Control messages
-// stay internal to State and never reach the logger.
-//
-// Multi-piece messages (Lua may emit fragments with tocont = 1 on every
-// fragment except the last) are assembled in State and surface to the
-// logger as one complete message per warning.
-// ---------------------------------------------------------------------------
+// Scripts can toggle reporting with `warn("@off")` / `warn("@on")`; control
+// messages are handled internally and never reach the logger. Multi-piece
+// warnings are assembled and surface to the logger as a single message.
 
 class WarningLogger {
 public:
