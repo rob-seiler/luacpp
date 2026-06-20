@@ -206,8 +206,8 @@ private:
 // configured logging/handling.
 
 struct ErrorPolicy {
-	std::unique_ptr<ErrorLogger>  logger  = nullptr; ///< passive observer; may be null
-	std::unique_ptr<ErrorHandler> handler = nullptr; ///< active reaction; may be null
+	std::unique_ptr<ErrorLogger>  logger  = nullptr; ///< passive observer; default StreamLogger (set in StateRegistry::acquire)
+	std::unique_ptr<ErrorHandler> handler = nullptr; ///< active reaction; none by default
 };
 
 } // namespace Lua

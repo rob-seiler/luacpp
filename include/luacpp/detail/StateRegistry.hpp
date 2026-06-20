@@ -21,23 +21,6 @@ namespace detail {
 
 using DebugHook = std::function<void(State&, const DebugInfo&)>;
 
-// Warning subsystem state — lives inside StateContext so any wrapper can
-// configure the sink (the trampoline's ud points at this sub-struct).
-struct WarningState {
-	std::unique_ptr<WarningLogger> logger;
-	std::string                    buffer;
-	bool                           enabled         = false;
-	bool                           inProgress      = false;
-	bool                           currentIsSingle = false;
-
-	// Multi-piece warn() assembly + @on/@off control. Called via the
-	// lua_setwarnf trampoline with ud = this.
-	void handleWarning(const char* msg, int tocont);
-};
-
-// lua_WarnFunction-shaped trampoline; forwards to ws->handleWarning.
-void warningTrampoline(void* ud, const char* msg, int tocont);
-
 // Per-VM shared state for all State wrappers around the same lua_State.
 // Lifetime is driven by an intrusive refCount; `closing` guards re-entry
 // from __gc finalizers that briefly construct and drop transient wrappers
