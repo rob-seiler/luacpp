@@ -80,41 +80,41 @@ StateContext* StateRegistry::retain(StateContext* ctx) noexcept {
 	return ctx;
 }
 
-void StateContext::handleWarning(const char* msg, int tocont) {
+void WarningState::handleWarning(const char* msg, int tocont) {
 	// Mirror Lua's checkcontrol: a leading '@' is a control directive only
-	// when the warning arrived in one piece. warningInProgress (not
-	// warningBuffer.empty()) marks "first piece" so an empty first piece
-	// can't be confused with a fresh start.
-	if (!warningInProgress) {
-		warningCurrentIsSingle = (tocont == 0);
-		warningInProgress = true;
+	// when the warning arrived in one piece. inProgress (not buffer.empty())
+	// marks "first piece" so an empty first piece can't be confused with a
+	// fresh start.
+	if (!inProgress) {
+		currentIsSingle = (tocont == 0);
+		inProgress = true;
 	}
 
-	warningBuffer.append(msg);
+	buffer.append(msg);
 	if (tocont) return;
 
 	// Terminal piece: swap out the buffer so the next warning starts fresh
 	// even if the logger throws.
-	warningInProgress = false;
+	inProgress = false;
 	std::string assembled;
-	assembled.swap(warningBuffer);
+	assembled.swap(buffer);
 
 	// @on / @off toggle reporting; other single-piece @-messages are
 	// silently dropped (matches Lua's default warn function).
-	if (warningCurrentIsSingle && !assembled.empty() && assembled.front() == '@') {
-		if      (assembled == "@on")  warningsEnabled = true;
-		else if (assembled == "@off") warningsEnabled = false;
+	if (currentIsSingle && !assembled.empty() && assembled.front() == '@') {
+		if      (assembled == "@on")  enabled = true;
+		else if (assembled == "@off") enabled = false;
 		return;
 	}
 
-	if (warningsEnabled && warningLogger) {
-		warningLogger->log(assembled);
+	if (enabled && logger) {
+		logger->log(assembled);
 	}
 }
 
 void warningTrampoline(void* ud, const char* msg, int tocont) {
 	if (!ud || !msg) return;
-	static_cast<StateContext*>(ud)->handleWarning(msg, tocont);
+	static_cast<WarningState*>(ud)->handleWarning(msg, tocont);
 }
 
 } // namespace detail

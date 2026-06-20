@@ -80,17 +80,18 @@ void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
 }
 
 void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	m_context->warningLogger = std::move(logger);
-	m_context->warningBuffer.clear();
-	m_context->warningInProgress = false;
-	m_context->warningCurrentIsSingle = false;
-	if (m_context->warningLogger) {
+	auto& w = m_context->warning;
+	w.logger = std::move(logger);
+	w.buffer.clear();
+	w.inProgress = false;
+	w.currentIsSingle = false;
+	if (w.logger) {
 		// Installing a logger is the opt-in that enables warnings — Lua
 		// starts the system disabled. Scripts can still flip via @off.
-		m_context->warningsEnabled = true;
-		lua_setwarnf(m_state, &detail::warningTrampoline, m_context);
+		w.enabled = true;
+		lua_setwarnf(m_state, &detail::warningTrampoline, &w);
 	} else {
-		m_context->warningsEnabled = false;
+		w.enabled = false;
 		lua_setwarnf(m_state, nullptr, nullptr);
 	}
 }
