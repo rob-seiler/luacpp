@@ -9,11 +9,11 @@
 // Wired into CTest only when LUACPP_BUILD_MODULE=ON. Returns a non-zero exit
 // code on the first failed expectation so CTest reports which check broke.
 
-import luacpp;
-
 #include <array>
 #include <span>
 #include <string>
+
+import luacpp;
 
 namespace {
 

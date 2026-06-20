@@ -124,11 +124,10 @@ TEST(BindConstructorTest, BasicConstructor) {
     EXPECT_FLOAT_EQ(p->y, 4.5f);
 }
 
-// Reviewer regression: void* (and other non-class pointer types) is opaque
-// to our type system — there's no metatable name we can verify against. The
-// old tryGet path accepted any userdata's pointer regardless of type,
-// silently breaking the optional<T> "wrong type → nullopt" contract for raw
-// pointers. Now only light userdata is accepted; full userdata is refused.
+// void* (and other non-class pointer types) is opaque to our type system —
+// there's no metatable name we can verify against. Only light userdata is
+// accepted; full userdata is refused so the optional<T> "wrong type →
+// nullopt" contract holds for raw pointers.
 TEST(BindConstructorTest, ReadVariableVoidPtrRejectsFullUserdata) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
@@ -155,13 +154,10 @@ TEST(BindConstructorTest, ReadVariableVoidPtrAcceptsLightUserdata) {
     EXPECT_EQ(*p, &sentinel);
 }
 
-// Reviewer regression: executeFunctionReturning<T*> for a bound type used to
-// gate the read with `Basics::getTypeFor<T*>() == getType(-1)`. getTypeFor on
-// any pointer returns LightUserData, but bound objects are full userdata —
-// the gate could never match and the optional was always nullopt. The fix
-// routes the read through Stack<T>::tryGet, which has the correct metatable
-// check for full userdata (and falls back to the light-userdata check for
-// raw pointer types). readVariable<T*> already used that path.
+// executeFunctionReturning<T*> for a bound type must surface a non-null
+// optional: bound objects are full userdata with their metatable, and the
+// read routes through Stack<T>::tryGet (the same path readVariable<T*>
+// uses) which has the correct metatable check for full userdata.
 TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
@@ -177,10 +173,41 @@ TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
     EXPECT_FLOAT_EQ((*p)->y, 4.0f);
 }
 
-// Regression: readVariable<T*> on a userdata carrying a DIFFERENT metatable
-// must return nullopt, not raise a Lua error. The read happens at the host
-// boundary (no enclosing pcall), so an erroring luaL_checkudata would kill
-// the program. tryGet uses luaL_testudata which returns nullptr on mismatch.
+// Bound ctors, methods, properties and metamethods construct a transient
+// `State L(lvm)` in their C trampolines. Inside a coroutine, lvm is the
+// coroutine's lua_State (not the registered main thread). The registry
+// must resolve sub-thread wrappers to their main thread's context via
+// LUA_RIDX_MAINTHREAD — otherwise the transient wrapper would adopt the
+// coroutine as a fresh VM and lua_close it on scope exit.
+TEST(BindConstructorTest, boundCtorSurvivesCoroutineInvocation) {
+    State lua(State::LibBase | State::LibCoroutine);
+    Metatable<Point>::registerMetatable(lua);
+    lua.bindConstructor<Point, float, float>("Point");
+
+    // Construct Point INSIDE a coroutine — invokeConstructor's `State L(lvm)`
+    // receives the coroutine thread. The wrapper must NOT close it on scope
+    // exit.
+    lua.loadAndExecuteScript(R"(
+        co = coroutine.create(function()
+            return Point(7, 11)
+        end)
+        ok, p = coroutine.resume(co)
+    )");
+
+    auto ok = lua.readVariable<bool>("ok");
+    ASSERT_TRUE(ok.has_value());
+    EXPECT_TRUE(*ok) << "coroutine.resume failed; bound ctor in coroutine is broken";
+    auto p = lua.readVariable<Point*>("p");
+    ASSERT_TRUE(p.has_value());
+    ASSERT_NE(*p, nullptr);
+    EXPECT_FLOAT_EQ((*p)->x, 7.0f);
+    EXPECT_FLOAT_EQ((*p)->y, 11.0f);
+}
+
+// readVariable<T*> on a userdata carrying a DIFFERENT metatable must return
+// nullopt, not raise a Lua error. The read happens at the host boundary
+// (no enclosing pcall), so an erroring luaL_checkudata would kill the
+// program — tryGet uses luaL_testudata which returns nullptr on mismatch.
 TEST(BindConstructorTest, ReadVariableWrongUserdataType_ReturnsNullopt) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);

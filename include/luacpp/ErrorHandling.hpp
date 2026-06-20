@@ -13,18 +13,11 @@
 namespace Lua {
 
 /**
- * @brief Lua-side error text plus best-effort accessors for the standard
- *        "<chunkname>:<line>: <text>" prefix Lua's error() prepends.
- *
- * The raw string Lua placed on the stack is always available verbatim via
- * raw(). The convenience accessors source() / line() / text() parse Lua's
- * standard prefix format and return nullopt (or fall back to raw()) when
- * the message does not match — e.g. a table-thrown error, error() called
- * with level=0, or a custom message handler that rewrote the format.
- *
- * Implicit construction from std::string is allowed because LuaMessage is
- * essentially a thin wrapper that exposes parsing convenience — passing a
- * plain std::string where a LuaMessage is expected is never a misuse.
+ * @brief Lua-side error text plus best-effort accessors for Lua's standard
+ *        "<chunkname>:<line>: <text>" prefix. raw() always returns the
+ *        original; source()/line() return nullopt and text() falls back
+ *        to raw() when the message doesn't match (table errors, level=0
+ *        error(), custom message handler).
  */
 class LuaMessage {
 public:
@@ -44,9 +37,7 @@ public:
 	/// Message body without the "<src>:<line>: " prefix; raw() if no prefix.
 	std::string text() const;
 
-	// Forwarders for the common substring-search use case. Deliberately
-	// narrow: only find() is delegated because that's what callers actually
-	// reach for. Everything else goes through raw() to keep the API tight.
+	// Substring search forwarders. Other string ops go through raw().
 	std::size_t find(const std::string& s, std::size_t pos = 0) const noexcept { return m_raw.find(s, pos); }
 	std::size_t find(const char* s,        std::size_t pos = 0) const          { return m_raw.find(s, pos); }
 	std::size_t find(char c,               std::size_t pos = 0) const noexcept { return m_raw.find(c, pos); }
@@ -60,27 +51,16 @@ private:
 std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
 
 /**
- * @brief Describes a single Lua error surfaced to C++.
- *
- * The State raises a LuaError whenever a Lua API call returns a non-OK
- * status. Two categories cover the lifecycle:
- *  - Load:    luaL_loadstring / luaL_loadfile failures (LUA_ERRSYNTAX,
- *             LUA_ERRFILE). The script never started running.
- *  - Runtime: pcall failures (LUA_ERRRUN, LUA_ERRMEM, LUA_ERRERR). The
- *             script started running and threw, ran out of memory, or its
- *             own message handler errored.
+ * @brief A Lua error surfaced to C++. Category splits Load (loadstring/file
+ *        failed before running) from Runtime (pcall threw / OOM / msg-handler
+ *        error). Status mirrors Lua's status codes plus luacpp-detected
+ *        synthetic codes (see below).
  */
 struct LuaError {
 	enum class Category { Load, Runtime };
 
-	/**
-	 * @brief Status code: Lua's status (>=0) or a luacpp-side detection (<0).
-	 *
-	 * The positive values mirror Lua's LUA_OK..LUA_ERRFILE numerically — a
-	 * static_assert in ErrorHandling.cpp pins this so users never need to
-	 * include <lua/lua.h> to dispatch on status. Negative values are
-	 * conditions luacpp detects itself before Lua sees them.
-	 */
+	// Positive values mirror Lua's LUA_OK..LUA_ERRFILE (pinned by static_assert
+	// in ErrorHandling.cpp); negative values are luacpp-side detections.
 	enum class Status : int {
 		// Lua status mirror (positive):
 		Ok                  = 0,   // LUA_OK
@@ -123,12 +103,8 @@ private:
 	LuaError m_error;
 };
 
-// ---------------------------------------------------------------------------
-// ErrorLogger — passive observer slot ("what happened, recorded somewhere")
-//
-// Per-State, swappable. Default = StreamLogger to std::cerr. Pass nullptr to
-// State::setLogger to silence all logging.
-// ---------------------------------------------------------------------------
+// ErrorLogger — passive observer slot ("what happened, recorded somewhere").
+// Default: StreamLogger to std::cerr; nullptr silences logging.
 
 class ErrorLogger {
 public:
@@ -183,14 +159,9 @@ private:
 	std::function<void(const LuaError&)> m_callback;
 };
 
-// ---------------------------------------------------------------------------
-// ErrorHandler — active reaction slot ("what to do about it")
-//
-// Per-State, swappable. Default = nullptr (no reaction; the logger still
-// runs). Set ThrowHandler to escalate errors as C++ exceptions, or a
-// CallbackHandler for custom flow control. The logger runs before the
-// handler, so even a throwing handler leaves the log entry behind.
-// ---------------------------------------------------------------------------
+// ErrorHandler — active reaction slot ("what to do about it"). Default
+// nullptr (logger still runs). ThrowHandler escalates to LuaException;
+// CallbackHandler bridges to std::function. Logger fires before handler.
 
 class ErrorHandler {
 public:
@@ -227,6 +198,16 @@ public:
 	void operator()(const LuaError& e) override { m_callback(e); }
 private:
 	std::function<void(const LuaError&)> m_callback;
+};
+
+// Per-VM error response: passive logger + active handler. Lives by value
+// inside detail::StateContext so every wrapper around the same lua_State
+// (including the transient one Lua builds for a debug hook) sees the same
+// configured logging/handling.
+
+struct ErrorPolicy {
+	std::unique_ptr<ErrorLogger>  logger  = nullptr; ///< passive observer; default StreamLogger (set in StateRegistry::acquire)
+	std::unique_ptr<ErrorHandler> handler = nullptr; ///< active reaction; none by default
 };
 
 } // namespace Lua

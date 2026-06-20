@@ -1,7 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <luacpp/Debug.hpp>
 #include <luacpp/ErrorHandling.hpp>
 #include <luacpp/State.hpp>
+
+#include <lua/lua.hpp>
 
 #include <memory>
 #include <sstream>
@@ -66,10 +69,9 @@ TEST(LuaMessageTest, malformedLineNumberReturnsNullopt) {
 	EXPECT_EQ(m.text(), "source:NaN: msg");
 }
 
-// Reviewer regression: std::from_chars accepts a leading '-' sign, so a
-// prefix like "src:-5: msg" used to parse as line=-5. Lua never produces
-// negative line numbers (line 1 is the first source line); we reject them
-// instead of surfacing nonsense.
+// std::from_chars accepts a leading '-' sign; Lua never produces negative
+// line numbers (line 1 is the first source line), so we reject them rather
+// than surfacing nonsense.
 TEST(LuaMessageTest, negativeLineNumberReturnsNullopt) {
 	LuaMessage m(std::string("src:-5: msg"));
 	EXPECT_FALSE(m.source().has_value());
@@ -119,9 +121,9 @@ TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticByName) {
 	EXPECT_EQ(text.find("-1"), std::string::npos);
 }
 
-// Reviewer regression: synthetic (luacpp-detected) errors and real Lua-raised
-// errors are visually distinct in StreamLogger output so log readers can tell
-// apart "Lua said this" from "we said this".
+// Synthetic (luacpp-detected) errors and real Lua-raised errors are visually
+// distinct in StreamLogger output so log readers can tell "Lua said this"
+// from "we said this".
 TEST(ErrorLoggerTest, streamLoggerOriginLabelDistinguishesLuaFromLuacpp) {
 	std::ostringstream out;
 	StreamLogger logger(out);
@@ -270,6 +272,90 @@ TEST(StateErrorSlotsTest, customCallbackHandlerCanInspectAndThrowConditionally) 
 
 	// Load error (syntax): callback throws.
 	EXPECT_THROW(lua.loadAndExecuteScript("x ="), LuaException);
+}
+
+// ---------------------------------------------------------------------------
+// Per-VM error policy sharing (owned State <-> borrowed debug-hook wrapper)
+// ---------------------------------------------------------------------------
+
+TEST(ErrorPolicyTest, debugHookWrapperSharesOwnersErrorPolicy) {
+	// The debug-hook trampoline builds a transient borrowed State around the
+	// owner's lua_State. It must share the owner's logger/handler — otherwise
+	// an error reported from inside a hook would silently hit fresh defaults
+	// (cerr logger, no handler) instead of the configured policy.
+	State lua(State::LibBase);
+	auto& log = lua.installLogger<MemoryLogger>();
+
+	int handlerHits = 0;
+	lua.installErrorHandler<CallbackHandler>(
+	    [&handlerHits](const LuaError&) { ++handlerHits; }); // non-throwing on purpose
+
+	bool triggered = false;
+	lua.registerDebugHook([&triggered](State& hooked, const DebugInfo&) {
+		if (triggered) return;       // Lua disables reentrant hooks, but be explicit
+		triggered = true;
+		// Report an error *through the borrowed wrapper*. A syntax error fails
+		// at load time (no nested execution), so the stack stays balanced.
+		hooked.loadAndExecuteScript("this is not valid lua %%%");
+	}, MaskLine, 0);
+
+	lua.loadAndExecuteScript("local a = 1");
+
+	EXPECT_TRUE(triggered) << "debug hook should have fired";
+	ASSERT_FALSE(log.entries().empty())
+	    << "error reported from inside the hook must reach the OWNER's logger";
+	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
+	EXPECT_GE(handlerHits, 1)
+	    << "owner's error handler must also observe the hook-reported error";
+}
+
+TEST(ErrorPolicyTest, borrowedWrapperOfOwnedVmSharesPolicyViaRegistry) {
+	// An owned State publishes its error policy under a private registry key;
+	// any borrowed wrapper of the SAME lua_State recovers it. This is the
+	// mechanism the bind/metatable layer and the debug hook rely on.
+	State owner(State::LibBase);
+	auto& log = owner.installLogger<MemoryLogger>();
+
+	{
+		State borrowed(owner.getState());        // wraps the owner's lua_State
+		borrowed.loadAndExecuteScript("x =");    // syntax error -> reported
+	} // borrowed must NOT detach/free anything it shares
+
+	ASSERT_FALSE(log.entries().empty())
+	    << "a borrowed wrapper of a luacpp-owned VM must share the owner's policy";
+	EXPECT_EQ(log.entries().front().category, LuaError::Category::Load);
+}
+
+TEST(ErrorPolicyTest, sharedPolicyOutlivesMainStateDestruction) {
+	// The error policy lives in the shared StateContext, kept alive by the
+	// context's intrusive refCount. When the main wrapper dies but a borrowed
+	// wrapper still holds a refcount, the context (and its policy) survive —
+	// configuring the policy through the borrowed wrapper must not touch
+	// freed memory.
+	std::unique_ptr<State> borrowed;
+	{
+		State main(State::LibBase);
+		borrowed = std::make_unique<State>(main.getState());
+	} // main destroyed; borrowed keeps refcount, ctx+VM stay alive
+
+	EXPECT_NO_THROW(borrowed->setLogger(std::make_unique<MemoryLogger>()));
+	EXPECT_NO_THROW(borrowed->setErrorHandler(std::make_unique<ThrowHandler>()));
+}
+
+TEST(ErrorPolicyTest, wrappedRawLuaStateConfiguresLoggerFreely) {
+	// The error logger is a plain policy object; any wrapper (including the
+	// first wrapper around a raw lua_State) configures it on the shared
+	// context. The wrapper takes ownership of the VM and closes it on
+	// destruction — no manual lua_close after.
+	lua_State* raw = luaL_newstate();
+	{
+		State wrapper(raw);
+		auto& log = wrapper.installLogger<MemoryLogger>();
+		wrapper.loadAndExecuteScript("x =");   // syntax error -> reported
+		EXPECT_FALSE(log.entries().empty())
+		    << "logger must record errors reported through the shared policy";
+	}
+	// wrapper destructor closed `raw` — no manual lua_close.
 }
 
 } // namespace

@@ -2,8 +2,9 @@
 #include <lua/lua.hpp>
 
 #include <cassert>
+#include <stdexcept> //std::logic_error
 #include <string>
-#include <limits> //std::numeric_limits
+#include <limits>    //std::numeric_limits
 
 namespace {
 // Detects whether s.data() points into the std::string object itself (Short
@@ -37,33 +38,62 @@ bool hasStackError(Lua::LuaError::Status s) {
 
 namespace Lua {
 
-std::map<lua_State*, State::DebugHook> State::s_debugHooks;
-
 State::State(Library libraries)
-: m_state(luaL_newstate()),
-  m_registry(m_state),
-  m_externalState(false),
-  m_errorLogger(std::make_unique<StreamLogger>()),
-  m_errorHandler(nullptr)
+: m_state(detail::StateRegistry::newVM()),
+  m_context(detail::StateRegistry::acquire(m_state, m_isMain)),
+  m_registry(m_state)
 {
-	openLibrary(libraries);
+	// Manual release on body-throw: ~State doesn't run when a ctor body
+	// throws and m_context has no RAII handle.
+	try {
+		openLibrary(libraries);
+	} catch (...) {
+		detail::StateRegistry::release(m_context);
+		throw;
+	}
 }
 
 State::State(lua_State* state)
 : m_state(state),
-  m_registry(state),
-  m_externalState(true),
-  m_errorLogger(std::make_unique<StreamLogger>()),
-  m_errorHandler(nullptr)
+  m_context(detail::StateRegistry::acquire(m_state, m_isMain)),
+  m_registry(m_state)
 {
+	// No body try/catch: m_registry wraps LUA_REGISTRYINDEX, always a table,
+	// so its ctor can't throw on a sane lua_State.
+}
+
+State::State(detail::StateContext* ctx, lua_State* state)
+: m_state(state),
+  m_context(detail::StateRegistry::retain(ctx)),
+  m_registry(m_state)
+{
+	// m_isMain stays default-false — this overload is the borrowed-view
+	// path used by Lua trampolines.
 }
 
 void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
-	m_errorLogger = std::move(logger);
+	m_context->policy.logger = std::move(logger);
 }
 
 void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
-	m_errorHandler = std::move(handler);
+	m_context->policy.handler = std::move(handler);
+}
+
+void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
+	auto& w = m_context->warning;
+	w.logger = std::move(logger);
+	w.buffer.clear();
+	w.inProgress = false;
+	w.currentIsSingle = false;
+	if (w.logger) {
+		// Installing a logger is the opt-in that enables warnings — Lua
+		// starts the system disabled. Scripts can still flip via @off.
+		w.enabled = true;
+		lua_setwarnf(m_state, &detail::warningTrampoline, &w);
+	} else {
+		w.enabled = false;
+		lua_setwarnf(m_state, nullptr, nullptr);
+	}
 }
 
 LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status status) {
@@ -89,8 +119,8 @@ LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status 
 }
 
 void State::reportError(LuaError err) {
-	if (m_errorLogger)  m_errorLogger->log(err);
-	if (m_errorHandler) (*m_errorHandler)(err);
+	if (m_context->policy.logger)  m_context->policy.logger->log(err);
+	if (m_context->policy.handler) (*m_context->policy.handler)(err);
 }
 
 LuaError::Status State::reportStatus(LuaError::Category category, int rawStatus) {
@@ -111,14 +141,23 @@ LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Stat
 	return status;
 }
 
+void State::requireOwnedState(const char* api) const {
+	if (m_isMain) return;
+	throw std::logic_error(
+		std::string("State::") + api +
+		" requires the main State for this lua_State — the wrapper that "
+		"first registered the context. Subsequent wrappers around the same "
+		"VM share its state but cannot register per-instance callbacks.");
+}
+
 State::~State() {
-	if (!m_externalState) {
-		lua_close(m_state);
-		auto res = s_debugHooks.find(m_state);
-		if (res != s_debugHooks.end()) {
-			s_debugHooks.erase(res);
-		}
+	// Tear down any debug hook with the main wrapper that registered it —
+	// the lambda may capture references whose lifetime is tied to its scope.
+	if (m_isMain) {
+		m_context->debugHook = {};
+		lua_sethook(m_state, nullptr, 0, 0);
 	}
+	detail::StateRegistry::release(m_context);
 }
 
 void State::pushExternalString(const std::string& s) {
@@ -231,23 +270,28 @@ void State::registerNativeFunction(const char* name, NativeFunction func, int nu
 }
 
 void State::registerMethod(const char* name, Method method) {
+	// Owner-only: dispatchMethod captures `this`, m_callbacks is per-State.
+	requireOwnedState("registerMethod");
 	m_callbacks.push_back(method);
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
 void State::registerDebugHook(DebugHook hook, int mask, int count) {
-	s_debugHooks[m_state] = hook;
+	// Owner-only so the hook's tied to a clear lifetime — ~main tears it
+	// down before any captured references can dangle.
+	requireOwnedState("registerDebugHook");
+	m_context->debugHook = std::move(hook);
 
-	// The C hook function
 	auto chook = [](lua_State* L, lua_Debug* ar) {
-		auto res = s_debugHooks.find(L);
-		if (res != s_debugHooks.end()) {
-			State state(L);
-			res->second(state, reinterpret_cast<const DebugInfo&>(*ar));
+		// Single lookup; the borrowed-view ctor retains the resolved ctx.
+		auto* ctx = detail::StateRegistry::find(L);
+		if (ctx && ctx->debugHook) {
+			State state(ctx, L);
+			ctx->debugHook(state, reinterpret_cast<const DebugInfo&>(*ar));
 		}
 	};
 
-    lua_sethook(m_state, chook, mask, count);
+	lua_sethook(m_state, chook, mask, count);
 }
 
 void State::overrideLuaFunction(const char* name, NativeFunction func) {

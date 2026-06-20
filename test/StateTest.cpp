@@ -2,10 +2,13 @@
 
 #include <luacpp/State.hpp>
 #include <luacpp/TypeMismatchException.hpp>
+#include <lua/lua.hpp>
 
 #include "TestSupport.hpp"
 
 #include <array>
+#include <memory>
+#include <stdexcept>
 #if LUACPP_HAS_SPAN
 #include <span>
 #endif
@@ -241,10 +244,8 @@ TEST_F(StateTest, executeFunctionWithArgsArraySpan) {
 }
 #endif // LUACPP_HAS_SPAN
 
-// Regression: executeScript previously popped the pcall error message off the
-// stack without routing it anywhere. After the ErrorHandler refactor both
-// load-and-execute and execute paths must invoke the configured handler so
-// callers can inspect failures uniformly.
+// Both load-and-execute and execute paths must invoke the configured error
+// handler so callers can inspect failures uniformly.
 TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	constexpr static const char* const ScriptKey = "errscript";
 	// LibBase is required so error() resolves at runtime.
@@ -265,11 +266,9 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	          std::string::npos);
 }
 
-// Reviewer regression: executeScript<Generic> with an unsupported-type key
-// previously collapsed Registry::getScript's InvalidKey into RegistryKeyNotFound,
-// losing the distinction between "the key type is bogus" and "the key is fine
-// but nothing's stored under it". The status returned (and reported) must
-// preserve the original classification.
+// executeScript<Generic> must preserve Registry::getScript's status: an
+// unsupported key type (InvalidKey) is distinct from a missing/non-function
+// key (RegistryKeyNotFound), and the caller should see which one happened.
 TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -283,10 +282,9 @@ TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 	EXPECT_EQ(errors.entries().front().status, LuaError::Status::InvalidKey);
 }
 
-// Regression: prior to the popErrorFromStack rewrite, errors raised with a
-// non-string value (e.g. `error({...})` propagates a table) were not
-// consumed from the Lua stack — the lua_isstring check failed, the value
-// stayed, and every subsequent call drifted further from a balanced stack.
+// Errors raised with a non-string value (e.g. error({...}) propagates a
+// table) must still be consumed from the Lua stack — otherwise the stack
+// drifts on every subsequent call.
 TEST_F(StateTest, tableErrorIsStringifiedAndStackStaysBalanced) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -317,12 +315,9 @@ TEST_F(StateTest, tableErrorUsesCustomTostring) {
 	    << "luaL_tolstring should honor __tostring on the error object";
 }
 
-// Reviewer regression: previously executeFunctionReturning inferred success
-// from stack-depth change. Combined with the older popErrorFromStack that
-// only popped string errors, a non-string error (e.g. error({...})) could
-// leave the error table on the stack — the heuristic would call that
-// "success" and read the table as T. The current design surfaces success
-// vs failure via executeFunction's explicit Status return.
+// executeFunctionReturning surfaces success vs failure via the underlying
+// Status return. A non-string error (error({...})) thus produces nullopt
+// cleanly instead of being mis-read as a T value left on the stack.
 TEST_F(StateTest, executeFunctionReturningSurfacesFailureViaStatus) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -367,10 +362,8 @@ TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-// Regression: getUpValue<T>() previously forwarded to
-// getStackValue<T>(m_state, index) — but getStackValue only takes a single
-// argument, so any call site was uninstantiable. The method was documented
-// as public API yet never actually compiled. This test exercises the path.
+// Compile-and-run coverage for getUpValue<T>() so the public API stays
+// instantiable end-to-end.
 TEST_F(StateTest, getUpValue) {
 	const char* src = R"(
 		result = multiplyByFactor(6)
@@ -422,6 +415,88 @@ TEST_F(StateTest, registerDebugHook) {
 	}, MaskLine, 0);
 	script.loadAndExecuteScript(src);
 	EXPECT_EQ(callCount, 3);
+}
+
+TEST_F(StateTest, registerMethodRejectedOnBorrowedState) {
+	// A borrowed wrapper must not register methods: dispatchMethod captures
+	// `this` and m_callbacks is instance-local, so the closure would dangle
+	// once the wrapper dies. Only the VM-owning State may register.
+	State owner(State::LibNone);
+	State borrowed(owner.getState());
+	EXPECT_THROW(
+	    borrowed.registerMethod("nope", [](State&) { return 0; }),
+	    std::logic_error);
+}
+
+TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
+	// A borrowed wrapper must not register a debug hook: the s_debugHooks
+	// entry is keyed by the lua_State and only an owning State's destructor
+	// erases it, so a borrowed registration would leak and outlive the wrapper.
+	State owner(State::LibNone);
+	State borrowed(owner.getState());
+	EXPECT_THROW(
+	    borrowed.registerDebugHook([](State&, const DebugInfo&) {}, MaskLine, 0),
+	    std::logic_error);
+}
+
+// The debug hook may capture references whose lifetime is tied to the main
+// State (or its outer scope). When the main wrapper dies while a borrowed
+// wrapper keeps the VM alive, the hook must be torn down — otherwise the
+// next Lua event invokes the lambda with dangling captures.
+TEST_F(StateTest, debugHookDetachedOnMainDestructionEvenIfVmSurvives) {
+	int callCount = 0;
+	auto main = std::make_unique<State>(State::LibNone);
+	main->registerDebugHook(
+	    [&callCount](State&, const DebugInfo&) { ++callCount; },
+	    MaskLine, 0);
+
+	State borrowed(main->getState());
+	main.reset();   // main dies; VM lives via `borrowed`
+
+	const int before = callCount;
+	borrowed.loadAndExecuteScript("a = 1\nb = 2\nc = 3");
+	EXPECT_EQ(callCount, before)
+	    << "debug hook must be detached when its registering main dies, "
+	       "even if the VM survives via other wrappers";
+}
+
+// The VM survives the original owning wrapper as long as any other State
+// instance still references its context. The intrusive refCount on
+// StateContext drives lua_close, so the actual last-to-die wrapper triggers
+// it — regardless of which one was the original creator.
+TEST_F(StateTest, vmStaysAliveWhileBorrowedReferencesExist) {
+	auto owner = std::make_unique<State>(State::LibNone);
+	owner->loadAndExecuteScript("greeting = 'hello'");
+	lua_State* L = owner->getState();
+
+	State borrowed(L);  // shares the context, ref-count becomes 2
+
+	owner.reset();      // ref-count drops to 1; VM must still be alive
+
+	// If lua_close had run, this would be UB; with ref-counted lifetime
+	// the VM survives until `borrowed` itself goes out of scope.
+	auto g = borrowed.readVariable<std::string>("greeting");
+	ASSERT_TRUE(g.has_value());
+	EXPECT_EQ(*g, "hello");
+}
+
+// Wrapping a user-created lua_State transfers ownership to luacpp: the
+// wrapper's destructor calls lua_close on the VM, and the caller must NOT
+// call lua_close themselves afterwards.
+TEST_F(StateTest, wrappingRawLuaStateTransfersOwnership) {
+	lua_State* L = luaL_newstate();
+	ASSERT_NE(L, nullptr);
+
+	{
+		State wrapper(L);
+		wrapper.loadAndExecuteScript("x = 42");
+		auto x = wrapper.readVariable<int>("x");
+		ASSERT_TRUE(x.has_value());
+		EXPECT_EQ(*x, 42);
+	}
+	// wrapper destructor closes L. The lua_State is now invalid; reaching
+	// this point without a crash proves the wrapper handled its own cleanup.
+	SUCCEED();
 }
 
 TEST_F(StateTest, readTable) {

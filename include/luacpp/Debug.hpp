@@ -11,6 +11,10 @@ namespace Lua {
 
 constexpr static const int srcSize = 60;
 
+// Layout-compatible view of Lua's `lua_Debug` — field types must match
+// Lua's exactly (unsigned char, unsigned short) because we reinterpret_cast
+// a lua_Debug& into a DebugInfo& inside the debug-hook trampoline. Do NOT
+// switch to uint8_t/uint16_t even where they're identical on this platform.
 struct DebugInfo {
 	int event;
 	const char* name;
@@ -42,13 +46,11 @@ enum class EventCodes : int {
 	TailCall = 4
 };
 
-/*
-** Event masks
-*/
-constexpr static const int MaskCall = 1 << static_cast<int>(EventCodes::Call);
-constexpr static const int MaskReturn = 1 << static_cast<int>(EventCodes::Return);
-constexpr static const int MaskLine = 1 << static_cast<int>(EventCodes::Line);
-constexpr static const int MaskCount = 1 << static_cast<int>(EventCodes::Count);
+// Event masks — external linkage so the module surface can re-export them.
+inline constexpr int MaskCall   = 1 << static_cast<int>(EventCodes::Call);
+inline constexpr int MaskReturn = 1 << static_cast<int>(EventCodes::Return);
+inline constexpr int MaskLine   = 1 << static_cast<int>(EventCodes::Line);
+inline constexpr int MaskCount  = 1 << static_cast<int>(EventCodes::Count);
 
 class Debug {
 public:

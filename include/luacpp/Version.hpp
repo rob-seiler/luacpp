@@ -55,7 +55,8 @@ private:
 	uint8_t m_patch;
 };
 
-constexpr inline static const Version LuaCppVersion{0, 2, 0};
+// External linkage so the module surface can re-export it.
+inline constexpr Version LuaCppVersion{0, 2, 0};
 
 } // namespace Lua
 

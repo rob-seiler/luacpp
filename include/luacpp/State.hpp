@@ -9,8 +9,10 @@
 #include "Stack.hpp"
 #include "StackGuard.hpp"
 #include "ErrorHandling.hpp"
+#include "WarningHandling.hpp"
 #include "detail/Bind.hpp"
 #include "detail/Config.hpp"
+#include "detail/StateRegistry.hpp"
 
 #include <string>
 #include <vector>
@@ -94,7 +96,27 @@ public:
 	};
 
 	State(Library libraries = LibNone);
+
+	/**
+	 * @brief Wrap an existing lua_State, joining its shared per-VM context
+	 *        if known, otherwise taking ownership of a foreign main thread.
+	 *
+	 * Foreign main-thread case is an ownership transfer: the wrapper (or its
+	 * last co-wrapper) closes the VM. **Do not lua_close `state` yourself.**
+	 * Construction throws (registry-insert OOM): the main thread is closed
+	 * before propagating; sub-threads are left untouched.
+	 */
 	State(lua_State* state);
+
+private:
+	// Internal: borrowed wrapper from a pre-resolved context. Skips
+	// StateRegistry::acquire's mainThreadOf+lookup by retaining the given
+	// ctx directly. Used by Lua trampolines that already called find().
+	// The caller MUST pass a ctx whose lua_State matches `state` (the
+	// trampoline got both from find on the same incoming pointer).
+	State(detail::StateContext* ctx, lua_State* state);
+
+public:
 	State(const State&) = delete;
 	// Move is deleted on purpose. registerMethod() captures `this` as an
 	// upvalue inside a Lua C-closure; once moved, every previously registered
@@ -236,6 +258,14 @@ public:
 		registerNativeFunction(name, func, sizeof...(args));
 	}
 
+	/**
+	 * @brief Register a C++ callable to be callable from Lua under `name`.
+	 *
+	 * \throws std::logic_error if called on a borrowed State (one constructed
+	 *         from an existing lua_State*). The closure captures `this` and the
+	 *         callback list is instance-local, so only the State that owns the
+	 *         lua_State may register methods.
+	 */
 	void registerMethod(const char* name, Method method);
 
 	/**
@@ -251,6 +281,10 @@ public:
 	 * @param hook The function to call
 	 * @param mask The mask of events for which the hook should be called
 	 * @param count The number of instructions between each call of the hook
+	 * \throws std::logic_error if called on a borrowed State (one constructed
+	 *         from an existing lua_State*). The hook entry is keyed by the
+	 *         lua_State in a process-wide table that only an owning State's
+	 *         destructor cleans up, so only the owner may register hooks.
 	*/
 	void registerDebugHook(DebugHook hook, int mask, int count = 0);
 
@@ -608,10 +642,11 @@ public:
 	}
 
 	/**
-	 * \brief Install the passive observer for LuaErrors ("where to record").
+	 * \brief Install the passive observer for LuaErrors. Default = StreamLogger
+	 *        to std::cerr; nullptr silences logging.
 	 *
-	 * Default-constructed States carry a StreamLogger writing to std::cerr.
-	 * Pass nullptr to silence logging entirely.
+	 * Lives in the shared per-VM ErrorPolicy: any wrapper configures the
+	 * sink for all wrappers around the same lua_State.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
@@ -628,12 +663,11 @@ public:
 	}
 
 	/**
-	 * \brief Install the active reaction for LuaErrors ("what to do about it").
+	 * \brief Install the active reaction for LuaErrors. Default = nullptr
+	 *        (logger still runs). Logger fires before the handler, so a
+	 *        throwing handler does not erase the log record.
 	 *
-	 * Default = nullptr (no reaction; logger still runs). Set ThrowHandler
-	 * to escalate errors as C++ exceptions, or a CallbackHandler for custom
-	 * flow control. The logger runs before the handler, so a throwing handler
-	 * does not erase the log record.
+	 * Shares lifetime with the ErrorPolicy — see setLogger.
 	 *
 	 * \see ErrorHandling.hpp
 	 */
@@ -646,6 +680,26 @@ public:
 		auto handler = std::make_unique<HandlerT>(std::forward<Args>(args)...);
 		HandlerT* ptr = handler.get();
 		setErrorHandler(std::move(handler));
+		return *ptr;
+	}
+
+	/**
+	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
+	 *        Default = none (Lua's own warnfon prints to stderr). nullptr
+	 *        disables the warning system entirely.
+	 *
+	 * Lives in the shared per-VM context (trampoline ud = StateContext*).
+	 * See WarningHandling.hpp for the opt-in / control-directive story.
+	 */
+	void setWarningLogger(std::unique_ptr<WarningLogger> logger);
+
+	/// Convenience: construct a WarningLogger in place, install it, return
+	/// a reference for later inspection (typically MemoryWarningLogger).
+	template <typename LoggerT, typename... Args>
+	LoggerT& installWarningLogger(Args&&... args) {
+		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
+		LoggerT* ptr = logger.get();
+		setWarningLogger(std::move(logger));
 		return *ptr;
 	}
 
@@ -745,6 +799,11 @@ private:
 	LuaError::Status reportStatus(LuaError::Category category, int rawStatus);
 	LuaError::Status reportStatus(LuaError::Category category, LuaError::Status status);
 
+	// Throws std::logic_error if this State does not own its lua_State.
+	// `api` is the method name embedded in the message; each call site
+	// documents the specific owner-only reason.
+	void requireOwnedState(const char* api) const;
+
 	template <typename U>
 	static void deleteTyped(void* p) noexcept { delete static_cast<U*>(p); }
 
@@ -777,14 +836,16 @@ private:
 	*/
 	int callFunction(int numArgs, int numResults);
 
-	static std::map<lua_State*, DebugHook> s_debugHooks; ///< list of debug hooks (one per lua state)
+	using StateContext = detail::StateContext;
 
-	lua_State* m_state; ///< instance of the lua virtual machine
-	Registry m_registry; ///< registry for user defined functions
-	bool m_externalState; ///< true if the state was provided by the user, false if it was created by this class
-	std::vector<Method> m_callbacks; ///< list of registered methods
-	std::unique_ptr<ErrorLogger>  m_errorLogger;  ///< passive observer; may be null
-	std::unique_ptr<ErrorHandler> m_errorHandler; ///< active reaction; may be null
+	// m_isMain MUST stay declared before m_context: m_context's initializer
+	// writes m_isMain via a bool& out-param, and a default-init that runs
+	// AFTER would silently clobber the write (every State becomes non-main).
+	lua_State*          m_state;
+	bool                m_isMain = false;
+	StateContext*       m_context;
+	Registry            m_registry;
+	std::vector<Method> m_callbacks;
 };
 
 } // namespace Lua
