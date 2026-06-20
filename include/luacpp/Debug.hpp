@@ -11,6 +11,10 @@ namespace Lua {
 
 constexpr static const int srcSize = 60;
 
+// Layout-compatible view of Lua's `lua_Debug` — field types must match
+// Lua's exactly (unsigned char, unsigned short) because we reinterpret_cast
+// a lua_Debug& into a DebugInfo& inside the debug-hook trampoline. Do NOT
+// switch to uint8_t/uint16_t even where they're identical on this platform.
 struct DebugInfo {
 	int event;
 	const char* name;

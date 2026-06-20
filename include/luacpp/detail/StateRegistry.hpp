@@ -5,6 +5,7 @@
 #include "../ErrorHandling.hpp"
 #include "../WarningHandling.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -46,7 +47,7 @@ struct StateContext {
 	ErrorPolicy      policy;
 	DebugHook        debugHook;        // empty when none installed
 	WarningState     warning;
-	unsigned         refCount;
+	uint32_t         refCount;
 	bool             closing;
 
 	explicit StateContext(lua_State* s) noexcept
