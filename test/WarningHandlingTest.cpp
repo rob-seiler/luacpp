@@ -97,11 +97,10 @@ TEST(WarningLoggerTest, controlMessagesNeverReachLogger) {
 	EXPECT_EQ(warnings.entries().front(), "real");
 }
 
-// Reviewer regression: Lua's checkcontrol (lauxlib.c) gates control-message
-// detection on the FIRST piece's tocont — a multi-piece warning whose first
-// fragment starts with '@' is content, not a control directive, even though
-// the assembled string starts with '@'. The earlier impl inspected only the
-// assembled string and silently dropped such messages.
+// Lua's checkcontrol (lauxlib.c) gates control-message detection on the
+// FIRST piece's tocont — a multi-piece warning whose first fragment starts
+// with '@' is content, not a control directive, even though the assembled
+// string starts with '@'.
 TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 	State lua(State::LibBase);
 	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
@@ -118,12 +117,11 @@ TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 	EXPECT_EQ(warnings.entries().front(), "@off rest");
 }
 
-// Reviewer regression: when the FIRST piece is empty, an empty buffer
-// can't be used as a "is this the first piece" proxy — the second piece would
-// also see an empty buffer and be misclassified as the first. With the bug, a
-// multi-piece warning whose first piece is empty and whose second piece is
-// '@off' was silently treated as a single-piece control directive, muting all
-// subsequent warnings.
+// When the FIRST piece is empty, the buffer can't be used as a "is this
+// the first piece" proxy — the second piece would also see an empty buffer
+// and be misclassified as the first. The state machine must track piece
+// boundaries independently so a multi-piece "" + "@off" doesn't get taken
+// as a single-piece control directive.
 TEST(WarningLoggerTest, emptyFirstPieceDoesNotConfuseControlGate) {
 	State lua(State::LibBase);
 	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
@@ -246,10 +244,9 @@ TEST(WarningLoggerTest, anyWrapperConfiguresSharedWarningSink) {
 }
 
 TEST(WarningLoggerTest, warningSinkSurvivesMainStateDestruction) {
-	// Reviewer regression: the old design detached lua_setwarnf in ~State of
-	// the main wrapper, leaving the still-live VM permanently warning-dead
-	// when a borrowed wrapper kept it alive. Warning sink lives in the
-	// shared context now; it must keep working after the main is gone.
+	// The warning sink lives in the shared context, so warnings keep flowing
+	// even after the main wrapper dies as long as borrowed wrappers keep
+	// the VM alive.
 	auto main = std::make_unique<State>(State::LibBase);
 	auto& warnings = main->installWarningLogger<MemoryWarningLogger>();
 	State borrowed(main->getState());
@@ -264,10 +261,10 @@ TEST(WarningLoggerTest, warningSinkSurvivesMainStateDestruction) {
 }
 
 TEST(WarningLoggerTest, debugHookWrapperDoesNotClobberOwnersWarningLogger) {
-	// Regression: the debug-hook callback builds a transient State around the
-	// owner's lua_State. That borrowed wrapper must not touch lua_setwarnf —
-	// otherwise it overwrites the owner's sink and leaves a dangling `this`
-	// once the hook returns, so the next warn() would hit freed memory.
+	// The debug-hook callback builds a transient State around the owner's
+	// lua_State. That borrowed wrapper must not touch lua_setwarnf — it
+	// would overwrite the owner's sink and the next warn() would invoke a
+	// freed trampoline.
 	State lua(State::LibBase);
 	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
 

@@ -53,10 +53,10 @@ TEST_F(RegistryTest, loadScript_invalidSyntax) {
 	EXPECT_EQ(res, LuaError::Status::RuntimeError);
 }
 
-// Reviewer regression: the Generic-key overloads previously mapped any
-// unsupported key type (Nil, LightUserData, Table, ...) to MsgHandlerError
-// (LUA_ERRERR). That status means "error in the error handler" — nothing
-// to do with registry keys. InvalidKey is the honest classification.
+// Generic-key overloads must return InvalidKey for unsupported key types
+// (Nil, LightUserData, Table, ...). MsgHandlerError would be a dishonest
+// classification — it means "error in the error handler", nothing about
+// keys.
 TEST_F(RegistryTest, loadScriptWithNilKeyReturnsInvalidKey) {
 	LuaError::Status res = m_registry.loadScript(Generic(nullptr), "x = 1");
 	EXPECT_EQ(res, LuaError::Status::InvalidKey);

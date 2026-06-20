@@ -244,10 +244,8 @@ TEST_F(StateTest, executeFunctionWithArgsArraySpan) {
 }
 #endif // LUACPP_HAS_SPAN
 
-// Regression: executeScript previously popped the pcall error message off the
-// stack without routing it anywhere. After the ErrorHandler refactor both
-// load-and-execute and execute paths must invoke the configured handler so
-// callers can inspect failures uniformly.
+// Both load-and-execute and execute paths must invoke the configured error
+// handler so callers can inspect failures uniformly.
 TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	constexpr static const char* const ScriptKey = "errscript";
 	// LibBase is required so error() resolves at runtime.
@@ -268,11 +266,9 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	          std::string::npos);
 }
 
-// Reviewer regression: executeScript<Generic> with an unsupported-type key
-// previously collapsed Registry::getScript's InvalidKey into RegistryKeyNotFound,
-// losing the distinction between "the key type is bogus" and "the key is fine
-// but nothing's stored under it". The status returned (and reported) must
-// preserve the original classification.
+// executeScript<Generic> must preserve Registry::getScript's status: an
+// unsupported key type (InvalidKey) is distinct from a missing/non-function
+// key (RegistryKeyNotFound), and the caller should see which one happened.
 TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -286,10 +282,9 @@ TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 	EXPECT_EQ(errors.entries().front().status, LuaError::Status::InvalidKey);
 }
 
-// Regression: prior to the popErrorFromStack rewrite, errors raised with a
-// non-string value (e.g. `error({...})` propagates a table) were not
-// consumed from the Lua stack — the lua_isstring check failed, the value
-// stayed, and every subsequent call drifted further from a balanced stack.
+// Errors raised with a non-string value (e.g. error({...}) propagates a
+// table) must still be consumed from the Lua stack — otherwise the stack
+// drifts on every subsequent call.
 TEST_F(StateTest, tableErrorIsStringifiedAndStackStaysBalanced) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -320,12 +315,9 @@ TEST_F(StateTest, tableErrorUsesCustomTostring) {
 	    << "luaL_tolstring should honor __tostring on the error object";
 }
 
-// Reviewer regression: previously executeFunctionReturning inferred success
-// from stack-depth change. Combined with the older popErrorFromStack that
-// only popped string errors, a non-string error (e.g. error({...})) could
-// leave the error table on the stack — the heuristic would call that
-// "success" and read the table as T. The current design surfaces success
-// vs failure via executeFunction's explicit Status return.
+// executeFunctionReturning surfaces success vs failure via the underlying
+// Status return. A non-string error (error({...})) thus produces nullopt
+// cleanly instead of being mis-read as a T value left on the stack.
 TEST_F(StateTest, executeFunctionReturningSurfacesFailureViaStatus) {
 	State script(State::LibBase);
 	auto& errors = script.installLogger<MemoryLogger>();
@@ -370,10 +362,8 @@ TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	EXPECT_EQ(script.getStackSize(), 0);
 }
 
-// Regression: getUpValue<T>() previously forwarded to
-// getStackValue<T>(m_state, index) — but getStackValue only takes a single
-// argument, so any call site was uninstantiable. The method was documented
-// as public API yet never actually compiled. This test exercises the path.
+// Compile-and-run coverage for getUpValue<T>() so the public API stays
+// instantiable end-to-end.
 TEST_F(StateTest, getUpValue) {
 	const char* src = R"(
 		result = multiplyByFactor(6)
@@ -449,11 +439,10 @@ TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
 	    std::logic_error);
 }
 
-// Reviewer regression: the debug hook lives in the shared context now, but
-// it captures references whose lifetime is tied to the main State (or its
-// outer scope). When the main wrapper dies while a borrowed wrapper keeps
-// the VM alive, the hook must be torn down — otherwise the next Lua event
-// invokes the lambda with dangling captures.
+// The debug hook may capture references whose lifetime is tied to the main
+// State (or its outer scope). When the main wrapper dies while a borrowed
+// wrapper keeps the VM alive, the hook must be torn down — otherwise the
+// next Lua event invokes the lambda with dangling captures.
 TEST_F(StateTest, debugHookDetachedOnMainDestructionEvenIfVmSurvives) {
 	int callCount = 0;
 	auto main = std::make_unique<State>(State::LibNone);

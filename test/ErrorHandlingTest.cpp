@@ -69,10 +69,9 @@ TEST(LuaMessageTest, malformedLineNumberReturnsNullopt) {
 	EXPECT_EQ(m.text(), "source:NaN: msg");
 }
 
-// Reviewer regression: std::from_chars accepts a leading '-' sign, so a
-// prefix like "src:-5: msg" used to parse as line=-5. Lua never produces
-// negative line numbers (line 1 is the first source line); we reject them
-// instead of surfacing nonsense.
+// std::from_chars accepts a leading '-' sign; Lua never produces negative
+// line numbers (line 1 is the first source line), so we reject them rather
+// than surfacing nonsense.
 TEST(LuaMessageTest, negativeLineNumberReturnsNullopt) {
 	LuaMessage m(std::string("src:-5: msg"));
 	EXPECT_FALSE(m.source().has_value());
@@ -122,9 +121,9 @@ TEST(ErrorLoggerTest, streamLoggerLabelsSyntheticByName) {
 	EXPECT_EQ(text.find("-1"), std::string::npos);
 }
 
-// Reviewer regression: synthetic (luacpp-detected) errors and real Lua-raised
-// errors are visually distinct in StreamLogger output so log readers can tell
-// apart "Lua said this" from "we said this".
+// Synthetic (luacpp-detected) errors and real Lua-raised errors are visually
+// distinct in StreamLogger output so log readers can tell "Lua said this"
+// from "we said this".
 TEST(ErrorLoggerTest, streamLoggerOriginLabelDistinguishesLuaFromLuacpp) {
 	std::ostringstream out;
 	StreamLogger logger(out);
