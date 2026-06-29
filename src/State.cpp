@@ -119,7 +119,7 @@ LuaError::Status State::reportStatus(LuaError::Category category, LuaError::Stat
 void State::requireOwnedState(const char* api) const {
 	if (m_isMain) return;
 	throw std::logic_error(
-		std::string("State::") + api +
+		std::string(api) +
 		" requires the main State for this lua_State — the wrapper that "
 		"first registered the context. Subsequent wrappers around the same "
 		"VM share its state but cannot register per-instance callbacks.");
@@ -254,7 +254,7 @@ void State::registerMethod(const char* name, Method method) {
 void State::installDebugHook(DebugHook hook, int mask, int count) {
 	// Owner-only so the hook's tied to a clear lifetime — ~main tears it
 	// down before any captured references can dangle.
-	requireOwnedState("registerDebugHook");
+	requireOwnedState("diagnostics.registerDebugHook");
 	m_context->debugHook = std::move(hook);
 
 	auto chook = [](lua_State* L, lua_Debug* ar) {

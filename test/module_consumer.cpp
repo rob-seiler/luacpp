@@ -55,6 +55,16 @@ int testSpanArgsArray() {
     return (sum && *sum == 9) ? 0 : 1;
 }
 
+int testFacadeTypeNamable() {
+    // Proves the facade types are re-exported by name (not just reachable via
+    // member access): a consumer can bind a reference of the exported type.
+    Lua::State lua(Lua::State::LibMath);
+    Lua::Variables& vars = lua.variables;
+    vars.write<int>("z", 7);
+    auto z = vars.read<int>("z");
+    return (z && *z == 7) ? 0 : 1;
+}
+
 int testVersionConstant() {
     // Just prove the constant is reachable through the module surface and
     // carries a non-degenerate value — hardcoding the current version here
@@ -71,5 +81,6 @@ int main() {
     if (testStringRoundtrip() != 0) return 30;
     if (testVersionConstant() != 0) return 40;
     if (testSpanArgsArray() != 0) return 50;
+    if (testFacadeTypeNamable() != 0) return 60;
     return 0;
 }

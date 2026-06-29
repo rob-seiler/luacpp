@@ -36,6 +36,10 @@ using ::Lua::State;
 using ::Lua::Table;
 using ::Lua::Registry;
 
+using ::Lua::Variables;
+using ::Lua::Binding;
+using ::Lua::Diagnostics;
+
 // Value / type machinery
 using ::Lua::Generic;
 using ::Lua::Type;
