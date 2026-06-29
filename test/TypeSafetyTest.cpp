@@ -2,6 +2,7 @@
 
 #include <luacpp/State.hpp>
 #include <luacpp/Metatable.hpp>
+#include <luacpp/Bind.hpp>
 #include <luacpp/Basics.hpp>
 #include <lua/lua.hpp>
 
@@ -40,7 +41,7 @@ struct Counter {
 TEST(TypeSafetyTest, CheckUserData_CorrectType) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     // Create a valid Point
     const char* src = "p = Point(3, 4)";
@@ -57,8 +58,8 @@ TEST(TypeSafetyTest, CheckUserData_WrongType_ThrowsError) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Counter, int>("Counter");
 
     // Register a function that tries to use Counter as Point
     lua.registerNativeFunction("testWrongType", [](lua_State* lvm) -> int {
@@ -71,8 +72,8 @@ TEST(TypeSafetyTest, CheckUserData_WrongType_ThrowsError) {
     });
 
     // Pass Counter where Point is expected - should error
-    lua.setLogger(nullptr);
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr);
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     const char* src = "c = Counter(42); result = testWrongType(c)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -80,7 +81,7 @@ TEST(TypeSafetyTest, CheckUserData_WrongType_ThrowsError) {
 TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     lua.registerNativeFunction("testNil", [](lua_State* lvm) -> int {
         State L(lvm);
@@ -91,8 +92,8 @@ TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
     });
 
     // Pass nil - should error
-    lua.setLogger(nullptr);
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr);
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNil(nil)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -100,7 +101,7 @@ TEST(TypeSafetyTest, CheckUserData_NilValue_ThrowsError) {
 TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     lua.registerNativeFunction("testNumber", [](lua_State* lvm) -> int {
         State L(lvm);
@@ -111,8 +112,8 @@ TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
     });
 
     // Pass number - should error
-    lua.setLogger(nullptr);
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr);
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     const char* src = "result = testNumber(42)";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -120,7 +121,7 @@ TEST(TypeSafetyTest, CheckUserData_NumberValue_ThrowsError) {
 TEST(TypeSafetyTest, CheckUserData_StringValue_ThrowsError) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     lua.registerNativeFunction("testString", [](lua_State* lvm) -> int {
         State L(lvm);
@@ -130,8 +131,8 @@ TEST(TypeSafetyTest, CheckUserData_StringValue_ThrowsError) {
     });
 
     // Pass string - should error
-    lua.setLogger(nullptr);
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr);
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     const char* src = "result = testString('hello')";
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
@@ -140,8 +141,8 @@ TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Counter, int>("Counter");
 
     // Function that accepts Point
     lua.registerNativeFunction("getX", [](lua_State* lvm) -> int {
@@ -170,8 +171,8 @@ TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
 
     // Wrong type usage — install ThrowHandler AFTER the successful calls
     // above so the success path is not affected.
-    lua.setLogger(nullptr);
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr);
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     const char* src3 = "x = getX(c)"; // Pass Counter to Point function
     EXPECT_THROW(lua.loadAndExecuteScript(src3), LuaException);
 
@@ -186,7 +187,7 @@ TEST(TypeSafetyTest, CheckUserData_MultipleTypes) {
 TEST(TypeSafetyTest, Basics_CheckUserData_Behavior) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     // Create a Point and push to stack
     const char* src = "p = Point(5, 6); return p";
@@ -210,7 +211,7 @@ TEST(TypeSafetyTest, Basics_CheckUserData_Behavior) {
 TEST(TypeSafetyTest, Basics_AsUserData_vs_CheckUserData) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = "p = Point(7, 8); n = 42";
     lua.loadAndExecuteScript(src);
@@ -257,7 +258,7 @@ TEST(TypeSafetyTest, Documentation_CheckUserDataNeverReturnsNull) {
 
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     lua.registerNativeFunction("safeFunction", [](lua_State* lvm) -> int {
         State L(lvm);

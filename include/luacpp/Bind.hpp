@@ -1,12 +1,20 @@
-#ifndef LUACPP_DETAIL_BIND_IMPL_INL
-#define LUACPP_DETAIL_BIND_IMPL_INL
+#ifndef LUACPP_BIND_HPP
+#define LUACPP_BIND_HPP
 
-#include "../State.hpp"
-#include "../Metatable.hpp"
-#include "../Table.hpp"
-#include "../Basics.hpp"
-#include "ArgumentExtractor.hpp"
-#include "PushResult.hpp"
+// Public header for class binding. Include this in translation units that
+// register C++ classes with Lua (state.binding.* / Bind::*). It pulls in a
+// complete State first, then defines the Bind templates against it — so the
+// definitions live in an ordinary header included *after* State, instead of
+// being appended to <luacpp/State.hpp> as an .inl. State.hpp itself stays free
+// of binding implementation and does not need to be included for class binding
+// to work (this header includes it).
+
+#include "State.hpp"
+#include "Metatable.hpp"
+#include "Table.hpp"
+#include "Basics.hpp"
+#include "detail/ArgumentExtractor.hpp"
+#include "detail/PushResult.hpp"
 
 #include <type_traits>
 #include <tuple>
@@ -234,4 +242,4 @@ void Bind::staticFunction(State& state, const char* tableName, const char* funcN
 
 } // namespace Lua
 
-#endif // LUACPP_DETAIL_BIND_IMPL_INL
+#endif // LUACPP_BIND_HPP

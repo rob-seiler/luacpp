@@ -157,8 +157,8 @@ TEST_F(ExternalStringTest, mapOutlivingState_noTransferNeeded) {
 			lua.pushExternalString(v);
 			lua_setglobal(lua.getState(), k.c_str());
 		}
-		EXPECT_EQ(lua.readVariable<std::string>("greeting"), dict.at("greeting"));
-		EXPECT_EQ(lua.readVariable<std::string>("farewell"), dict.at("farewell"));
+		EXPECT_EQ(lua.variables.read<std::string>("greeting"), dict.at("greeting"));
+		EXPECT_EQ(lua.variables.read<std::string>("farewell"), dict.at("farewell"));
 	}
 	// State destroyed before dict — no dangling refs because Lua never held ownership.
 }
@@ -181,9 +181,9 @@ TEST_F(ExternalStringTest, transferOwnership_mapDiesBeforeStateButRefsStayValid)
 		lua.transferOwnership(std::move(dict));
 	}
 	// dict is now out of scope, but Lua-owned heap copy keeps the buffers alive.
-	EXPECT_EQ(lua.readVariable<std::string>("a"),
+	EXPECT_EQ(lua.variables.read<std::string>("a"),
 	          "value a is deliberately long enough to bypass small string optimization");
-	EXPECT_EQ(lua.readVariable<std::string>("b"),
+	EXPECT_EQ(lua.variables.read<std::string>("b"),
 	          "value b is also long enough to guarantee a heap allocation, no SBO here");
 }
 
@@ -202,9 +202,9 @@ TEST_F(ExternalStringTest, transferOwnership_worksForUnorderedMap) {
 
 		lua.transferOwnership(std::move(dict));
 	}
-	EXPECT_EQ(lua.readVariable<std::string>("x"),
+	EXPECT_EQ(lua.variables.read<std::string>("x"),
 	          "externally managed string number one, long enough to be heap allocated");
-	EXPECT_EQ(lua.readVariable<std::string>("y"),
+	EXPECT_EQ(lua.variables.read<std::string>("y"),
 	          "externally managed string number two, long enough to be heap allocated");
 }
 
@@ -262,7 +262,7 @@ TEST_F(ExternalStringTest, transferOwnership_long_dataSurvivesMemoryChurn) {
 	for (int i = 0; i < 100; ++i) {
 		churn.emplace_back(2048, 'Z');
 	}
-	EXPECT_EQ(lua.readVariable<std::string>("longVal"), expected);
+	EXPECT_EQ(lua.variables.read<std::string>("longVal"), expected);
 }
 
 TEST_F(ExternalStringTest, transferOwnership_singleStdStringShort_SBOPath) {
@@ -278,7 +278,7 @@ TEST_F(ExternalStringTest, transferOwnership_singleStdStringShort_SBOPath) {
 		lua.transferOwnership(std::move(s));
 	}
 	// s is destroyed; Lua's own copy of the SBO bytes must still be readable.
-	EXPECT_EQ(lua.readVariable<std::string>("shortVal"), "short");
+	EXPECT_EQ(lua.variables.read<std::string>("shortVal"), "short");
 }
 
 TEST_F(ExternalStringTest, transferOwnership_singleStdStringLong_heapPath) {
@@ -292,7 +292,7 @@ TEST_F(ExternalStringTest, transferOwnership_singleStdStringLong_heapPath) {
 		lua_setglobal(lua.getState(), "longVal");
 		lua.transferOwnership(std::move(s));
 	}
-	EXPECT_EQ(lua.readVariable<std::string>("longVal"),
+	EXPECT_EQ(lua.variables.read<std::string>("longVal"),
 	          "this string is intentionally long enough to be heap allocated and bypass SBO");
 }
 

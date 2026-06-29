@@ -71,31 +71,6 @@ State::State(detail::StateContext* ctx, lua_State* state)
 	// path used by Lua trampolines.
 }
 
-void State::setLogger(std::unique_ptr<ErrorLogger> logger) {
-	m_context->policy.logger = std::move(logger);
-}
-
-void State::setErrorHandler(std::unique_ptr<ErrorHandler> handler) {
-	m_context->policy.handler = std::move(handler);
-}
-
-void State::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
-	auto& w = m_context->warning;
-	w.logger = std::move(logger);
-	w.buffer.clear();
-	w.inProgress = false;
-	w.currentIsSingle = false;
-	if (w.logger) {
-		// Installing a logger is the opt-in that enables warnings — Lua
-		// starts the system disabled. Scripts can still flip via @off.
-		w.enabled = true;
-		lua_setwarnf(m_state, &detail::warningTrampoline, &w);
-	} else {
-		w.enabled = false;
-		lua_setwarnf(m_state, nullptr, nullptr);
-	}
-}
-
 LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status status) {
 	LuaError err{category, status, {}};
 
@@ -276,7 +251,7 @@ void State::registerMethod(const char* name, Method method) {
 	registerNativeFunctionWithUpvalues(name, dispatchMethod, m_callbacks.size() - 1, this);
 }
 
-void State::registerDebugHook(DebugHook hook, int mask, int count) {
+void State::installDebugHook(DebugHook hook, int mask, int count) {
 	// Owner-only so the hook's tied to a clear lifetime — ~main tears it
 	// down before any captured references can dangle.
 	requireOwnedState("registerDebugHook");
@@ -325,42 +300,15 @@ Type State::getType(int index) const {
 }
 
 Type State::pushGlobalToStack(const char* name) {
-	return static_cast<Type>(lua_getglobal(m_state, name));
+	return Basics::pushGlobal(m_state, name);
 }
 
 void State::setGlobalFromStack(const char* name) {
-	lua_setglobal(m_state, name);
+	Basics::setGlobal(m_state, name);
 }
 
 int State::getStackSize() const {
 	return lua_gettop(m_state);
-}
-
-void State::withTableDo(std::string_view tableName, TableFunction workOnTable, bool createIfMissing) {
-	const bool isTable = (lua_getglobal(m_state, tableName.data()) == LUA_TTABLE);
-	// Governs the single value lua_getglobal pushed; on the create path the
-	// non-table value is replaced by a fresh table, still a net of one value.
-	DefaultStackGuard guard(m_state);
-
-	if (!isTable) {
-		if (!createIfMissing) {
-			return; // guard pops the non-table value (previously the nil leaked here)
-		}
-		lua_pop(m_state, 1);                       // drop the non-table value
-		lua_newtable(m_state);                     // fresh table (now governed by guard)
-		lua_pushvalue(m_state, -1);                // dup, because setglobal pops
-		lua_setglobal(m_state, tableName.data());  // consumes the dup
-	}
-
-	Table table(m_state, -1); // the table is on top of the stack
-	workOnTable(table);       // may throw — guard pops the table
-}
-
-void State::withTableDo(int index, TableFunction workOnTable) {
-	if (lua_istable(m_state, index)) {
-		Table table(m_state, index); //the table is on top of the stack
-		workOnTable(table);
-	}
 }
 
 void State::createTable(const char* name, TableFunction workOnTable) {

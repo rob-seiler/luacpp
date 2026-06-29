@@ -20,7 +20,7 @@ namespace {
 int testReadWriteVariable() {
     Lua::State lua(Lua::State::LibMath);
     lua.loadAndExecuteScript("x = 10 + 2");
-    auto x = lua.readVariable<int>("x");
+    auto x = lua.variables.read<int>("x");
     return (x && *x == 12) ? 0 : 1;
 }
 
@@ -30,15 +30,15 @@ int testNativeFunctionRoundtrip() {
         return s.setReturnValue(42);
     });
     lua.loadAndExecuteScript("y = score()");
-    auto y = lua.readVariable<int>("y");
+    auto y = lua.variables.read<int>("y");
     return (y && *y == 42) ? 0 : 1;
 }
 
 int testStringRoundtrip() {
     Lua::State lua(Lua::State::LibString);
-    lua.writeVariable<const char*>("greeting", "hello");
+    lua.variables.write<const char*>("greeting", "hello");
     lua.loadAndExecuteScript("greeting = greeting .. ' world'");
-    auto g = lua.readVariable<std::string>("greeting");
+    auto g = lua.variables.read<std::string>("greeting");
     return (g && *g == "hello world") ? 0 : 1;
 }
 

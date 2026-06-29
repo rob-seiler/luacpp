@@ -111,8 +111,10 @@ public:
 
 } // namespace Lua
 
-// Implementations live in BindImpl.inl. It is included by State.hpp at the
-// point where the State class is fully defined, so there is no ordering
-// constraint on includers of this header.
+// This header only declares Bind. The template implementations live in the
+// public <luacpp/Bind.hpp>, which includes a complete State first and then
+// defines these members. Translation units that register classes include
+// <luacpp/Bind.hpp>; State.hpp alone is enough to *hold* the binding facade
+// (its forwarders are dependent and need only this declaration).
 
 #endif // LUACPP_DETAIL_BIND_HPP

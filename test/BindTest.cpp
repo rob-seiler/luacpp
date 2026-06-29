@@ -3,6 +3,7 @@
 #include <luacpp/State.hpp>
 #include <luacpp/Table.hpp>
 #include <luacpp/Metatable.hpp>
+#include <luacpp/Bind.hpp>
 
 #include "TestSupport.hpp"
 
@@ -113,7 +114,7 @@ struct Particle {
 TEST(BindConstructorTest, BasicConstructor) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = "p = Point(3.5, 4.5)";
     lua.loadAndExecuteScript(src);
@@ -131,25 +132,25 @@ TEST(BindConstructorTest, BasicConstructor) {
 TEST(BindConstructorTest, ReadVariableVoidPtrRejectsFullUserdata) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     lua.loadAndExecuteScript("p = Point(1.0, 2.0)");
 
     // p is a full userdata. void* must refuse — no metatable check possible.
-    auto asVoid = lua.readVariable<void*>("p");
+    auto asVoid = lua.variables.read<void*>("p");
     EXPECT_FALSE(asVoid.has_value())
         << "void* must not accept full userdata blindly";
 
     // The typed read still works.
-    auto asPoint = lua.readVariable<Point*>("p");
+    auto asPoint = lua.variables.read<Point*>("p");
     EXPECT_TRUE(asPoint.has_value());
 }
 
 TEST(BindConstructorTest, ReadVariableVoidPtrAcceptsLightUserdata) {
     State lua(State::LibNone);
     int sentinel = 42;
-    lua.writeVariable<void*>("ptr", &sentinel);   // pushes light userdata
-    auto p = lua.readVariable<void*>("ptr");
+    lua.variables.write<void*>("ptr", &sentinel);   // pushes light userdata
+    auto p = lua.variables.read<void*>("ptr");
     ASSERT_TRUE(p.has_value());
     EXPECT_EQ(*p, &sentinel);
 }
@@ -161,7 +162,7 @@ TEST(BindConstructorTest, ReadVariableVoidPtrAcceptsLightUserdata) {
 TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
     lua.loadAndExecuteScript("function make() return Point(3, 4) end");
 
     auto p = lua.executeFunctionReturning<Point*>("make");
@@ -182,7 +183,7 @@ TEST(BindConstructorTest, executeFunctionReturningClassPointer) {
 TEST(BindConstructorTest, boundCtorSurvivesCoroutineInvocation) {
     State lua(State::LibBase | State::LibCoroutine);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     // Construct Point INSIDE a coroutine — invokeConstructor's `State L(lvm)`
     // receives the coroutine thread. The wrapper must NOT close it on scope
@@ -194,10 +195,10 @@ TEST(BindConstructorTest, boundCtorSurvivesCoroutineInvocation) {
         ok, p = coroutine.resume(co)
     )");
 
-    auto ok = lua.readVariable<bool>("ok");
+    auto ok = lua.variables.read<bool>("ok");
     ASSERT_TRUE(ok.has_value());
     EXPECT_TRUE(*ok) << "coroutine.resume failed; bound ctor in coroutine is broken";
-    auto p = lua.readVariable<Point*>("p");
+    auto p = lua.variables.read<Point*>("p");
     ASSERT_TRUE(p.has_value());
     ASSERT_NE(*p, nullptr);
     EXPECT_FLOAT_EQ((*p)->x, 7.0f);
@@ -212,28 +213,28 @@ TEST(BindConstructorTest, ReadVariableWrongUserdataType_ReturnsNullopt) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Counter, int>("Counter");
 
     lua.loadAndExecuteScript("c = Counter(42)");
 
     // c is a Counter userdata; asking for a Point* must NOT crash.
-    auto asPoint = lua.readVariable<Point*>("c");
+    auto asPoint = lua.variables.read<Point*>("c");
     EXPECT_FALSE(asPoint.has_value());
 
     // The correct type still resolves.
-    auto asCounter = lua.readVariable<Counter*>("c");
+    auto asCounter = lua.variables.read<Counter*>("c");
     ASSERT_TRUE(asCounter.has_value());
     EXPECT_EQ((*asCounter)->value, 42);
 
     // A missing global is likewise nullopt, not a crash.
-    EXPECT_FALSE(lua.readVariable<Point*>("doesNotExist").has_value());
+    EXPECT_FALSE(lua.variables.read<Point*>("doesNotExist").has_value());
 }
 
 TEST(BindConstructorTest, SingleArgumentConstructor) {
     State lua(State::LibBase);
     Metatable<Counter>::registerMetatable(lua);
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(42)";
     lua.loadAndExecuteScript(src);
@@ -246,7 +247,7 @@ TEST(BindConstructorTest, SingleArgumentConstructor) {
 TEST(BindConstructorTest, ConstructorWithOperators) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = "p1 = Point(1, 2); p2 = Point(3, 4); result = p1 + p2";
     lua.loadAndExecuteScript(src);
@@ -262,8 +263,8 @@ TEST(BindConstructorTest, MultipleConstructors) {
     Metatable<Point>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
 
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Counter, int>("Counter");
 
     const char* src = "p = Point(1.5, 2.5); c = Counter(42)";
     lua.loadAndExecuteScript(src);
@@ -283,8 +284,8 @@ TEST(BindConstructorTest, ConstructorWithUserdataArgs) {
     Metatable<Point>::registerMetatable(lua);
     Metatable<Line>::registerMetatable(lua);
 
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Line, Point, Point>("Line");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Line, Point, Point>("Line");
 
     const char* src = "start = Point(0, 0); finish = Point(10, 20); line = Line(start, finish)";
     lua.loadAndExecuteScript(src);
@@ -302,8 +303,8 @@ TEST(BindConstructorTest, ConstructorWithInlineUserdataArgs) {
     Metatable<Point>::registerMetatable(lua);
     Metatable<Line>::registerMetatable(lua);
 
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Line, Point, Point>("Line");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Line, Point, Point>("Line");
 
     const char* src = "line = Line(Point(1, 2), Point(3, 4))";
     lua.loadAndExecuteScript(src);
@@ -319,7 +320,7 @@ TEST(BindConstructorTest, ConstructorWithInlineUserdataArgs) {
 TEST(BindConstructorTest, NonCopyableType) {
     State lua(State::LibBase);
     Metatable<Resource>::registerMetatable(lua);
-    lua.bindConstructor<Resource, int>("Resource");
+    lua.binding.constructor<Resource, int>("Resource");
 
     lua.registerNativeFunction("getId", [](lua_State* lvm) -> int {
         State L(lvm);
@@ -343,7 +344,7 @@ TEST(BindConstructorTest, NonCopyableType) {
 TEST(BindConstructorTest, MultipleNonCopyableInstances) {
     State lua(State::LibBase);
     Metatable<Resource>::registerMetatable(lua);
-    lua.bindConstructor<Resource, int>("Resource");
+    lua.binding.constructor<Resource, int>("Resource");
 
     const char* src = R"(
         r1 = Resource(100)
@@ -372,7 +373,7 @@ TEST(BindConstructorTest, MultipleNonCopyableInstances) {
 TEST(BindConstructorTest, ConstructorCallSemantics) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = R"(
         p1 = Point(1, 2)
@@ -398,7 +399,7 @@ TEST(BindConstructorTest, ConstructorCallSemantics) {
 TEST(BindConstructorTest, ComplexExpression) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = "result = Point(1, 2) + Point(3, 4) + Point(5, 6)";
     lua.loadAndExecuteScript(src);
@@ -412,7 +413,7 @@ TEST(BindConstructorTest, ComplexExpression) {
 TEST(BindConstructorTest, ConstructorInTable) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = R"(
         points = {
@@ -433,7 +434,7 @@ TEST(BindConstructorTest, ConstructorInTable) {
 TEST(BindConstructorTest, ConstructorInLoop) {
     State lua(State::LibBase);
     Metatable<Counter>::registerMetatable(lua);
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Counter, int>("Counter");
 
     const char* src = R"(
         sum = Counter(0)
@@ -451,7 +452,7 @@ TEST(BindConstructorTest, ConstructorInLoop) {
 TEST(BindConstructorTest, ErrorHandling_WrongArgCount) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src1 = "p = Point(1)";
     lua.loadAndExecuteScript(src1);
@@ -476,20 +477,20 @@ TEST(BindConstructorTest, ErrorHandling_WrongUserdataType) {
     Metatable<Line>::registerMetatable(lua);
     Metatable<Counter>::registerMetatable(lua);
 
-    lua.bindConstructor<Point, float, float>("Point");
-    lua.bindConstructor<Line, Point, Point>("Line");
-    lua.bindConstructor<Counter, int>("Counter");
+    lua.binding.constructor<Point, float, float>("Point");
+    lua.binding.constructor<Line, Point, Point>("Line");
+    lua.binding.constructor<Counter, int>("Counter");
 
     const char* src = "c = Counter(5); line = Line(c, c)";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindConstructorTest, ErrorHandling_NilArgument) {
     State lua(State::LibBase);
     Metatable<Point>::registerMetatable(lua);
-    lua.bindConstructor<Point, float, float>("Point");
+    lua.binding.constructor<Point, float, float>("Point");
 
     const char* src = "p = Point(nil, 2)";
     lua.loadAndExecuteScript(src);
@@ -503,7 +504,7 @@ TEST(BindConstructorTest, ZeroSizedType) {
 
     State lua(State::LibBase);
     Metatable<Empty>::registerMetatable(lua);
-    lua.bindConstructor<Empty>("Empty");
+    lua.binding.constructor<Empty>("Empty");
 
     const char* src = "e = Empty()";
     lua.loadAndExecuteScript(src);
@@ -524,7 +525,7 @@ TEST(BindConstructorTest, LargeType) {
 
     State lua(State::LibBase);
     Metatable<Large>::registerMetatable(lua);
-    lua.bindConstructor<Large, int>("Large");
+    lua.binding.constructor<Large, int>("Large");
 
     const char* src = "big = Large(42)";
     lua.loadAndExecuteScript(src);
@@ -542,8 +543,8 @@ TEST(BindConstructorTest, LargeType) {
 TEST(BindMethodTest, PrimitiveReturn) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     const char* src = "v = Vec(3, 4); result = v:length()";
     lua.loadAndExecuteScript(src);
@@ -555,8 +556,8 @@ TEST(BindMethodTest, PrimitiveReturn) {
 TEST(BindMethodTest, UserdataReturn) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::scaled>("scaled");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::scaled>("scaled");
 
     const char* src = "v = Vec(2, 3); result = v:scaled(2.5)";
     lua.loadAndExecuteScript(src);
@@ -570,8 +571,8 @@ TEST(BindMethodTest, UserdataReturn) {
 TEST(BindMethodTest, UserdataArg) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::dot>("dot");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::dot>("dot");
 
     const char* src = "v1 = Vec(3, 4); v2 = Vec(1, 2); result = v1:dot(v2)";
     lua.loadAndExecuteScript(src);
@@ -583,8 +584,8 @@ TEST(BindMethodTest, UserdataArg) {
 TEST(BindMethodTest, VoidReturn) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::reset>("reset");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::reset>("reset");
 
     const char* src = "v = Vec(7, 8); v:reset()";
     lua.loadAndExecuteScript(src);
@@ -598,8 +599,8 @@ TEST(BindMethodTest, VoidReturn) {
 TEST(BindMethodTest, MultipleArgs) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::count>("count");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::count>("count");
 
     const char* src = "v = Vec(0, 0); result = v:count(1, 2, 3)";
     lua.loadAndExecuteScript(src);
@@ -612,33 +613,33 @@ TEST(BindMethodTest, WrongSelfType_Errors) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<Other>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindConstructor<Other, int>("Other");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Other, int>("Other");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     const char* src = "o = Other(42); result = Vec.length(o)";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindMethodTest, WrongArgType_Errors) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::dot>("dot");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::dot>("dot");
 
     const char* src = "v = Vec(1, 2); result = v:dot(42)";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindMethodTest, MethodAndOperatorsCoexist) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     const char* src = "v1 = Vec(3, 0); v2 = Vec(0, 4); result = (v1 + v2):length()";
     lua.loadAndExecuteScript(src);
@@ -650,10 +651,10 @@ TEST(BindMethodTest, MethodAndOperatorsCoexist) {
 TEST(BindMethodTest, MultipleMethods) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindMethod<Vec, &Vec::length>("length");
-    lua.bindMethod<Vec, &Vec::scaled>("scaled");
-    lua.bindMethod<Vec, &Vec::dot>("dot");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.method<Vec, &Vec::length>("length");
+    lua.binding.method<Vec, &Vec::scaled>("scaled");
+    lua.binding.method<Vec, &Vec::dot>("dot");
 
     const char* src =
         "v1 = Vec(3, 4);"
@@ -676,10 +677,10 @@ TEST(BindMethodTest, MethodOnDifferentTypes) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<Other>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindConstructor<Other, int>("Other");
-    lua.bindMethod<Vec, &Vec::length>("length");
-    lua.bindMethod<Other, &Other::doubled>("doubled");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Other, int>("Other");
+    lua.binding.method<Vec, &Vec::length>("length");
+    lua.binding.method<Other, &Other::doubled>("doubled");
 
     const char* src =
         "v = Vec(3, 4);"
@@ -699,7 +700,7 @@ TEST(BindMethodTest, MethodOnDifferentTypes) {
 TEST(BindToStringTest, AutoRegisteredForTypesWithToString) {
     State lua(State::LibBase);
     Metatable<Stringable>::registerMetatable(lua);
-    lua.bindConstructor<Stringable, int>("Stringable");
+    lua.binding.constructor<Stringable, int>("Stringable");
 
     const char* src = "s = Stringable(42); result = tostring(s)";
     lua.loadAndExecuteScript(src);
@@ -711,7 +712,7 @@ TEST(BindToStringTest, AutoRegisteredForTypesWithToString) {
 TEST(BindToStringTest, NotRegisteredForTypesWithoutToString) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Vec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = tostring(v)";
     lua.loadAndExecuteScript(src);
@@ -726,7 +727,7 @@ TEST(BindToStringTest, NotRegisteredForTypesWithoutToString) {
 TEST(BindToStringTest, UsedByLuaConcatenation) {
     State lua(State::LibBase);
     Metatable<Stringable>::registerMetatable(lua);
-    lua.bindConstructor<Stringable, int>("Stringable");
+    lua.binding.constructor<Stringable, int>("Stringable");
 
     const char* src = "s = Stringable(7); result = '' .. tostring(s)";
     lua.loadAndExecuteScript(src);
@@ -742,7 +743,7 @@ TEST(BindToStringTest, UsedByLuaConcatenation) {
 TEST(BindComparisonTest, LessThan) {
     State lua(State::LibBase);
     Metatable<Comparable>::registerMetatable(lua);
-    lua.bindConstructor<Comparable, int>("Cmp");
+    lua.binding.constructor<Comparable, int>("Cmp");
 
     const char* src = R"(
         a = Cmp(3); b = Cmp(5)
@@ -759,7 +760,7 @@ TEST(BindComparisonTest, LessThan) {
 TEST(BindComparisonTest, LessEqual) {
     State lua(State::LibBase);
     Metatable<Comparable>::registerMetatable(lua);
-    lua.bindConstructor<Comparable, int>("Cmp");
+    lua.binding.constructor<Comparable, int>("Cmp");
 
     const char* src = R"(
         a = Cmp(3); b = Cmp(5); c = Cmp(3)
@@ -797,7 +798,7 @@ inline ScalarVec operator*(double s, const ScalarVec& v) {
 TEST(BindMixedOpTest, VecMulScalar) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(2, 3); result = v * 2.5";
     lua.loadAndExecuteScript(src);
@@ -810,7 +811,7 @@ TEST(BindMixedOpTest, VecMulScalar) {
 TEST(BindMixedOpTest, ScalarMulVec) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(2, 3); result = 2.5 * v";
     lua.loadAndExecuteScript(src);
@@ -823,7 +824,7 @@ TEST(BindMixedOpTest, ScalarMulVec) {
 TEST(BindMixedOpTest, VecDivScalar) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(10, 20); result = v / 4";
     lua.loadAndExecuteScript(src);
@@ -836,7 +837,7 @@ TEST(BindMixedOpTest, VecDivScalar) {
 TEST(BindMixedOpTest, SameTypeStillWorks) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
 
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a + b";
     lua.loadAndExecuteScript(src);
@@ -850,11 +851,11 @@ TEST(BindMixedOpTest, UnsupportedScalarErrors) {
     // ScalarVec has no operator+(double) — only T+T. Mixed should error.
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = v + 5";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);  // Vec has no operator+(double)
 }
 
@@ -882,7 +883,7 @@ inline ArithVec operator/(double s, const ArithVec& a) {
 TEST(BindMixedOpTest, VecPlusScalar) {
     State lua(State::LibBase);
     Metatable<ArithVec>::registerMetatable(lua);
-    lua.bindConstructor<ArithVec, float>("Vec");
+    lua.binding.constructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(10); result = v + 5";
     lua.loadAndExecuteScript(src);
@@ -894,7 +895,7 @@ TEST(BindMixedOpTest, VecPlusScalar) {
 TEST(BindMixedOpTest, ScalarPlusVec) {
     State lua(State::LibBase);
     Metatable<ArithVec>::registerMetatable(lua);
-    lua.bindConstructor<ArithVec, float>("Vec");
+    lua.binding.constructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(10); result = 5 + v";
     lua.loadAndExecuteScript(src);
@@ -906,7 +907,7 @@ TEST(BindMixedOpTest, ScalarPlusVec) {
 TEST(BindMixedOpTest, ScalarDivVec) {
     State lua(State::LibBase);
     Metatable<ArithVec>::registerMetatable(lua);
-    lua.bindConstructor<ArithVec, float>("Vec");
+    lua.binding.constructor<ArithVec, float>("Vec");
 
     const char* src = "v = Vec(2); result = 10 / v";
     lua.loadAndExecuteScript(src);
@@ -920,11 +921,11 @@ TEST(BindMixedOpTest, UnaryMinusNotRegisteredForTypesWithoutIt) {
     // and `-v` should error rather than silently succeed.
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Vec, float, float>("Vec");
 
     const char* src = "v = Vec(1, 2); result = -v";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -944,7 +945,7 @@ int addThree(int a, int b, int c) { return a + b + c; }
 TEST(BindStaticTest, StaticNumberField) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
     Bind::staticField(lua, "Vec", "EPSILON", 0.001);
 
     const char* src = "result = Vec.EPSILON";
@@ -955,7 +956,7 @@ TEST(BindStaticTest, StaticNumberField) {
 TEST(BindStaticTest, StaticStringField) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
     Bind::staticField(lua, "Vec", "TYPENAME", "ScalarVec");
 
     const char* src = "result = Vec.TYPENAME";
@@ -966,7 +967,7 @@ TEST(BindStaticTest, StaticStringField) {
 TEST(BindStaticTest, StaticFunctionNoArgs) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
     Bind::staticFunction<&makeUnitX>(lua, "Vec", "unitX");
 
     const char* src = "result = Vec.unitX()";
@@ -980,7 +981,7 @@ TEST(BindStaticTest, StaticFunctionNoArgs) {
 TEST(BindStaticTest, StaticFunctionWithArgs) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
     Bind::staticFunction<&makeFromAngle>(lua, "Vec", "fromAngle");
 
     const char* src = "result = Vec.fromAngle(0)";
@@ -994,7 +995,7 @@ TEST(BindStaticTest, StaticFunctionWithArgs) {
 TEST(BindStaticTest, StaticFunctionPrimitiveReturn) {
     State lua(State::LibBase);
     Metatable<ScalarVec>::registerMetatable(lua);
-    lua.bindConstructor<ScalarVec, float, float>("Vec");
+    lua.binding.constructor<ScalarVec, float, float>("Vec");
     Bind::staticFunction<&addThree>(lua, "Vec", "sum");
 
     const char* src = "result = Vec.sum(1, 2, 3)";
@@ -1005,7 +1006,7 @@ TEST(BindStaticTest, StaticFunctionPrimitiveReturn) {
 TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
     State lua(State::LibBase);
     Metatable<Comparable>::registerMetatable(lua);
-    lua.bindConstructor<Comparable, int>("Cmp");
+    lua.binding.constructor<Comparable, int>("Cmp");
 
     // Lua maps a > b to b < a, so __lt is sufficient for >
     const char* src = "a = Cmp(7); b = Cmp(3); result = a > b";
@@ -1016,12 +1017,12 @@ TEST(BindComparisonTest, GreaterDerivesFromLessThan) {
 TEST(BindComparisonTest, NotRegisteredForTypesWithoutComparison) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Vec, float, float>("Vec");
 
     // Vec has no operator< / operator<= -- Lua should error on comparison
     const char* src = "a = Vec(1, 2); b = Vec(3, 4); result = a < b";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
@@ -1031,7 +1032,7 @@ TEST(BindComparisonTest, EqualNotRegisteredForTypesWithoutOp) {
     // their contents match.
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Vec, float, float>("Vec");
 
     const char* src =
         "a = Vec(1, 2); b = Vec(1, 2);"
@@ -1048,10 +1049,10 @@ TEST(BindComparisonTest, EqualNotRegisteredForTypesWithoutOp) {
 TEST(BindPropertyTest, ReadPrimitiveField) {
     State lua(State::LibBase);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::x>("x");
-    lua.bindProperty<Particle, &Particle::y>("y");
-    lua.bindProperty<Particle, &Particle::health>("health");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::x>("x");
+    lua.binding.property<Particle, &Particle::y>("y");
+    lua.binding.property<Particle, &Particle::health>("health");
 
     const char* src = R"(
         p = Particle(3, 4, 100)
@@ -1066,9 +1067,9 @@ TEST(BindPropertyTest, ReadPrimitiveField) {
 TEST(BindPropertyTest, WritePrimitiveField) {
     State lua(State::LibBase);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::x>("x");
-    lua.bindProperty<Particle, &Particle::health>("health");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::x>("x");
+    lua.binding.property<Particle, &Particle::health>("health");
 
     const char* src = R"(
         p = Particle(1, 1, 50)
@@ -1086,8 +1087,8 @@ TEST(BindPropertyTest, WritePrimitiveField) {
 TEST(BindPropertyTest, ReadStringField) {
     State lua(State::LibBase);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::name>("name");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::name>("name");
 
     const char* src = "p = Particle(0, 0, 1); n = p.name";
     lua.loadAndExecuteScript(src);
@@ -1098,8 +1099,8 @@ TEST(BindPropertyTest, ReadUserdataField) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::velocity>("velocity");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::velocity>("velocity");
 
     const char* src = "p = Particle(0, 0, 1); v = p.velocity";
     lua.loadAndExecuteScript(src);
@@ -1114,9 +1115,9 @@ TEST(BindPropertyTest, WriteUserdataField) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::velocity>("velocity");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::velocity>("velocity");
 
     const char* src = "p = Particle(0, 0, 1); p.velocity = Vec(7, 8)";
     lua.loadAndExecuteScript(src);
@@ -1130,8 +1131,8 @@ TEST(BindPropertyTest, WriteUserdataField) {
 TEST(BindPropertyTest, UnknownPropertyRead_ReturnsNil) {
     State lua(State::LibBase);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::x>("x");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::x>("x");
 
     const char* src = "p = Particle(1, 2, 3); result = (p.nonExistent == nil)";
     lua.loadAndExecuteScript(src);
@@ -1141,22 +1142,22 @@ TEST(BindPropertyTest, UnknownPropertyRead_ReturnsNil) {
 TEST(BindPropertyTest, UnknownPropertyWrite_Errors) {
     State lua(State::LibBase);
     Metatable<Particle>::registerMetatable(lua);
-    lua.bindConstructor<Particle, float, float, int>("Particle");
-    lua.bindProperty<Particle, &Particle::x>("x");
+    lua.binding.constructor<Particle, float, float, int>("Particle");
+    lua.binding.property<Particle, &Particle::x>("x");
 
     const char* src = "p = Particle(1, 2, 3); p.nonExistent = 5";
-    lua.setLogger(nullptr); // we expect this to throw — don't spam stderr
-    lua.installErrorHandler<ThrowHandler>();
+    lua.diagnostics.setLogger(nullptr); // we expect this to throw — don't spam stderr
+    lua.diagnostics.installErrorHandler<ThrowHandler>();
     EXPECT_THROW(lua.loadAndExecuteScript(src), LuaException);
 }
 
 TEST(BindPropertyTest, PropertyAndMethodCoexist) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
-    lua.bindConstructor<Vec, float, float>("Vec");
-    lua.bindProperty<Vec, &Vec::x>("x");
-    lua.bindProperty<Vec, &Vec::y>("y");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<Vec, float, float>("Vec");
+    lua.binding.property<Vec, &Vec::x>("x");
+    lua.binding.property<Vec, &Vec::y>("y");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     const char* src = R"(
         v = Vec(3, 4)
@@ -1181,7 +1182,7 @@ TEST(BindPrerequisiteTest, MethodWithoutMetatable_Throws) {
     State lua(State::LibBase);
     // Intentionally skip Metatable<Point>::registerMetatable.
     EXPECT_THROW(
-        (lua.bindMethod<Point, &Point::operator+>("plus")),
+        (lua.binding.method<Point, &Point::operator+>("plus")),
         std::runtime_error);
 }
 
@@ -1189,7 +1190,7 @@ TEST(BindPrerequisiteTest, PropertyWithoutMetatable_Throws) {
     State lua(State::LibBase);
     // Intentionally skip Metatable<Point>::registerMetatable.
     EXPECT_THROW(
-        (lua.bindProperty<Point, &Point::x>("x")),
+        (lua.binding.property<Point, &Point::x>("x")),
         std::runtime_error);
 }
 
@@ -1197,7 +1198,7 @@ TEST(BindPrerequisiteTest, StaticFieldWithoutConstructor_Throws) {
     State lua(State::LibBase);
     // No bindConstructor → "Point" is not a global table.
     EXPECT_THROW(
-        lua.bindStaticField("Point", "EPSILON", 0.001f),
+        lua.binding.staticField("Point", "EPSILON", 0.001f),
         std::runtime_error);
 }
 
@@ -1206,7 +1207,7 @@ static int prereqAnswerFn() { return 42; }
 TEST(BindPrerequisiteTest, StaticFunctionWithoutConstructor_Throws) {
     State lua(State::LibBase);
     EXPECT_THROW(
-        lua.bindStaticFunction<&prereqAnswerFn>("Point", "answer"),
+        lua.binding.staticFunction<&prereqAnswerFn>("Point", "answer"),
         std::runtime_error);
 }
 
@@ -1257,9 +1258,9 @@ TEST(BindReturnTest, PointerReturn_WrapsAsUserdataWithMetatable) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
-    lua.bindMethod<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<ReturnSource>("Source");
+    lua.binding.method<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     // If getVecPtr returned raw lightuserdata, v:length() would fail because
     // lightuserdata has no metatable. Wrapping as userdata makes it work.
@@ -1273,8 +1274,8 @@ TEST(BindReturnTest, NullPointerReturn_BecomesNil) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
-    lua.bindMethod<ReturnSource, &ReturnSource::getNullVec>("getNullVec");
+    lua.binding.constructor<ReturnSource>("Source");
+    lua.binding.method<ReturnSource, &ReturnSource::getNullVec>("getNullVec");
 
     const char* src = "s = Source(); v = s:getNullVec(); isNil = (v == nil)";
     lua.loadAndExecuteScript(src);
@@ -1285,10 +1286,10 @@ TEST(BindReturnTest, PointerReturn_IsCopy_MutationDoesNotPropagate) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
-    lua.bindMethod<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
-    lua.bindMethod<ReturnSource, &ReturnSource::storedX>("storedX");
-    lua.bindProperty<Vec, &Vec::x>("x");
+    lua.binding.constructor<ReturnSource>("Source");
+    lua.binding.method<ReturnSource, &ReturnSource::getVecPtr>("getVecPtr");
+    lua.binding.method<ReturnSource, &ReturnSource::storedX>("storedX");
+    lua.binding.property<Vec, &Vec::x>("x");
 
     // Copy semantics: mutating the Lua-side userdata does NOT change the C++
     // object the pointer originally referred to. Documented as intentional.
@@ -1308,10 +1309,10 @@ TEST(BindReturnTest, ReferenceReturn_DoesNotMoveFromAliased) {
     State lua(State::LibBase);
     Metatable<MovableTracker>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
-    lua.bindMethod<ReturnSource, &ReturnSource::getTrackerRef>("getTrackerRef");
-    lua.bindMethod<ReturnSource, &ReturnSource::trackerWasMoved>("wasMoved");
-    lua.bindMethod<ReturnSource, &ReturnSource::trackerValue>("trackerValue");
+    lua.binding.constructor<ReturnSource>("Source");
+    lua.binding.method<ReturnSource, &ReturnSource::getTrackerRef>("getTrackerRef");
+    lua.binding.method<ReturnSource, &ReturnSource::trackerWasMoved>("wasMoved");
+    lua.binding.method<ReturnSource, &ReturnSource::trackerValue>("trackerValue");
 
     // Previously the dispatcher did std::move(result) where result was a
     // reference, leaving the source's tracker in moved-from state. After the
@@ -1331,9 +1332,9 @@ TEST(BindReturnTest, ConstReferenceReturn_AlsoCopies) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
-    lua.bindMethod<ReturnSource, &ReturnSource::getVecConstRef>("getVecConstRef");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.constructor<ReturnSource>("Source");
+    lua.binding.method<ReturnSource, &ReturnSource::getVecConstRef>("getVecConstRef");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     // Two successive const-ref returns should both yield valid Vecs with the
     // same content — proving the source's Vec wasn't destroyed by the first
@@ -1364,9 +1365,9 @@ TEST(BindReturnTest, FreeFunction_PointerReturn_WrapsAsUserdata) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
+    lua.binding.constructor<ReturnSource>("Source");
     Bind::staticFunction<&freeFuncReturnsVecPtr>(lua, "Source", "globalVec");
-    lua.bindMethod<Vec, &Vec::length>("length");
+    lua.binding.method<Vec, &Vec::length>("length");
 
     const char* src = "v = Source.globalVec(); len = v:length()";
     lua.loadAndExecuteScript(src);
@@ -1377,7 +1378,7 @@ TEST(BindReturnTest, FreeFunction_NullPointerReturn_BecomesNil) {
     State lua(State::LibBase);
     Metatable<Vec>::registerMetatable(lua);
     Metatable<ReturnSource>::registerMetatable(lua);
-    lua.bindConstructor<ReturnSource>("Source");
+    lua.binding.constructor<ReturnSource>("Source");
     Bind::staticFunction<&freeFuncReturnsNullVec>(lua, "Source", "noVec");
 
     const char* src = "v = Source.noVec(); isNil = (v == nil)";

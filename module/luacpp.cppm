@@ -12,6 +12,7 @@
 module;
 
 #include <luacpp/Basics.hpp>
+#include <luacpp/Bind.hpp>
 #include <luacpp/Debug.hpp>
 #include <luacpp/ErrorHandling.hpp>
 #include <luacpp/Generic.hpp>

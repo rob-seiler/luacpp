@@ -16,7 +16,7 @@ namespace {
 
 TEST(WarningLoggerTest, scriptWarnDeliveredAsSingleMessage) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript("warn('hello from lua')");
 
@@ -28,7 +28,7 @@ TEST(WarningLoggerTest, multiPieceWarningAssembled) {
 	// warn(a, b, c) concatenates internally — Lua emits one logical warning.
 	// This test pins that the pieces arrive at the logger as one message.
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript("warn('part1 ', 'part2 ', 'part3')");
 
@@ -41,7 +41,7 @@ TEST(WarningLoggerTest, installedLoggerEnablesWarningsImplicitly) {
 	// explicit opt-in, so the very first warn() must already be delivered
 	// without needing a prior warn("@on").
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript("warn('first')");
 
@@ -51,7 +51,7 @@ TEST(WarningLoggerTest, installedLoggerEnablesWarningsImplicitly) {
 
 TEST(WarningLoggerTest, controlOffSuppressesSubsequentWarnings) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript(R"(
 		warn('before')
@@ -66,7 +66,7 @@ TEST(WarningLoggerTest, controlOffSuppressesSubsequentWarnings) {
 
 TEST(WarningLoggerTest, controlOnReEnablesAfterOff) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript(R"(
 		warn('@off')
@@ -83,7 +83,7 @@ TEST(WarningLoggerTest, controlMessagesNeverReachLogger) {
 	// '@on' / '@off' and any other leading-'@' message belong to the
 	// warning protocol; loggers must never see them as content.
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript(R"(
 		warn('@on')
@@ -103,7 +103,7 @@ TEST(WarningLoggerTest, controlMessagesNeverReachLogger) {
 // string starts with '@'.
 TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	// warn(a, b) emits two pieces: '@off' (tocont=1) then ' rest' (tocont=0).
 	// Lua's native warnfon would print "Lua warning: @off rest" because
@@ -124,7 +124,7 @@ TEST(WarningLoggerTest, multiPieceWarningStartingWithAtIsContent) {
 // as a single-piece control directive.
 TEST(WarningLoggerTest, emptyFirstPieceDoesNotConfuseControlGate) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	// First piece is '' with tocont=1, second is '@off' with tocont=0. Per
 	// Lua's checkcontrol this is content (assembled message "@off"), not a
@@ -145,7 +145,7 @@ TEST(WarningLoggerTest, emptyFirstPieceDoesNotConfuseControlGate) {
 // the content case above. Pins the fix's other branch.
 TEST(WarningLoggerTest, singlePieceAtOffStillMutes) {
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	lua.loadAndExecuteScript(R"(
 		warn('@off')
@@ -159,19 +159,19 @@ TEST(WarningLoggerTest, singlePieceAtOffStillMutes) {
 TEST(WarningLoggerTest, setWarningLoggerNullDisablesWarnings) {
 	State lua(State::LibBase);
 	{
-		auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+		auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 		lua.loadAndExecuteScript("warn('first')");
 		ASSERT_EQ(warnings.entries().size(), 1u);
 	} // `warnings` ref must not survive setWarningLogger(nullptr) below
 
 	// Detach: subsequent warnings should go nowhere (not even Lua's own
 	// stderr default, which we replaced on construction).
-	lua.setWarningLogger(nullptr);
+	lua.diagnostics.setWarningLogger(nullptr);
 	lua.loadAndExecuteScript("warn('dropped')");
 
 	// Reinstall a fresh logger; it must be empty — the warn() emitted while
 	// detached is gone, not queued.
-	auto& after = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& after = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 	EXPECT_TRUE(after.entries().empty())
 	    << "warning emitted while detached must not be replayed to a later logger";
 }
@@ -236,7 +236,7 @@ TEST(WarningLoggerTest, anyWrapperConfiguresSharedWarningSink) {
 	State main(State::LibBase);
 	State secondary(main.getState());
 
-	auto& warnings = secondary.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = secondary.diagnostics.installWarningLogger<MemoryWarningLogger>();
 	main.loadAndExecuteScript("warn('via secondary-installed sink')");
 
 	ASSERT_EQ(warnings.entries().size(), 1u);
@@ -248,7 +248,7 @@ TEST(WarningLoggerTest, warningSinkSurvivesMainStateDestruction) {
 	// even after the main wrapper dies as long as borrowed wrappers keep
 	// the VM alive.
 	auto main = std::make_unique<State>(State::LibBase);
-	auto& warnings = main->installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = main->diagnostics.installWarningLogger<MemoryWarningLogger>();
 	State borrowed(main->getState());
 
 	main.reset();                // main dies; VM survives via `borrowed`'s ref
@@ -266,10 +266,10 @@ TEST(WarningLoggerTest, debugHookWrapperDoesNotClobberOwnersWarningLogger) {
 	// would overwrite the owner's sink and the next warn() would invoke a
 	// freed trampoline.
 	State lua(State::LibBase);
-	auto& warnings = lua.installWarningLogger<MemoryWarningLogger>();
+	auto& warnings = lua.diagnostics.installWarningLogger<MemoryWarningLogger>();
 
 	int hookCalls = 0;
-	lua.registerDebugHook([&hookCalls](State&, const DebugInfo&) {
+	lua.diagnostics.registerDebugHook([&hookCalls](State&, const DebugInfo&) {
 		++hookCalls;  // a transient borrowed State is constructed for this call
 	}, MaskLine, 0);
 

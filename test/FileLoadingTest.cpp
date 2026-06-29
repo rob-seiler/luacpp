@@ -21,17 +21,17 @@ Lua::File dataFile(const char* name) {
 
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("valid.lua"));
 
 	EXPECT_TRUE(errors.entries().empty());
-	EXPECT_EQ(lua.readVariable<int>("x"), 42);
-	EXPECT_EQ(lua.readVariable<std::string>("greeting"), "hello from file");
+	EXPECT_EQ(lua.variables.read<int>("x"), 42);
+	EXPECT_EQ(lua.variables.read<std::string>("greeting"), "hello from file");
 }
 
 TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(Lua::File("does_not_exist_xyz.lua"));
 
 	ASSERT_FALSE(errors.entries().empty());
@@ -47,7 +47,7 @@ TEST(FileLoadingTest, MissingFile_ReportsLoadErrorWithPath) {
 
 TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("syntax_error.lua"));
 
 	ASSERT_FALSE(errors.entries().empty());
@@ -63,7 +63,7 @@ TEST(FileLoadingTest, SyntaxError_ReportsLoadErrorReferencingFile) {
 
 TEST(FileLoadingTest, RuntimeError_ReportsRuntimeErrorPinpointingLine) {
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
 	ASSERT_FALSE(errors.entries().empty());
@@ -105,7 +105,7 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	}
 
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	lua.loadAndExecuteScript(path);
 
 	std::error_code rmErr;
@@ -114,12 +114,12 @@ TEST(FileLoadingTest, NonAsciiPath_LoadsAndExecutes) {
 	ASSERT_TRUE(errors.entries().empty())
 		<< "non-ASCII path failed to load: "
 		<< errors.entries().front().message;
-	EXPECT_EQ(lua.readVariable<int>("x"), 7);
+	EXPECT_EQ(lua.variables.read<int>("x"), 7);
 }
 
 TEST(FileLoadingTest, RegistryRoundtrip_LoadFromFileThenExecute) {
 	State lua;
-	auto& errors = lua.installLogger<MemoryLogger>();
+	auto& errors = lua.diagnostics.installLogger<MemoryLogger>();
 	const char* key = "stored_script";
 
 	lua.loadScript(key, dataFile("valid.lua"));
@@ -128,7 +128,7 @@ TEST(FileLoadingTest, RegistryRoundtrip_LoadFromFileThenExecute) {
 	lua.executeScript(key);
 	ASSERT_TRUE(errors.entries().empty()) << "executeScript failed unexpectedly";
 
-	EXPECT_EQ(lua.readVariable<int>("x"), 42);
+	EXPECT_EQ(lua.variables.read<int>("x"), 42);
 }
 
 } // namespace Lua

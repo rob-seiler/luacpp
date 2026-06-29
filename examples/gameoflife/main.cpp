@@ -1,5 +1,6 @@
 #include <luacpp/State.hpp>
 #include <luacpp/Metatable.hpp>
+#include <luacpp/Bind.hpp>
 #include "Grid.hpp"
 
 #include <chrono>
@@ -55,18 +56,18 @@ int main() {
 	enableAnsi();
 
 	State lua(State::LibBase | State::LibIO);
-	auto& errorLog = lua.installLogger<MemoryLogger>();
+	auto& errorLog = lua.diagnostics.installLogger<MemoryLogger>();
 
 	Metatable<Grid>::registerMetatable(lua);
-	lua.bindConstructor<Grid, int, int>("Grid");
-	lua.bindMethod<Grid, &Grid::set>("set");
-	lua.bindMethod<Grid, &Grid::get>("get");
-	lua.bindMethod<Grid, &Grid::clear>("clear");
-	lua.bindMethod<Grid, &Grid::countAlive>("countAlive");
-	lua.bindMethod<Grid, &Grid::step>("step");
-	lua.bindProperty<Grid, &Grid::width>("width");
-	lua.bindProperty<Grid, &Grid::height>("height");
-	lua.bindProperty<Grid, &Grid::generation>("generation");
+	lua.binding.constructor<Grid, int, int>("Grid");
+	lua.binding.method<Grid, &Grid::set>("set");
+	lua.binding.method<Grid, &Grid::get>("get");
+	lua.binding.method<Grid, &Grid::clear>("clear");
+	lua.binding.method<Grid, &Grid::countAlive>("countAlive");
+	lua.binding.method<Grid, &Grid::step>("step");
+	lua.binding.property<Grid, &Grid::width>("width");
+	lua.binding.property<Grid, &Grid::height>("height");
+	lua.binding.property<Grid, &Grid::generation>("generation");
 
 	lua.registerNativeFunction("beginFrame", luaBeginFrame);
 

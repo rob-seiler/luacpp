@@ -4,8 +4,10 @@ luacpp can expose entire C++ classes to Lua as userdata with their own metatable
 
 ## Minimal binding
 
+Class binding lives in its own header — include `<luacpp/Bind.hpp>` (it pulls in `<luacpp/State.hpp>` for you) in any translation unit that calls `state.binding.*`:
+
 ```c++
-#include <luacpp/State.hpp>
+#include <luacpp/Bind.hpp>
 #include <luacpp/Metatable.hpp>
 
 struct Vector {
@@ -20,10 +22,10 @@ struct Vector {
 int main() {
     Lua::State lua(Lua::State::LibBase);
     Lua::Metatable<Vector>::registerMetatable(lua);
-    lua.bindConstructor<Vector, float, float>("Vector");
+    lua.binding.constructor<Vector, float, float>("Vector");
 
     lua.loadAndExecuteScript("v = Vector(1, 2) + Vector(3, 4)");
-    auto v = lua.readVariable<Vector*>("v"); // std::optional<Vector*>
+    auto v = lua.variables.read<Vector*>("v"); // std::optional<Vector*>
     if (v) {
         // (*v)->x == 4, (*v)->y == 6
     }
@@ -31,7 +33,7 @@ int main() {
 }
 ```
 
-`bindConstructor` creates a callable Lua table so `Vector(1, 2)` in Lua constructs the object directly into Lua-owned userdata — no extra copy, no factory function required.
+`binding.constructor` creates a callable Lua table so `Vector(1, 2)` in Lua constructs the object directly into Lua-owned userdata — no extra copy, no factory function required.
 
 ## Member functions and data members
 
@@ -46,11 +48,11 @@ struct Vec {
 };
 
 Lua::Metatable<Vec>::registerMetatable(lua);
-lua.bindConstructor<Vec, float, float>("Vec");
-lua.bindMethod<Vec, &Vec::length>("length");
-lua.bindMethod<Vec, &Vec::scaled>("scaled");
-lua.bindProperty<Vec, &Vec::x>("x");
-lua.bindProperty<Vec, &Vec::y>("y");
+lua.binding.constructor<Vec, float, float>("Vec");
+lua.binding.method<Vec, &Vec::length>("length");
+lua.binding.method<Vec, &Vec::scaled>("scaled");
+lua.binding.property<Vec, &Vec::x>("x");
+lua.binding.property<Vec, &Vec::y>("y");
 ```
 
 In Lua you can then do:
@@ -64,16 +66,16 @@ print(v.x)              -- property read
 
 ## Static fields and free functions
 
-`bindStaticField` and `bindStaticFunction` attach values or free functions to the constructor table, so calls like `Vec.EPSILON` or `Vec.fromAngle(pi)` work as well:
+`binding.staticField` and `binding.staticFunction` attach values or free functions to the constructor table, so calls like `Vec.EPSILON` or `Vec.fromAngle(pi)` work as well:
 
 ```c++
 constexpr float kEpsilon = 1e-6f;
-lua.bindStaticField("Vec", "EPSILON", kEpsilon);
+lua.binding.staticField("Vec", "EPSILON", kEpsilon);
 
 Vec fromAngle(float radians) {
     return Vec(std::cos(radians), std::sin(radians));
 }
-lua.bindStaticFunction<&fromAngle>("Vec", "fromAngle");
+lua.binding.staticFunction<&fromAngle>("Vec", "fromAngle");
 ```
 
 ```lua
