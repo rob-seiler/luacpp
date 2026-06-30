@@ -226,8 +226,8 @@ TEST(StateErrorSlotsTest, loggerRunsBeforeHandler) {
 	// Outer-first semantics: even when the handler throws, the logger has
 	// already received the error.
 	State lua(State::LibBase);
-	auto& mem = lua.installLogger<MemoryLogger>();
-	lua.installErrorHandler<ThrowHandler>();
+	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
+	lua.diagnostics.installErrorHandler<ThrowHandler>();
 
 	EXPECT_THROW(lua.loadAndExecuteScript("error('boom')"), LuaException);
 
@@ -237,7 +237,7 @@ TEST(StateErrorSlotsTest, loggerRunsBeforeHandler) {
 
 TEST(StateErrorSlotsTest, setLoggerNullSilencesLogging) {
 	State lua(State::LibBase);
-	lua.setLogger(nullptr);
+	lua.diagnostics.setLogger(nullptr);
 	// No throw, no log, no output. The script just fails silently — the
 	// caller is opting out of every channel.
 	lua.loadAndExecuteScript("error('quiet')");
@@ -246,8 +246,8 @@ TEST(StateErrorSlotsTest, setLoggerNullSilencesLogging) {
 
 TEST(StateErrorSlotsTest, setErrorHandlerNullDoesNotPreventLogging) {
 	State lua(State::LibBase);
-	auto& mem = lua.installLogger<MemoryLogger>();
-	lua.setErrorHandler(nullptr); // explicit; equals the default
+	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
+	lua.diagnostics.setErrorHandler(nullptr); // explicit; equals the default
 
 	lua.loadAndExecuteScript("error('observe')");
 
@@ -257,9 +257,9 @@ TEST(StateErrorSlotsTest, setErrorHandlerNullDoesNotPreventLogging) {
 
 TEST(StateErrorSlotsTest, customCallbackHandlerCanInspectAndThrowConditionally) {
 	State lua(State::LibBase);
-	lua.installLogger<MemoryLogger>(); // capture for assertion below
+	lua.diagnostics.installLogger<MemoryLogger>(); // capture for assertion below
 
-	lua.installErrorHandler<CallbackHandler>([](const LuaError& e) {
+	lua.diagnostics.installErrorHandler<CallbackHandler>([](const LuaError& e) {
 		// Only escalate Load errors; runtime errors stay non-throwing.
 		if (e.category == LuaError::Category::Load) {
 			throw LuaException(e);
@@ -284,14 +284,14 @@ TEST(ErrorPolicyTest, debugHookWrapperSharesOwnersErrorPolicy) {
 	// an error reported from inside a hook would silently hit fresh defaults
 	// (cerr logger, no handler) instead of the configured policy.
 	State lua(State::LibBase);
-	auto& log = lua.installLogger<MemoryLogger>();
+	auto& log = lua.diagnostics.installLogger<MemoryLogger>();
 
 	int handlerHits = 0;
-	lua.installErrorHandler<CallbackHandler>(
+	lua.diagnostics.installErrorHandler<CallbackHandler>(
 	    [&handlerHits](const LuaError&) { ++handlerHits; }); // non-throwing on purpose
 
 	bool triggered = false;
-	lua.registerDebugHook([&triggered](State& hooked, const DebugInfo&) {
+	lua.diagnostics.registerDebugHook([&triggered](State& hooked, const DebugInfo&) {
 		if (triggered) return;       // Lua disables reentrant hooks, but be explicit
 		triggered = true;
 		// Report an error *through the borrowed wrapper*. A syntax error fails
@@ -314,7 +314,7 @@ TEST(ErrorPolicyTest, borrowedWrapperOfOwnedVmSharesPolicyViaRegistry) {
 	// any borrowed wrapper of the SAME lua_State recovers it. This is the
 	// mechanism the bind/metatable layer and the debug hook rely on.
 	State owner(State::LibBase);
-	auto& log = owner.installLogger<MemoryLogger>();
+	auto& log = owner.diagnostics.installLogger<MemoryLogger>();
 
 	{
 		State borrowed(owner.getState());        // wraps the owner's lua_State
@@ -338,8 +338,8 @@ TEST(ErrorPolicyTest, sharedPolicyOutlivesMainStateDestruction) {
 		borrowed = std::make_unique<State>(main.getState());
 	} // main destroyed; borrowed keeps refcount, ctx+VM stay alive
 
-	EXPECT_NO_THROW(borrowed->setLogger(std::make_unique<MemoryLogger>()));
-	EXPECT_NO_THROW(borrowed->setErrorHandler(std::make_unique<ThrowHandler>()));
+	EXPECT_NO_THROW(borrowed->diagnostics.setLogger(std::make_unique<MemoryLogger>()));
+	EXPECT_NO_THROW(borrowed->diagnostics.setErrorHandler(std::make_unique<ThrowHandler>()));
 }
 
 TEST(ErrorPolicyTest, wrappedRawLuaStateConfiguresLoggerFreely) {
@@ -350,7 +350,7 @@ TEST(ErrorPolicyTest, wrappedRawLuaStateConfiguresLoggerFreely) {
 	lua_State* raw = luaL_newstate();
 	{
 		State wrapper(raw);
-		auto& log = wrapper.installLogger<MemoryLogger>();
+		auto& log = wrapper.diagnostics.installLogger<MemoryLogger>();
 		wrapper.loadAndExecuteScript("x =");   // syntax error -> reported
 		EXPECT_FALSE(log.entries().empty())
 		    << "logger must record errors reported through the shared policy";

@@ -13,7 +13,7 @@ namespace Lua {
 // Used across the test suite (was duplicated in six TUs before extraction).
 template <typename T>
 T readVar(State& s, const char* name) {
-	auto v = s.readVariable<T>(name);
+	auto v = s.variables.read<T>(name);
 	if (!v) {
 		throw std::runtime_error(
 		    std::string("readVar: '") + name + "' missing or wrong type");

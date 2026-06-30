@@ -2,6 +2,7 @@
 
 #include <luacpp/State.hpp>
 #include <luacpp/Metatable.hpp>
+#include <luacpp/Bind.hpp>
 #include <lua/lua.hpp>
 
 namespace Lua {
@@ -75,7 +76,7 @@ TEST(DestructorTest, NonTrivialDestructor_IsCalled) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.bindConstructor<ResourceHolder, int>("Resource");
+        lua.binding.constructor<ResourceHolder, int>("Resource");
 
         // Create objects in Lua
         const char* src = R"(
@@ -101,7 +102,7 @@ TEST(DestructorTest, ForceGarbageCollection) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.bindConstructor<ResourceHolder, int>("Resource");
+    lua.binding.constructor<ResourceHolder, int>("Resource");
 
     // Create and immediately discard objects
     const char* src = R"(
@@ -127,7 +128,7 @@ TEST(DestructorTest, PartialGarbageCollection) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.bindConstructor<ResourceHolder, int>("Resource");
+    lua.binding.constructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         -- Create 3 objects, keep 2 referenced globally
@@ -164,7 +165,7 @@ TEST(DestructorTest, ComplexResourceManagement) {
     {
         State lua(State::LibBase);
         Metatable<FileHandle>::registerMetatable(lua);
-        lua.bindConstructor<FileHandle, int>("FileHandle");
+        lua.binding.constructor<FileHandle, int>("FileHandle");
 
         const char* src = R"(
             -- Simulate opening multiple files
@@ -197,7 +198,7 @@ TEST(DestructorTest, TrivialType_NoGCRegistered) {
 
     State lua(State::LibBase);
     Metatable<TrivialType>::registerMetatable(lua);
-    lua.bindConstructor<TrivialType, int>("Trivial");
+    lua.binding.constructor<TrivialType, int>("Trivial");
 
     const char* src = R"(
         t = Trivial(42)
@@ -205,7 +206,7 @@ TEST(DestructorTest, TrivialType_NoGCRegistered) {
     )";
     lua.loadAndExecuteScript(src);
 
-    auto tOpt = lua.readVariable<TrivialType*>("t");
+    auto tOpt = lua.variables.read<TrivialType*>("t");
     ASSERT_TRUE(tOpt.has_value());
     EXPECT_EQ((*tOpt)->value, 42);
 }
@@ -216,7 +217,7 @@ TEST(DestructorTest, NestedScopes) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.bindConstructor<ResourceHolder, int>("Resource");
+    lua.binding.constructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         function createResource()
@@ -249,7 +250,7 @@ TEST(DestructorTest, TableWithUserdata) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.bindConstructor<ResourceHolder, int>("Resource");
+    lua.binding.constructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         objects = {
@@ -277,7 +278,7 @@ TEST(DestructorTest, ReplacingReferences) {
 
     State lua(State::LibBase);
     Metatable<ResourceHolder>::registerMetatable(lua);
-    lua.bindConstructor<ResourceHolder, int>("Resource");
+    lua.binding.constructor<ResourceHolder, int>("Resource");
 
     const char* src = R"(
         r = Resource(100)
@@ -306,7 +307,7 @@ TEST(DestructorTest, EmptyState) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.bindConstructor<ResourceHolder, int>("Resource");
+        lua.binding.constructor<ResourceHolder, int>("Resource");
 
         // Register but don't create any objects
         lua.loadAndExecuteScript("collectgarbage('collect')");
@@ -324,7 +325,7 @@ TEST(DestructorTest, ManyObjects) {
     {
         State lua(State::LibBase);
         Metatable<ResourceHolder>::registerMetatable(lua);
-        lua.bindConstructor<ResourceHolder, int>("Resource");
+        lua.binding.constructor<ResourceHolder, int>("Resource");
 
         const char* src = R"(
             objects = {}

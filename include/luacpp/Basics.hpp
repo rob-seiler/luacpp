@@ -60,6 +60,12 @@ public:
 
 	static void insert(lua_State* state, int index);
 	static void popStack(lua_State* state, int numValues);
+
+	/// Push the global named @p name onto the stack; returns its type.
+	static Type pushGlobal(lua_State* state, const char* name);
+	/// Pop the stack top into the global named @p name.
+	static void setGlobal(lua_State* state, const char* name);
+
 	static int  getStackTop(lua_State* state);
 	static void setStackTop(lua_State* state, int newTop);
 

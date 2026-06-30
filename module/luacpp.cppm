@@ -12,6 +12,7 @@
 module;
 
 #include <luacpp/Basics.hpp>
+#include <luacpp/Bind.hpp>
 #include <luacpp/Debug.hpp>
 #include <luacpp/ErrorHandling.hpp>
 #include <luacpp/Generic.hpp>
@@ -34,6 +35,10 @@ export namespace Lua {
 using ::Lua::State;
 using ::Lua::Table;
 using ::Lua::Registry;
+
+using ::Lua::Variables;
+using ::Lua::Binding;
+using ::Lua::Diagnostics;
 
 // Value / type machinery
 using ::Lua::Generic;

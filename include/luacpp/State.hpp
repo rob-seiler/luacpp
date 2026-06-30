@@ -13,6 +13,9 @@
 #include "detail/Bind.hpp"
 #include "detail/Config.hpp"
 #include "detail/StateRegistry.hpp"
+#include "detail/StateVariables.hpp"
+#include "detail/StateBinding.hpp"
+#include "detail/StateDiagnostics.hpp"
 
 #include <string>
 #include <vector>
@@ -177,71 +180,12 @@ public:
 
 
 	/**
-	 * \brief Read a global variable, returning nullopt when missing or of the
-	 *        wrong type.
+	 * @brief Global-variable and global-table access.
 	 *
-	 * Unlike the script-execution methods this does NOT invoke the configured
-	 * error handler — "this global isn't there / isn't a T" is a query result,
-	 * not a Lua-side error. Caller decides whether to treat nullopt as an error.
+	 * Reach via the @ref variables member: `state.variables.read<int>("x")`,
+	 * `state.variables.write("x", 10)`, `state.variables.readTable<...>(...)`.
+	 * See the Variables facade in detail/StateVariables.hpp.
 	 */
-	template <typename T>
-	[[nodiscard]] std::optional<T> readVariable(const char* variableName) {
-		pushGlobalToStack(variableName);
-		// tryGet never raises a Lua error (uses testUserData for class pointers),
-		// so the plain popStack below always runs — no stack-cleanup hazard even
-		// when the global has the wrong type. See Stack<T>::tryGet.
-		std::optional<T> result = Stack<T>::tryGet(m_state, -1);
-		popStack(1);
-		return result;
-	}
-
-	template <typename T>
-	void writeVariable(const char* variableName, T value) {
-		pushToStack(value);
-		setGlobalFromStack(variableName);
-	}
-	
-	std::map<Generic, Generic> readTableGeneric(const char* tableName) {
-		std::map<Generic, Generic> result;
-		const Type t = pushGlobalToStack(tableName);
-		DefaultStackGuard guard(m_state); // pops on every path, incl. readGeneric throwing
-		if (t == Type::Table) {
-			Table table(m_state, -1);
-			result = table.readGeneric();
-		}
-		return result;
-	}
-
-	template <typename Key, typename Value>
-	std::map<Key, Value> readTable(const char* tableName) {
-		std::map<Key, Value> result;
-		const Type t = pushGlobalToStack(tableName);
-		DefaultStackGuard guard(m_state); // table.read can throw TypeMismatchException
-		if (t == Type::Table) {
-			Table table(m_state, -1);
-			result = table.read<Key, Value>();
-		}
-		return result;
-	}
-
-	template <typename Key, typename Value>
-	std::map<Key, Value> readTableIfMatching(const std::string& tableName) {
-		std::map<Key, Value> result;
-		const Type t = pushGlobalToStack(tableName.c_str());
-		DefaultStackGuard guard(m_state);
-		if (t == Type::Table) {
-			Table table(m_state, -1);
-			result = table.readIfMatching<Key, Value>();
-		}
-		return result;
-	}
-
-	template <typename T>
-	void writeTable(const char* tableName, const std::map<std::string, T>& map) {
-		withTableDo(tableName, [this, &map](Table& table) {
-			table.write(map);
-		}, true);
-	}
 
 	/**
 	 * @brief Register a native function to be callable from Lua
@@ -267,26 +211,6 @@ public:
 	 *         lua_State may register methods.
 	 */
 	void registerMethod(const char* name, Method method);
-
-	/**
-	 * @brief Register a debug hook
-	 * The debug hook is called whenever a certain event occurs in the lua virtual machine.
-	 * The hook is called with the State instance and the debug information.
-	 * The mask defines for which events the hook should be called. Use one ore more of the
-	 * following constants to define the mask:
-	 * - MaskCall: Call event
-	 * - MaskReturn: Return event
-	 * - MaskLine: Line event
-	 * - MaskCount: Count event
-	 * @param hook The function to call
-	 * @param mask The mask of events for which the hook should be called
-	 * @param count The number of instructions between each call of the hook
-	 * \throws std::logic_error if called on a borrowed State (one constructed
-	 *         from an existing lua_State*). The hook entry is keyed by the
-	 *         lua_State in a process-wide table that only an owning State's
-	 *         destructor cleans up, so only the owner may register hooks.
-	*/
-	void registerDebugHook(DebugHook hook, int mask, int count = 0);
 
 	/**
 	 * @brief Override an existing lua function with the given native function to be callable from Lua
@@ -539,18 +463,6 @@ public:
 
 
 	/**
-	 * \brief work on the table with the given name
-	 * This method pushes the table with the given name from the global scope onto the stack and calls the given function.
-	*/
-	void withTableDo(std::string_view tableName, TableFunction workOnTable, bool createIfMissing);
-
-	/**
-	 * \brief work on the table stored on the given stack index
-	 * This method reads the table on the given stack position and calls the given function.
-	*/
-	void withTableDo(int index, TableFunction workOnTable);
-
-	/**
 	 * \brief create a new table with the given name
 	 * This method pushes a new table onto the stack and calls the given function.
 	 * If name is not null, the table will be added to the global scope with the given name.
@@ -642,140 +554,47 @@ public:
 	}
 
 	/**
-	 * \brief Install the passive observer for LuaErrors. Default = StreamLogger
-	 *        to std::cerr; nullptr silences logging.
-	 *
-	 * Lives in the shared per-VM ErrorPolicy: any wrapper configures the
-	 * sink for all wrappers around the same lua_State.
-	 *
-	 * \see ErrorHandling.hpp
-	 */
-	void setLogger(std::unique_ptr<ErrorLogger> logger);
-
-	/// Convenience: construct a Logger in place, install it, return a
-	/// reference for later inspection (typically MemoryLogger).
-	template <typename LoggerT, typename... Args>
-	LoggerT& installLogger(Args&&... args) {
-		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
-		LoggerT* ptr = logger.get();
-		setLogger(std::move(logger));
-		return *ptr;
-	}
-
-	/**
-	 * \brief Install the active reaction for LuaErrors. Default = nullptr
-	 *        (logger still runs). Logger fires before the handler, so a
-	 *        throwing handler does not erase the log record.
-	 *
-	 * Shares lifetime with the ErrorPolicy — see setLogger.
-	 *
-	 * \see ErrorHandling.hpp
-	 */
-	void setErrorHandler(std::unique_ptr<ErrorHandler> handler);
-
-	/// Convenience: construct a Handler in place, install it, return a
-	/// reference for later inspection.
-	template <typename HandlerT, typename... Args>
-	HandlerT& installErrorHandler(Args&&... args) {
-		auto handler = std::make_unique<HandlerT>(std::forward<Args>(args)...);
-		HandlerT* ptr = handler.get();
-		setErrorHandler(std::move(handler));
-		return *ptr;
-	}
-
-	/**
-	 * \brief Install the sink for Lua's warning system (lua_setwarnf).
-	 *        Default = none (Lua's own warnfon prints to stderr). nullptr
-	 *        disables the warning system entirely.
-	 *
-	 * Lives in the shared per-VM context (trampoline ud = StateContext*).
-	 * See WarningHandling.hpp for the opt-in / control-directive story.
-	 */
-	void setWarningLogger(std::unique_ptr<WarningLogger> logger);
-
-	/// Convenience: construct a WarningLogger in place, install it, return
-	/// a reference for later inspection (typically MemoryWarningLogger).
-	template <typename LoggerT, typename... Args>
-	LoggerT& installWarningLogger(Args&&... args) {
-		auto logger = std::make_unique<LoggerT>(std::forward<Args>(args)...);
-		LoggerT* ptr = logger.get();
-		setWarningLogger(std::move(logger));
-		return *ptr;
-	}
-
-	/**
 	 * \brief returns the internal lua state
 	*/
 
 	lua_State* getState() const { return m_state; }
 
 	/**
-	 * \brief Bind a C++ constructor for type T as a callable Lua function
-	 * \tparam T The type to bind a constructor for
-	 * \tparam Args The argument types for the constructor
-	 * \param name The name of the constructor function in Lua
-	 */
-	template <typename T, typename... Args>
-	void bindConstructor(const char* name) {
-		Bind::constructor<T, Args...>(*this, name);
-	}
-
-	/**
-	 * \brief Bind a C++ member function as a Lua method on T's metatable
-	 * \tparam T The class whose metatable receives the method
-	 * \tparam Method Non-type template parameter: pointer-to-member-function
-	 * \param name Name of the method in Lua
-	 *
-	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
-	 */
-	template <typename T, auto Method>
-	void bindMethod(const char* name) {
-		Bind::method<T, Method>(*this, name);
-	}
-
-	/**
-	 * \brief Bind a C++ data member as a Lua property on T's metatable
-	 * \tparam T The class whose metatable receives the property
-	 * \tparam Field Non-type template parameter: pointer-to-member-data
-	 * \param name Name of the property in Lua
-	 *
-	 * Prerequisite: Metatable<T>::registerMetatable(*this) must have been called.
-	 */
-	template <typename T, auto Field>
-	void bindProperty(const char* name) {
-		Bind::property<T, Field>(*this, name);
-	}
-
-	/**
-	 * \brief Attach a value as a static field on a constructor table.
-	 * \param tableName Name of the constructor table (must already exist)
-	 * \param fieldName Field key
-	 * \param value Value (primitive, string, or user type with Metatable)
-	 */
-	template <typename V>
-	void bindStaticField(const char* tableName, const char* fieldName, V value) {
-		Bind::staticField(*this, tableName, fieldName, std::forward<V>(value));
-	}
-
-	/**
-	 * \brief Attach a free function as a static method on a constructor table.
-	 * \tparam Fn Non-type template parameter: pointer-to-function
-	 */
-	template <auto Fn>
-	void bindStaticFunction(const char* tableName, const char* funcName) {
-		Bind::staticFunction<Fn>(*this, tableName, funcName);
-	}
-
-	/**
 	 * \brief Get the registry for direct access
 	 */
 	Registry& getRegistry() { return m_registry; }
 
+	/**
+	 * @brief Class binding — register constructors, methods, properties, statics.
+	 *
+	 * Reach via the @ref binding member: `state.binding.constructor<Vec, ...>(...)`,
+	 * `state.binding.method<Vec, &Vec::f>(...)`. See detail/StateBinding.hpp.
+	 */
+
+	/**
+	 * @brief Diagnostics — error logger / handler, warning sink, debug hook.
+	 *
+	 * Reach via the @ref diagnostics member: `state.diagnostics.setLogger(...)`,
+	 * `state.diagnostics.installLogger<MemoryLogger>()`,
+	 * `state.diagnostics.registerDebugHook(...)`. See detail/StateDiagnostics.hpp.
+	 *
+	 * @note The facade members (@ref variables, @ref binding, @ref diagnostics)
+	 *       are declared at the very end of the class so they can be initialized
+	 *       from the already-constructed VM members.
+	 */
+
 private:
+	friend class Diagnostics; // reaches m_context and installDebugHook
 	constexpr static const char* const HandleName = "StateHandle";
 	constexpr static const char* const GlobalScope = "_G";
 
 	static int dispatchMethod(lua_State* state);
+
+	// Owner-only debug-hook plumbing behind Diagnostics::registerDebugHook.
+	// Kept on State because the hook trampoline builds a borrowed-view State
+	// through the private (StateContext*, lua_State*) constructor and the hook
+	// slot's lifetime is tied to the owning State's destructor.
+	void installDebugHook(DebugHook hook, int mask, int count);
 
 	void anchorOwned(void* ptr, void (*deleter)(void*));
 	void transferStringOwnership(std::string s);
@@ -846,14 +665,24 @@ private:
 	StateContext*       m_context;
 	Registry            m_registry;
 	std::vector<Method> m_callbacks;
+
+public:
+	// Facade sub-objects. Declared last so their initializers see the already-
+	// constructed VM members: `variables` copies m_state by value, so it must
+	// outlive nothing but be constructed after it; `binding`/`diagnostics` bind
+	// to *this. None are copyable or movable.
+	Variables   variables{m_state};
+	Binding     binding{*this};
+	Diagnostics diagnostics{*this};
 };
 
 } // namespace Lua
 
-// Template implementations for Bind::method, Bind::property, etc.
-// Included here — after the State class is fully defined — so BindImpl.inl
-// can freely use State's interface. This also lets users include Bind.hpp
-// directly without depending on include order.
-#include "detail/BindImpl.inl"
+// NOTE: the Bind template implementations are intentionally NOT included here.
+// State.hpp stays free of binding implementation; the binding facade members
+// (state.binding.*) are dependent forwarders that only need Bind's declaration.
+// Translation units that actually register classes include <luacpp/Bind.hpp>,
+// which pulls in this header and then defines the Bind templates against a
+// complete State.
 
 #endif // LUACPP_STATE_HPP

@@ -4,7 +4,7 @@ Lua 5.5 introduced `lua_pushexternalstring`, which lets Lua hold a reference to 
 
 ## When to care
 
-Most strings should just go through `writeVariable` or `pushToStack`, both of which copy. External strings only pay off for:
+Most strings should just go through `variables.write` or `pushToStack`, both of which copy. External strings only pay off for:
 
 - **Large buffers** where a copy would be wasteful (log data, file contents, payloads).
 - **Long-lived strings** that already live in a stable container on the host side and outlive the Lua state, so referencing them is safe.

@@ -20,7 +20,7 @@ namespace {
 int testReadWriteVariable() {
     Lua::State lua(Lua::State::LibMath);
     lua.loadAndExecuteScript("x = 10 + 2");
-    auto x = lua.readVariable<int>("x");
+    auto x = lua.variables.read<int>("x");
     return (x && *x == 12) ? 0 : 1;
 }
 
@@ -30,15 +30,15 @@ int testNativeFunctionRoundtrip() {
         return s.setReturnValue(42);
     });
     lua.loadAndExecuteScript("y = score()");
-    auto y = lua.readVariable<int>("y");
+    auto y = lua.variables.read<int>("y");
     return (y && *y == 42) ? 0 : 1;
 }
 
 int testStringRoundtrip() {
     Lua::State lua(Lua::State::LibString);
-    lua.writeVariable<const char*>("greeting", "hello");
+    lua.variables.write<const char*>("greeting", "hello");
     lua.loadAndExecuteScript("greeting = greeting .. ' world'");
-    auto g = lua.readVariable<std::string>("greeting");
+    auto g = lua.variables.read<std::string>("greeting");
     return (g && *g == "hello world") ? 0 : 1;
 }
 
@@ -53,6 +53,16 @@ int testSpanArgsArray() {
     const std::array<int, 3> args{2, 3, 4};
     auto sum = lua.executeFunctionWithArgsArrayReturning("add3", std::span(args));
     return (sum && *sum == 9) ? 0 : 1;
+}
+
+int testFacadeTypeNamable() {
+    // Proves the facade types are re-exported by name (not just reachable via
+    // member access): a consumer can bind a reference of the exported type.
+    Lua::State lua(Lua::State::LibMath);
+    Lua::Variables& vars = lua.variables;
+    vars.write<int>("z", 7);
+    auto z = vars.read<int>("z");
+    return (z && *z == 7) ? 0 : 1;
 }
 
 int testVersionConstant() {
@@ -71,5 +81,6 @@ int main() {
     if (testStringRoundtrip() != 0) return 30;
     if (testVersionConstant() != 0) return 40;
     if (testSpanArgsArray() != 0) return 50;
+    if (testFacadeTypeNamable() != 0) return 60;
     return 0;
 }

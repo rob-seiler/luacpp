@@ -96,7 +96,7 @@ TEST_F(StateTest, simpleScriptWithInvalidSyntax) {
 	)";
 
 	State script(State::LibNone);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.loadAndExecuteScript(src);
 	EXPECT_EQ(script.getStackSize(), 0);
 	ASSERT_FALSE(errors.entries().empty());
@@ -129,7 +129,7 @@ TEST_F(StateTest, writeVariable) {
 	script.executeFunction("calcY");
 	EXPECT_EQ(readVar<int>(script, "y"), 2);
 
-	script.writeVariable("x", 10);
+	script.variables.write("x", 10);
 	script.executeFunction("calcY");
 	EXPECT_EQ(readVar<int>(script, "y"), 12);
 }
@@ -147,7 +147,7 @@ TEST_F(StateTest, executeScriptFromRegistry) {
 	EXPECT_EQ(script.getStackSize(), 0);
 
 	//execute the script
-	script.writeVariable("x", 0);
+	script.variables.write("x", 0);
 	script.executeScript(ScriptKey);
 	EXPECT_EQ(script.getStackSize(), 0);
 	EXPECT_EQ(readVar<int>(script, "x"), 1);
@@ -254,7 +254,7 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 	)";
 
 	State script(State::LibBase);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.loadScript(ScriptKey, src);
 	ASSERT_TRUE(errors.entries().empty());
 
@@ -271,7 +271,7 @@ TEST_F(StateTest, executeScriptRecordsErrorOnFailure) {
 // key (RegistryKeyNotFound), and the caller should see which one happened.
 TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 	State script(State::LibBase);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 
 	// Generic(nullptr) constructs a Generic of Type::Nil — getScript's switch
 	// hits the default arm and returns InvalidKey.
@@ -287,7 +287,7 @@ TEST_F(StateTest, executeScriptWithInvalidGenericKeyPreservesStatus) {
 // drifts on every subsequent call.
 TEST_F(StateTest, tableErrorIsStringifiedAndStackStaysBalanced) {
 	State script(State::LibBase);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.loadAndExecuteScript("error({code = 42, reason = 'boom'})");
 	EXPECT_EQ(script.getStackSize(), 0)
 	    << "non-string error must still be consumed from the stack";
@@ -301,7 +301,7 @@ TEST_F(StateTest, tableErrorIsStringifiedAndStackStaysBalanced) {
 // default "table: 0x..." identity.
 TEST_F(StateTest, tableErrorUsesCustomTostring) {
 	State script(State::LibBase);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.loadAndExecuteScript(R"(
 		local e = setmetatable({reason = "kaboom"}, {
 			__tostring = function(self) return "Custom: " .. self.reason end
@@ -320,7 +320,7 @@ TEST_F(StateTest, tableErrorUsesCustomTostring) {
 // cleanly instead of being mis-read as a T value left on the stack.
 TEST_F(StateTest, executeFunctionReturningSurfacesFailureViaStatus) {
 	State script(State::LibBase);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.loadAndExecuteScript("function bad() error({reason = 'boom'}) end");
 
 	// Direct call: status surfaces the runtime error.
@@ -339,7 +339,7 @@ TEST_F(StateTest, executeFunctionReturningSurfacesFailureViaStatus) {
 
 TEST_F(StateTest, loadAndExecuteScriptSurfacesStatusOnSuccessAndFailure) {
 	State script(State::LibNone);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 
 	EXPECT_EQ(script.loadAndExecuteScript("x = 1"), LuaError::Status::Ok);
 	EXPECT_TRUE(errors.entries().empty());
@@ -351,7 +351,7 @@ TEST_F(StateTest, loadAndExecuteScriptSurfacesStatusOnSuccessAndFailure) {
 
 TEST_F(StateTest, executeFunctionWithUnknownNameReportsSyntheticError) {
 	State script(State::LibNone);
-	auto& errors = script.installLogger<MemoryLogger>();
+	auto& errors = script.diagnostics.installLogger<MemoryLogger>();
 	script.executeFunction("doesNotExist");
 	ASSERT_FALSE(errors.entries().empty());
 	const auto& err = errors.entries().front();
@@ -408,7 +408,7 @@ TEST_F(StateTest, registerDebugHook) {
 
 	State script(State::LibNone);
 	uint32_t callCount = 0;
-	script.registerDebugHook([&callCount](State& script, const DebugInfo& info) {
+	script.diagnostics.registerDebugHook([&callCount](State& script, const DebugInfo& info) {
 		++callCount;
 		EXPECT_EQ(info.event, static_cast<int>(EventCodes::Line));
 		EXPECT_EQ(info.currentline, callCount + 1); //we have a new line right after the raw string starts
@@ -435,7 +435,7 @@ TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
 	State owner(State::LibNone);
 	State borrowed(owner.getState());
 	EXPECT_THROW(
-	    borrowed.registerDebugHook([](State&, const DebugInfo&) {}, MaskLine, 0),
+	    borrowed.diagnostics.registerDebugHook([](State&, const DebugInfo&) {}, MaskLine, 0),
 	    std::logic_error);
 }
 
@@ -446,7 +446,7 @@ TEST_F(StateTest, registerDebugHookRejectedOnBorrowedState) {
 TEST_F(StateTest, debugHookDetachedOnMainDestructionEvenIfVmSurvives) {
 	int callCount = 0;
 	auto main = std::make_unique<State>(State::LibNone);
-	main->registerDebugHook(
+	main->diagnostics.registerDebugHook(
 	    [&callCount](State&, const DebugInfo&) { ++callCount; },
 	    MaskLine, 0);
 
@@ -475,7 +475,7 @@ TEST_F(StateTest, vmStaysAliveWhileBorrowedReferencesExist) {
 
 	// If lua_close had run, this would be UB; with ref-counted lifetime
 	// the VM survives until `borrowed` itself goes out of scope.
-	auto g = borrowed.readVariable<std::string>("greeting");
+	auto g = borrowed.variables.read<std::string>("greeting");
 	ASSERT_TRUE(g.has_value());
 	EXPECT_EQ(*g, "hello");
 }
@@ -490,7 +490,7 @@ TEST_F(StateTest, wrappingRawLuaStateTransfersOwnership) {
 	{
 		State wrapper(L);
 		wrapper.loadAndExecuteScript("x = 42");
-		auto x = wrapper.readVariable<int>("x");
+		auto x = wrapper.variables.read<int>("x");
 		ASSERT_TRUE(x.has_value());
 		EXPECT_EQ(*x, 42);
 	}
@@ -506,7 +506,7 @@ TEST_F(StateTest, readTable) {
 
 	State script(State::LibNone);
 	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
-	auto map = script.readTable<std::string, int>("map");
+	auto map = script.variables.readTable<std::string, int>("map");
 	EXPECT_EQ(map.size(), 3);
 	EXPECT_EQ(map["a"], 1);
 	EXPECT_EQ(map["b"], 2);
@@ -523,7 +523,7 @@ TEST_F(StateTest, readTable_invalidValueType) {
 
 	bool exceptionRaised = false;
 	try {
-		script.readTable<std::string,int>("map");
+		script.variables.readTable<std::string,int>("map");
 	} catch (const TypeMismatchException& e) {
 		EXPECT_EQ(e.getExpectedType(), Type::Number);
 		EXPECT_EQ(e.getActualType(), Type::String);
@@ -542,7 +542,7 @@ TEST_F(StateTest, readTableIfMatching) {
 
 	State script(State::LibNone);
 	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
-	auto map = script.readTableIfMatching<std::string, int>("map");
+	auto map = script.variables.readTableIfMatching<std::string, int>("map");
 	EXPECT_EQ(map.size(), 2);
 	EXPECT_EQ(map["a"], 1);
 	EXPECT_EQ(map["c"], 3);
@@ -555,7 +555,7 @@ TEST_F(StateTest, readTableGeneric) {
 
 	State script(State::LibNone);
 	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
-	auto map = script.readTableGeneric("map");
+	auto map = script.variables.readTableGeneric("map");
 	EXPECT_EQ(map.size(), 3);
 
 	EXPECT_EQ(map["a"], Generic(1ll));
@@ -575,7 +575,7 @@ TEST_F(StateTest, writeTable) {
 	State script(State::LibNone);
 	script.loadAndExecuteScript(src);
 	std::map<std::string, int> map = { { "a", 10 }, { "b", 20 } };
-	script.writeTable("map", map);
+	script.variables.writeTable("map", map);
 
 	script.executeFunction("calcY");
 	EXPECT_EQ(readVar<int>(script, "y"), 30);
@@ -590,7 +590,7 @@ TEST_F(StateTest, withTableDo) {
 	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 
 	int a = 0, b = 0, c = 0;
-	script.withTableDo("map", [&a, &b, &c](Table& table) {
+	script.variables.withTableDo("map", [&a, &b, &c](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
 		EXPECT_TRUE(table.readValue<int>("b", b));
 		EXPECT_TRUE(table.readValue<int>("c", c));
@@ -611,7 +611,7 @@ TEST_F(StateTest, nestedTable) {
 	script.loadAndExecuteScript(src); //we need to execute the script once to get the functions into the global scope
 
 	int a = 0, b = 0, d = 0, e = 0;
-	script.withTableDo("map", [&a, &b, &d, &e](Table& table) {
+	script.variables.withTableDo("map", [&a, &b, &d, &e](Table& table) {
 		EXPECT_TRUE(table.readValue<int>("a", a));
 		EXPECT_TRUE(table.readValue<int>("b", b));
 		table.withTableDo("c", [&d, &e](Table& table) {
@@ -663,12 +663,12 @@ TEST_F(StateTest, metatable) {
 			double x1 = 0, x2 = 0, y1 = 0, y2 = 0;
 			if (lua.getStackSize() >= 2) {
 				//read 1st operand
-				lua.withTableDo(1, [&x1, &y1](Table& table) {
+				lua.variables.withTableDo(1, [&x1, &y1](Table& table) {
 					table.readValue<double>("x", x1);
 					table.readValue<double>("y", y1);
 				});
 				//read 2nd operand
-				lua.withTableDo(2, [&x2, &y2](Table& table) {
+				lua.variables.withTableDo(2, [&x2, &y2](Table& table) {
 					table.readValue<double>("x", x2);
 					table.readValue<double>("y", y2);
 				});
@@ -693,7 +693,7 @@ TEST_F(StateTest, metatable) {
 
 	//read out v3 to check against
 	double v3x = 0, v3y = 0;
-	script.withTableDo("v3", [&v3x, &v3y](Table& table) {
+	script.variables.withTableDo("v3", [&v3x, &v3y](Table& table) {
 		EXPECT_TRUE(table.readValue<double>("x", v3x));
 		EXPECT_TRUE(table.readValue<double>("y", v3y));
 	}, false);

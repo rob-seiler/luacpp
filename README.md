@@ -46,7 +46,7 @@ int main() {
     Lua::State lua;
 
     lua.loadAndExecuteScript(src);
-    auto x = lua.readVariable<int>("x"); // std::optional<int>
+    auto x = lua.variables.read<int>("x"); // std::optional<int>
     return (x && *x == 12) ? 0 : 1;
 }
 ```
@@ -62,8 +62,8 @@ A fresh `Lua::State` opens no standard libraries — scripts run in a sealed san
 ## Documentation
 
 - [Embedding C++ functions in Lua](docs/embedding-functions.md) — `registerNativeFunction`, upvalues, `registerMethod` for `std::function` callbacks and lambdas with capture.
-- [Reading and writing values](docs/values-and-tables.md) — `readVariable` / `writeVariable`, homogeneous and generic table reads, nested tables via `withTableDo`.
-- [Binding C++ classes to Lua](docs/class-binding.md) — `Metatable<T>` auto-detection of operators, `bindConstructor` / `bindMethod` / `bindProperty`, static fields, ownership semantics.
+- [Reading and writing values](docs/values-and-tables.md) — `variables.read` / `variables.write`, homogeneous and generic table reads, nested tables via `variables.withTableDo`.
+- [Binding C++ classes to Lua](docs/class-binding.md) — `Metatable<T>` auto-detection of operators, `binding.constructor` / `binding.method` / `binding.property`, static fields, ownership semantics.
 - [Lua standard libraries](docs/lua-libraries.md) — Library bits, eager opening vs `require()`-based preloading, extending `package.path` / `package.cpath`.
 - [Loading C modules at runtime](docs/c-modules.md) — `LUACPP_ENABLE_CMODULE_LOADING`, POSIX vs Windows deployment, LuaRocks-compatible C-API contract.
 - [External strings and ownership transfer](docs/external-strings.md) — Lua 5.5's `lua_pushexternalstring` wrapper, zero-copy buffer sharing, transferring container lifetime to Lua's GC.

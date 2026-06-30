@@ -34,6 +34,14 @@ void Basics::popStack(lua_State* state, int numValues) {
 	lua_pop(state, numValues);
 }
 
+Type Basics::pushGlobal(lua_State* state, const char* name) {
+	return static_cast<Type>(lua_getglobal(state, name));
+}
+
+void Basics::setGlobal(lua_State* state, const char* name) {
+	lua_setglobal(state, name);
+}
+
 int  Basics::getStackTop(lua_State* state)              { return lua_gettop(state); }
 void Basics::setStackTop(lua_State* state, int newTop)  { lua_settop(state, newTop); }
 
