@@ -13,11 +13,44 @@
 namespace Lua {
 
 /**
+ * @brief A Lua stack traceback (luaL_traceback output): the
+ *        "stack traceback:" header plus one line per call level.
+ *        Obtained via LuaMessage::traceback().
+ */
+class Traceback {
+public:
+	struct Frame {
+		std::string        raw;    ///< the line as printed by Lua, without the leading tab
+		std::string        source; ///< chunk name or "[C]"; empty for pseudo-lines
+		std::optional<int> line;   ///< nullopt for [C] frames and pseudo-lines
+		std::string        what;   ///< "global 'name'", "main chunk", "?" ...
+	};
+
+	Traceback() = default;
+	explicit Traceback(std::string text) : m_text(std::move(text)) {}
+
+	/// The traceback block exactly as Lua produced it.
+	const std::string& text() const noexcept { return m_text; }
+
+	bool empty() const noexcept { return m_text.empty(); }
+
+	/// Parse into one Frame per line (header excluded). Best-effort:
+	/// unrecognized lines (e.g. "(...tail calls...)") survive as frames
+	/// with only `raw` filled. Parses on demand — cache if iterated often.
+	std::vector<Frame> asList() const;
+
+private:
+	std::string m_text;
+};
+
+/**
  * @brief Lua-side error text plus best-effort accessors for Lua's standard
  *        "<chunkname>:<line>: <text>" prefix. raw() always returns the
  *        original; source()/line() return nullopt and text() falls back
  *        to raw() when the message doesn't match (table errors, level=0
- *        error(), custom message handler).
+ *        error(), custom message handler). With traceback support enabled
+ *        the raw message also carries a "stack traceback:" block; text()
+ *        excludes it, traceback() returns it.
  */
 class LuaMessage {
 public:
@@ -34,8 +67,13 @@ public:
 	/// "<line>" portion; nullopt if no parseable prefix.
 	std::optional<int> line() const;
 
-	/// Message body without the "<src>:<line>: " prefix; raw() if no prefix.
+	/// Message body without the "<src>:<line>: " prefix and without any
+	/// traceback block; falls back to raw() (minus traceback) if no prefix.
 	std::string text() const;
+
+	/// The "stack traceback:" block; nullopt when none is present (opt-in
+	/// disabled, or a Load error — nothing ran, so there is no call stack).
+	std::optional<Traceback> traceback() const;
 
 	// Substring search forwarders. Other string ops go through raw().
 	std::size_t find(const std::string& s, std::size_t pos = 0) const noexcept { return m_raw.find(s, pos); }

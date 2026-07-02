@@ -61,6 +61,7 @@ using ::Lua::StackGuard;
 using ::Lua::LuaError;
 using ::Lua::LuaException;
 using ::Lua::LuaMessage;
+using ::Lua::Traceback;
 using ::Lua::ErrorLogger;
 using ::Lua::StreamLogger;
 using ::Lua::MemoryLogger;

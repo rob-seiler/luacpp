@@ -64,6 +64,7 @@ A fresh `Lua::State` opens no standard libraries — scripts run in a sealed san
 - [Embedding C++ functions in Lua](docs/embedding-functions.md) — `registerNativeFunction`, upvalues, `registerMethod` for `std::function` callbacks and lambdas with capture.
 - [Reading and writing values](docs/values-and-tables.md) — `variables.read` / `variables.write`, homogeneous and generic table reads, nested tables via `variables.withTableDo`.
 - [Binding C++ classes to Lua](docs/class-binding.md) — `Metatable<T>` auto-detection of operators, `binding.constructor` / `binding.method` / `binding.property`, static fields, ownership semantics.
+- [Error handling and tracebacks](docs/error-handling.md) — `LuaError`, logger/handler slots, `LuaMessage` parsing, opt-in stack tracebacks via `setTracebackEnabled` with per-frame access.
 - [Lua standard libraries](docs/lua-libraries.md) — Library bits, eager opening vs `require()`-based preloading, extending `package.path` / `package.cpath`.
 - [Loading C modules at runtime](docs/c-modules.md) — `LUACPP_ENABLE_CMODULE_LOADING`, POSIX vs Windows deployment, LuaRocks-compatible C-API contract.
 - [External strings and ownership transfer](docs/external-strings.md) — Lua 5.5's `lua_pushexternalstring` wrapper, zero-copy buffer sharing, transferring container lifetime to Lua's GC.
@@ -75,12 +76,12 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 
 - [`examples/basics/`](examples/basics/) — minimal embedding setup.
 - [`examples/gameoflife/`](examples/gameoflife/) — a small simulation driven by a Lua script, demonstrating class binding and script-driven application logic.
+- [`examples/traceback/`](examples/traceback/) — a mini "script editor console" rendering error text, jump-to-line target, and the parsed Lua call stack from a failed script.
 
 ## Roadmap
 
 ### v0.3.0 — Embedding hardening
 
-- **Lua traceback support** via opt-in `pcall` message handler.
 - **Stable metatable names** — replace the `typeid(T).name()` default.
 
 ### v0.4.0 — Class binding expansion

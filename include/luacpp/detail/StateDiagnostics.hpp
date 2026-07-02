@@ -69,6 +69,21 @@ public:
 	}
 
 	/**
+	 * @brief Opt in to Lua stack tracebacks on failed protected calls.
+	 *
+	 * When enabled, every protected call luacpp makes runs a luaL_traceback
+	 * message handler, so LuaError::message carries
+	 * "<msg>\nstack traceback:\n..." — split via LuaMessage::text() /
+	 * LuaMessage::traceback(). Per-VM (shared context, like the error
+	 * policy), default off. Load errors never carry a traceback (nothing
+	 * ran yet); Lua skips the handler on memory errors (LUA_ERRMEM).
+	 */
+	void setTracebackEnabled(bool enabled) noexcept;
+
+	/// Whether traceback support is currently enabled for this VM.
+	bool tracebackEnabled() const noexcept;
+
+	/**
 	 * @brief Register a debug hook called on the selected VM events.
 	 *
 	 * @throws std::logic_error if called on a borrowed State (one constructed

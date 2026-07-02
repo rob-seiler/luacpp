@@ -50,12 +50,12 @@ struct Parsed {
 	std::string_view text;
 };
 
-std::optional<Parsed> parsePrefix(const std::string& raw) {
+std::optional<Parsed> parsePrefix(std::string_view raw) {
 	const auto sep = raw.find(": ");
-	if (sep == std::string::npos || sep == 0) return std::nullopt;
+	if (sep == std::string_view::npos || sep == 0) return std::nullopt;
 
 	const auto lineColon = raw.rfind(':', sep - 1);
-	if (lineColon == std::string::npos) return std::nullopt;
+	if (lineColon == std::string_view::npos) return std::nullopt;
 
 	const char* lineBegin = raw.data() + lineColon + 1;
 	const char* lineEnd   = raw.data() + sep;
@@ -76,24 +76,95 @@ std::optional<Parsed> parsePrefix(const std::string& raw) {
 	};
 }
 
+// Split at the FIRST occurrence so error text containing the phrase later
+// on cannot shift the split.
+constexpr const char* tracebackMarker = "\nstack traceback:";
+
+// Message portion before any traceback block.
+std::string_view messageBody(const std::string& raw) {
+	const auto pos = raw.find(tracebackMarker);
+	if (pos == std::string::npos) return raw;
+	return std::string_view(raw.data(), pos);
+}
+
+// "<source>[:<line>]" → Frame source/line. The LAST colon separates the
+// line so drive colons ("d:\foo.lua:12") don't confuse the split.
+void parseFrameLocation(std::string_view loc, Traceback::Frame& frame) {
+	const auto lineColon = loc.rfind(':');
+	if (lineColon != std::string_view::npos) {
+		const char* lineBegin = loc.data() + lineColon + 1;
+		const char* lineEnd   = loc.data() + loc.size();
+		int lineNum = 0;
+		const auto r = std::from_chars(lineBegin, lineEnd, lineNum);
+		if (r.ec == std::errc{} && r.ptr == lineEnd && lineNum >= 1) {
+			frame.source = std::string(loc.substr(0, lineColon));
+			frame.line   = lineNum;
+			return;
+		}
+	}
+	frame.source = std::string(loc); // no ":<line>" suffix (currentline <= 0, or "[C]")
+}
+
 } // namespace
 
+std::vector<Traceback::Frame> Traceback::asList() const {
+	std::vector<Frame> frames;
+
+	std::string_view rest = m_text;
+	// The "stack traceback:" header carries no frame information.
+	if (const auto firstBreak = rest.find('\n'); firstBreak != std::string_view::npos) {
+		rest = rest.substr(firstBreak + 1);
+	} else {
+		return frames;
+	}
+
+	while (!rest.empty()) {
+		auto lineEnd = rest.find('\n');
+		std::string_view line = rest.substr(0, lineEnd);
+		rest = (lineEnd == std::string_view::npos) ? std::string_view{} : rest.substr(lineEnd + 1);
+
+		while (!line.empty() && (line.front() == '\t' || line.front() == ' ')) {
+			line.remove_prefix(1);
+		}
+		if (line.empty()) continue;
+
+		Frame frame;
+		frame.raw = std::string(line);
+
+		// Frame shape is "<location>: in <what>"; anything else (tail-call
+		// and skip markers) stays raw-only so no line is ever lost.
+		if (const auto sep = line.find(": in "); sep != std::string_view::npos) {
+			parseFrameLocation(line.substr(0, sep), frame);
+			frame.what = std::string(line.substr(sep + 5));
+		}
+		frames.push_back(std::move(frame));
+	}
+	return frames;
+}
+
 std::optional<std::string> LuaMessage::source() const {
-	auto p = parsePrefix(m_raw);
+	auto p = parsePrefix(messageBody(m_raw));
 	if (!p) return std::nullopt;
 	return std::string(p->source);
 }
 
 std::optional<int> LuaMessage::line() const {
-	auto p = parsePrefix(m_raw);
+	auto p = parsePrefix(messageBody(m_raw));
 	if (!p) return std::nullopt;
 	return p->line;
 }
 
 std::string LuaMessage::text() const {
-	auto p = parsePrefix(m_raw);
-	if (!p) return m_raw;
+	const auto body = messageBody(m_raw);
+	auto p = parsePrefix(body);
+	if (!p) return std::string(body);
 	return std::string(p->text);
+}
+
+std::optional<Traceback> LuaMessage::traceback() const {
+	const auto pos = m_raw.find(tracebackMarker);
+	if (pos == std::string::npos) return std::nullopt;
+	return Traceback(m_raw.substr(pos + 1)); // +1: drop the separating newline
 }
 
 std::ostream& operator<<(std::ostream& os, const LuaMessage& m) {

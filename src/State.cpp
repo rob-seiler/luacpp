@@ -34,6 +34,24 @@ bool hasStackError(Lua::LuaError::Status s) {
 			return false;
 	}
 }
+
+// pcall message handler, modelled on lua.c's msghandler. One deviation:
+// __tostring error objects get a traceback appended too (lua.c returns
+// them bare) — a traceback is the whole point of opting in.
+int tracebackHandler(lua_State* L) {
+	const char* msg = lua_tostring(L, 1);
+	if (msg == nullptr) { // non-string error object, e.g. error({...})
+		if (luaL_callmeta(L, 1, "__tostring") &&
+		    lua_type(L, -1) == LUA_TSTRING) {
+			msg = lua_tostring(L, -1); // anchored below the traceback buffer
+		} else {
+			msg = lua_pushfstring(L, "(error object is a %s value)",
+			                      luaL_typename(L, 1));
+		}
+	}
+	luaL_traceback(L, L, msg, 1);
+	return 1;
+}
 } // namespace
 
 namespace Lua {
@@ -281,7 +299,7 @@ LuaError::Status State::loadAndExecuteScript(const char* code) {
 	// failures and runtime failures land in distinct LuaError categories.
 	const auto loadRc = reportStatus(LuaError::Category::Load, luaL_loadstring(m_state, code));
 	if (loadRc != LuaError::Status::Ok) return loadRc;
-	return reportStatus(LuaError::Category::Runtime, lua_pcall(m_state, 0, LUA_MULTRET, 0));
+	return reportStatus(LuaError::Category::Runtime, callFunction(0, LUA_MULTRET));
 }
 
 LuaError::Status State::loadAndExecuteScript(const File& path) {
@@ -292,7 +310,7 @@ LuaError::Status State::loadAndExecuteScript(const File& path) {
 	// entire point of the file-loading overload.
 	const auto loadRc = reportStatus(LuaError::Category::Load, Registry::loadFile(m_state, path));
 	if (loadRc != LuaError::Status::Ok) return loadRc;
-	return reportStatus(LuaError::Category::Runtime, lua_pcall(m_state, 0, LUA_MULTRET, 0));
+	return reportStatus(LuaError::Category::Runtime, callFunction(0, LUA_MULTRET));
 }
 
 Type State::getType(int index) const {
@@ -359,7 +377,18 @@ bool State::loadFunction(const char* funcName) {
 }
 
 int State::callFunction(int numArgs, int numResults) {
-	return lua_pcall(m_state, numArgs, numResults, 0);
+	// lua_checkstack, not luaL_checkstack: the luaL variant raises, and we
+	// are outside any protected frame here — degrade to a plain pcall
+	// instead of risking a panic over the handler's one extra slot.
+	if (!m_context->tracebackEnabled || !lua_checkstack(m_state, 1)) {
+		return lua_pcall(m_state, numArgs, numResults, 0);
+	}
+	const int base = lua_gettop(m_state) - numArgs; // the function's slot
+	lua_pushcfunction(m_state, tracebackHandler);
+	lua_insert(m_state, base);
+	const int rc = lua_pcall(m_state, numArgs, numResults, base);
+	lua_remove(m_state, base); // results shift down; an error object stays on top
+	return rc;
 }
 
 
