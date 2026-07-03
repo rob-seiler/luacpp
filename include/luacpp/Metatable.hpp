@@ -5,9 +5,9 @@
 #include "Table.hpp"
 #include "Basics.hpp"
 #include "detail/PushResult.hpp"
+#include "detail/TypeName.hpp"
 
 #include <type_traits>
-#include <typeinfo>
 #include <utility>
 #include <string>
 #include "detail/OperatorTraits.hpp"
@@ -290,10 +290,16 @@ void registerDefaultMetatable(State& state) {
  * Specializations can override @c metatableName() or @c registerMetatable()
  * to customize the integration. By default, common operators are registered
  * if they exist.
+ *
+ * The default metatable name is "luacpp." + the qualified C++ type name
+ * (e.g. "luacpp.myns::Grid"), identical across MSVC/GCC/Clang for named,
+ * non-template types — so hosts and plugins built with different compilers
+ * agree on the registry key. Template instantiations and anonymous-namespace
+ * types are deterministic per compiler only. See docs/class-binding.md.
  */
 template <typename T>
 struct Metatable {
-	static const char* metatableName() { return typeid(T).name(); }
+	static const char* metatableName() { return detail::metatableNameFor<T>(); }
 
 	static void registerMetatable(State& state) {
 		detail::registerDefaultMetatable<T>(state);

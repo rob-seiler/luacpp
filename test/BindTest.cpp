@@ -718,10 +718,12 @@ TEST(BindToStringTest, NotRegisteredForTypesWithoutToString) {
     lua.loadAndExecuteScript(src);
 
     // Without toString(), Lua falls back to the default "<__name>: <address>" format
-    // (luaL_newmetatable auto-sets __name to the registered metatable name).
+    // (luaL_newmetatable auto-sets __name to the registered metatable name,
+    // which defaults to "luacpp." + the qualified type name).
     std::string result = readVar<std::string>(lua,"result");
     EXPECT_FALSE(result.empty());
     EXPECT_NE(result.find(": "), std::string::npos);
+    EXPECT_EQ(result.rfind("luacpp.", 0), 0u) << result;
 }
 
 TEST(BindToStringTest, UsedByLuaConcatenation) {
