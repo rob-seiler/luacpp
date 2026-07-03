@@ -30,6 +30,8 @@ struct StateContext {
 	ErrorPolicy      policy;
 	DebugHook        debugHook;        // empty when none installed
 	WarningState     warning;
+	bool             tracebackEnabled = false; // opt-in pcall message handler (Diagnostics::setTracebackEnabled)
+	std::string      pendingTraceback;         // set by the msgh, consumed by State::popErrorFromStack
 	uint32_t         refCount;
 	bool             closing;
 

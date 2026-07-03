@@ -21,4 +21,11 @@ T readVar(State& s, const char* name) {
 	return *v;
 }
 
+#ifdef LUACPP_TEST_DATA_DIR
+// Resolve a fixture under test/data (absolute, so tests run from any cwd).
+inline Lua::File dataFile(const char* name) {
+	return Lua::File(LUACPP_TEST_DATA_DIR) / name;
+}
+#endif
+
 } // namespace Lua

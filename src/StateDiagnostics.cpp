@@ -28,6 +28,14 @@ void Diagnostics::setWarningLogger(std::unique_ptr<WarningLogger> logger) {
 	}
 }
 
+void Diagnostics::setTracebackEnabled(bool enabled) noexcept {
+	m_state.m_context->tracebackEnabled = enabled;
+}
+
+bool Diagnostics::tracebackEnabled() const noexcept {
+	return m_state.m_context->tracebackEnabled;
+}
+
 void Diagnostics::registerDebugHook(detail::DebugHook hook, int mask, int count) {
 	// The hook plumbing (owner check, per-VM hook slot, and the borrowed-view
 	// State the trampoline hands to the callback) lives on State — see
