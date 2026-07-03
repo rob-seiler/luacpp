@@ -75,7 +75,7 @@ constexpr std::string_view typeName() noexcept {
 	// leading keyword so all compilers agree. Only at the start — keywords
 	// inside template arguments stay, template names are per-compiler only.
 	constexpr std::string_view keywords[] = {
-	    "enum class ", "enum struct ", "enum ", "class ", "struct "};
+	    "enum class ", "enum struct ", "enum ", "class ", "struct ", "union "};
 	for (std::string_view kw : keywords) {
 		if (name.size() > kw.size() && name.compare(0, kw.size(), kw) == 0) {
 			name.remove_prefix(kw.size());
@@ -86,9 +86,15 @@ constexpr std::string_view typeName() noexcept {
 }
 
 // Tripwire: if a future compiler ships an unexpected signature shape, fail
-// loudly at compile time instead of silently corrupting registry keys.
+// loudly at compile time instead of silently corrupting registry keys. The
+// named probe exercises the fragile paths the `int` case cannot — leading
+// keyword stripping (MSVC "struct ...") and "::" qualification.
+namespace typename_selftest { struct Probe {}; }
 static_assert(typeName<int>() == std::string_view("int"),
               "luacpp: type-name extraction broke on this compiler");
+static_assert(typeName<typename_selftest::Probe>() ==
+                  std::string_view("Lua::detail::typename_selftest::Probe"),
+              "luacpp: type-name keyword-stripping/qualification broke on this compiler");
 
 // The Lua C API needs a NUL-terminated const char*, so the prefixed name is
 // materialized into per-type static storage at compile time.

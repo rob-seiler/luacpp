@@ -27,6 +27,11 @@ public:
 
 enum class Color { Red, Green };
 
+union Packet {
+	int i;
+	float f;
+};
+
 struct Outer {
 	struct Inner {
 		int i = 0;
@@ -69,6 +74,13 @@ TEST(TypeNameTest, classKeywordIsStripped) {
 TEST(TypeNameTest, enumClassKeywordIsStripped) {
 	EXPECT_EQ(detail::typeName<LuaTypeNameTest::Color>(),
 	          std::string_view("LuaTypeNameTest::Color"));
+}
+
+TEST(TypeNameTest, unionKeywordIsStripped) {
+	// MSVC emits "union LuaTypeNameTest::Packet"; the leading keyword must be
+	// stripped so the key matches GCC/Clang, which emit no elaborated keyword.
+	EXPECT_EQ(detail::typeName<LuaTypeNameTest::Packet>(),
+	          std::string_view("LuaTypeNameTest::Packet"));
 }
 
 TEST(TypeNameTest, nestedTypeAndNamespaceAreQualified) {
