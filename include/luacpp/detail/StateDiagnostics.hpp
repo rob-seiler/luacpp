@@ -71,12 +71,14 @@ public:
 	/**
 	 * @brief Opt in to Lua stack tracebacks on failed protected calls.
 	 *
-	 * When enabled, every protected call luacpp makes runs a luaL_traceback
-	 * message handler, so LuaError::message carries
-	 * "<msg>\nstack traceback:\n..." — split via LuaMessage::text() /
-	 * LuaMessage::traceback(). Per-VM (shared context, like the error
-	 * policy), default off. Load errors never carry a traceback (nothing
-	 * ran yet); Lua skips the handler on memory errors (LUA_ERRMEM).
+	 * When enabled, protected calls run a luaL_traceback message handler
+	 * that captures the stack alongside the error: LuaMessage::traceback()
+	 * returns it, full() combines it with the message. raw()/text() stay
+	 * pure message, identical to the disabled path. Per-VM (shared context,
+	 * like the error policy), default off. Load errors never carry a
+	 * traceback (nothing ran yet); Lua skips the handler on memory errors
+	 * (LUA_ERRMEM), and a call degrades to a plain pcall if the stack
+	 * cannot grow by the handler's slots.
 	 */
 	void setTracebackEnabled(bool enabled) noexcept;
 

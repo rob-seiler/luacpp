@@ -82,23 +82,24 @@ lua.diagnostics.setTracebackEnabled(true);
 
 From then on, every protected call luacpp makes (`loadAndExecuteScript`,
 `executeScript`, `executeFunction` and friends) runs a `luaL_traceback`
-message handler, and `LuaError::message` carries the call stack:
-
-```
-[string "..."]:3: attempt to index a nil value (field 'position')
-stack traceback:
-        [string "..."]:3: in global 'update_player'
-        [string "..."]:7: in global 'on_frame'
-        [string "..."]:10: in main chunk
-```
-
-The accessors keep the parts separate:
+message handler, and `LuaError::message` carries the call stack **alongside**
+the error text — captured out-of-band, not glued into the message string:
 
 ```c++
-msg.text();      // error text only — no prefix, no traceback
-msg.traceback(); // std::optional<Lua::Traceback> — the stack block
-msg.raw();       // everything combined (also LuaException::what())
+msg.raw();       // "[string "..."]:3: attempt to index a nil value ..."
+msg.text();      // error text only — no prefix
+msg.traceback(); // std::optional<Lua::Traceback> — the stack block:
+                 //   stack traceback:
+                 //           [string "..."]:3: in global 'update_player'
+                 //           [string "..."]:7: in global 'on_frame'
+                 //           [string "..."]:10: in main chunk
+msg.full();      // message + traceback in one printable string
+                 // (also LuaException::what() and the StreamLogger output)
 ```
+
+Because the stack travels separately, `raw()`/`text()`/`source()`/`line()`
+behave exactly as with the opt-in disabled, and error text that happens to
+contain the phrase `stack traceback:` cannot be mistaken for one.
 
 `Traceback` exposes the block verbatim via `text()`, or parsed via
 `asList()` — one `Frame` per stack level, ready for a clickable stack
@@ -129,17 +130,19 @@ See [`examples/traceback/`](../examples/traceback/) for a complete
 
 - The flag is per-VM and shared by all wrappers, like the logger/handler
   slots. Default off; there is no cost when disabled.
+- **The opt-in is purely additive.** The error object itself is passed
+  through untouched and stringifies exactly as in the disabled path
+  (length-aware, `__tostring`-honoring) — a plain table stays
+  `table: 0x...`, custom `__tostring` messages stay verbatim, embedded
+  NULs survive. Only `traceback()` gains a value.
 - **Load errors never carry a traceback** — the chunk never ran, so there
   is no call stack. The message stays `file.lua:12: unexpected symbol...`
   and `traceback()` returns `nullopt`.
 - **Memory errors** (`Status::MemoryError`): Lua does not invoke message
-  handlers on `LUA_ERRMEM`, so those messages stay bare by design.
-- Non-string error objects: `error({code = 1})` yields
-  `(error object is a table value)` plus the traceback; objects with a
-  `__tostring` metamethod keep their custom message. (This deviates from
-  the reference `lua.c` handler, which returns `__tostring` results
-  without a traceback — luacpp appends one, since that is the point of
-  opting in.)
+  handlers on `LUA_ERRMEM`, so those stay bare by design; the same holds
+  in the (OOM-adjacent) corner where the Lua stack cannot grow by the
+  handler's slots — the call degrades to a plain `pcall` instead of
+  panicking.
 - An error raised *inside* the message handler surfaces as
   `Status::MsgHandlerError` (`LUA_ERRERR`), reported through the same
   logger/handler pipeline.

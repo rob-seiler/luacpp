@@ -5,6 +5,7 @@
 #include <stdexcept> //std::logic_error
 #include <string>
 #include <limits>    //std::numeric_limits
+#include <utility>   //std::exchange
 
 namespace {
 // Detects whether s.data() points into the std::string object itself (Short
@@ -35,22 +36,21 @@ bool hasStackError(Lua::LuaError::Status s) {
 	}
 }
 
-// pcall message handler, modelled on lua.c's msghandler. One deviation:
-// __tostring error objects get a traceback appended too (lua.c returns
-// them bare) — a traceback is the whole point of opting in.
+// pcall message handler. Captures the traceback out-of-band into the
+// per-VM context (upvalue 1) and returns the error object UNTOUCHED —
+// unlike lua.c's msghandler, which concatenates message and traceback
+// into one string. Keeping them apart means the error object stringifies
+// identically with and without the opt-in (length-aware, __tostring-
+// honoring, via popErrorFromStack) and no message can fake a traceback.
 int tracebackHandler(lua_State* L) {
-	const char* msg = lua_tostring(L, 1);
-	if (msg == nullptr) { // non-string error object, e.g. error({...})
-		if (luaL_callmeta(L, 1, "__tostring") &&
-		    lua_type(L, -1) == LUA_TSTRING) {
-			msg = lua_tostring(L, -1); // anchored below the traceback buffer
-		} else {
-			msg = lua_pushfstring(L, "(error object is a %s value)",
-			                      luaL_typename(L, 1));
-		}
-	}
-	luaL_traceback(L, L, msg, 1);
-	return 1;
+	auto* ctx = static_cast<Lua::detail::StateContext*>(
+	    lua_touserdata(L, lua_upvalueindex(1)));
+	luaL_traceback(L, L, nullptr, 1); // level 1: the function that raised
+	size_t len = 0;
+	const char* tb = lua_tolstring(L, -1, &len);
+	if (tb != nullptr) ctx->pendingTraceback.assign(tb, len);
+	lua_pop(L, 1);
+	return 1; // the original error object (stack slot 1)
 }
 } // namespace
 
@@ -107,7 +107,11 @@ LuaError State::popErrorFromStack(LuaError::Category category, LuaError::Status 
 	StackGuard guard(m_state);
 	size_t len = 0;
 	const char* s = luaL_tolstring(m_state, -1, &len);
-	err.message = std::string(s, len);
+	// Consume-and-clear unconditionally: the msgh only fills the slot for
+	// the failed call this pop belongs to, and clearing keeps a Load error
+	// (which never runs the msgh) from inheriting an older call's trace.
+	err.message = LuaMessage(std::string(s, len),
+	                         std::exchange(m_context->pendingTraceback, std::string{}));
 	return err;
 }
 
@@ -379,12 +383,14 @@ bool State::loadFunction(const char* funcName) {
 int State::callFunction(int numArgs, int numResults) {
 	// lua_checkstack, not luaL_checkstack: the luaL variant raises, and we
 	// are outside any protected frame here — degrade to a plain pcall
-	// instead of risking a panic over the handler's one extra slot.
-	if (!m_context->tracebackEnabled || !lua_checkstack(m_state, 1)) {
+	// instead of risking a panic over the handler's extra slots.
+	if (!m_context->tracebackEnabled || !lua_checkstack(m_state, 2)) {
 		return lua_pcall(m_state, numArgs, numResults, 0);
 	}
+	m_context->pendingTraceback.clear(); // never carry a stale trace forward
 	const int base = lua_gettop(m_state) - numArgs; // the function's slot
-	lua_pushcfunction(m_state, tracebackHandler);
+	lua_pushlightuserdata(m_state, m_context);
+	lua_pushcclosure(m_state, tracebackHandler, 1);
 	lua_insert(m_state, base);
 	const int rc = lua_pcall(m_state, numArgs, numResults, base);
 	lua_remove(m_state, base); // results shift down; an error object stays on top

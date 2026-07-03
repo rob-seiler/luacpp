@@ -49,14 +49,16 @@ private:
  *        original; source()/line() return nullopt and text() falls back
  *        to raw() when the message doesn't match (table errors, level=0
  *        error(), custom message handler). With traceback support enabled
- *        the raw message also carries a "stack traceback:" block; text()
- *        excludes it, traceback() returns it.
+ *        the stack is carried out-of-band: raw()/text() stay pure message,
+ *        traceback() returns the block, full() combines both.
  */
 class LuaMessage {
 public:
 	LuaMessage() = default;
 	LuaMessage(std::string raw) : m_raw(std::move(raw)) {}
 	LuaMessage(const char* raw) : m_raw(raw ? raw : "") {}
+	LuaMessage(std::string raw, std::string traceback)
+	    : m_raw(std::move(raw)), m_traceback(std::move(traceback)) {}
 
 	const std::string& raw()   const noexcept { return m_raw; }
 	bool               empty() const noexcept { return m_raw.empty(); }
@@ -67,13 +69,16 @@ public:
 	/// "<line>" portion; nullopt if no parseable prefix.
 	std::optional<int> line() const;
 
-	/// Message body without the "<src>:<line>: " prefix and without any
-	/// traceback block; falls back to raw() (minus traceback) if no prefix.
+	/// Message body without the "<src>:<line>: " prefix; raw() if no prefix.
 	std::string text() const;
 
-	/// The "stack traceback:" block; nullopt when none is present (opt-in
+	/// The "stack traceback:" block; nullopt when none was captured (opt-in
 	/// disabled, or a Load error — nothing ran, so there is no call stack).
 	std::optional<Traceback> traceback() const;
+
+	/// raw() plus the traceback block when present — the complete printable
+	/// text. Used by LuaException::what() and StreamLogger.
+	std::string full() const;
 
 	// Substring search forwarders. Other string ops go through raw().
 	std::size_t find(const std::string& s, std::size_t pos = 0) const noexcept { return m_raw.find(s, pos); }
@@ -82,10 +87,11 @@ public:
 
 private:
 	std::string m_raw;
+	std::string m_traceback; // empty = none captured
 };
 
-/// Streams the raw Lua message. For category/status-formatted output use
-/// StreamLogger, which wraps a LuaError and prepends "[lua <cat> <n>] ".
+/// Streams the full Lua message (incl. traceback). For category/status-
+/// formatted output use StreamLogger, which prepends "[lua <cat> <n>] ".
 std::ostream& operator<<(std::ostream& os, const LuaMessage& m);
 
 /**
@@ -133,7 +139,7 @@ const char* describe(LuaError::Status status) noexcept;
 class LuaException : public std::runtime_error {
 public:
 	explicit LuaException(LuaError err)
-	    : std::runtime_error(err.message.raw()), m_error(std::move(err)) {}
+	    : std::runtime_error(err.message.full()), m_error(std::move(err)) {}
 
 	const LuaError& error() const noexcept { return m_error; }
 

@@ -3,18 +3,12 @@
 #include <luacpp/ErrorHandling.hpp>
 #include <luacpp/State.hpp>
 
-#include <string>
+#include "TestSupport.hpp" // dataFile
 
-#ifndef LUACPP_TEST_DATA_DIR
-#error "LUACPP_TEST_DATA_DIR not defined; CMake target_compile_definitions missing"
-#endif
+#include <string>
 
 namespace Lua {
 namespace {
-
-Lua::File dataFile(const char* name) {
-	return Lua::File(LUACPP_TEST_DATA_DIR) / name;
-}
 
 constexpr const char* TracebackHeader = "stack traceback:";
 
@@ -79,6 +73,18 @@ TEST(TracebackParseTest, sourceWithoutLineParses) {
 	EXPECT_FALSE(frames[0].line.has_value());
 }
 
+TEST(TracebackParseTest, chunkNameContainingSeparatorParses) {
+	// luaL_loadstring names chunks after their source text, so a chunk name
+	// can itself contain ": in " — the separator scan must skip past it.
+	Traceback tb("stack traceback:\n"
+	             "\t[string \"s = ': in '\"]:1: in main chunk");
+	const auto frames = tb.asList();
+	ASSERT_EQ(frames.size(), 1u);
+	EXPECT_EQ(frames[0].source, "[string \"s = ': in '\"]");
+	EXPECT_EQ(frames[0].line, 1);
+	EXPECT_EQ(frames[0].what, "main chunk");
+}
+
 TEST(TracebackParseTest, headerOnlyAndEmptyYieldNoFrames) {
 	EXPECT_TRUE(Traceback("stack traceback:").asList().empty());
 	Traceback empty;
@@ -90,72 +96,77 @@ TEST(TracebackParseTest, headerOnlyAndEmptyYieldNoFrames) {
 // Opt-in behavior through the State pcall paths
 // ---------------------------------------------------------------------------
 
+// Shared setup: sandboxed VM with base lib, memory logger attached.
+struct TracebackVm {
+	State lua{State::LibBase};
+	MemoryLogger& mem{lua.diagnostics.installLogger<MemoryLogger>()};
+
+	const LuaMessage& firstMessage() {
+		static const LuaMessage none;
+		if (mem.entries().empty()) {
+			ADD_FAILURE() << "no error was reported";
+			return none;
+		}
+		return mem.entries().front().message;
+	}
+};
+
 TEST(TracebackTest, disabledByDefaultOmitsTraceback) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
+	TracebackVm vm;
+	EXPECT_FALSE(vm.lua.diagnostics.tracebackEnabled());
 
-	EXPECT_FALSE(lua.diagnostics.tracebackEnabled());
-	lua.loadAndExecuteScript("error('boom')");
+	vm.lua.loadAndExecuteScript("error('boom')");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
-	EXPECT_EQ(msg.find(TracebackHeader), std::string::npos)
-	    << "traceback appeared without opt-in: " << msg;
-	EXPECT_FALSE(msg.traceback().has_value());
+	EXPECT_FALSE(vm.firstMessage().traceback().has_value());
 }
 
-TEST(TracebackTest, enabledAppendsTracebackToRuntimeError) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
-	EXPECT_TRUE(lua.diagnostics.tracebackEnabled());
+TEST(TracebackTest, enabledCapturesTracebackOnRuntimeError) {
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
+	EXPECT_TRUE(vm.lua.diagnostics.tracebackEnabled());
 
-	lua.loadAndExecuteScript("error('boom')");
+	vm.lua.loadAndExecuteScript("error('boom')");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
+	const auto& msg = vm.firstMessage();
 	EXPECT_NE(msg.find("boom"), std::string::npos);
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos)
-	    << "no traceback despite opt-in: " << msg;
-	// The "<chunk>:<line>: " prefix stays on line 1 — the LuaMessage contract.
-	EXPECT_EQ(msg.line(), 1);
+	EXPECT_EQ(msg.line(), 1); // prefix parsing is unaffected by the capture
+	const auto tb = msg.traceback();
+	ASSERT_TRUE(tb.has_value());
+	EXPECT_EQ(tb->text().rfind(TracebackHeader, 0), 0u) << tb->text();
+	// full() combines message and stack; raw() stays pure message.
+	EXPECT_NE(msg.full().find(TracebackHeader), std::string::npos);
+	EXPECT_EQ(msg.raw().find(TracebackHeader), std::string::npos);
 }
 
 TEST(TracebackTest, nestedCallsShowCallerFrames) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript(
+	vm.lua.loadAndExecuteScript(
 	    "function inner() error('deep') end\n"
 	    "function outer() inner() end\n"
 	    "outer()");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
+	const auto tb = vm.firstMessage().traceback();
+	ASSERT_TRUE(tb.has_value());
 	// Lua 5.5 names the frame kind ("in global 'inner'", "in local 'f'", ...)
 	// where older versions always said "in function" — assert only on the
 	// quoted names to stay format-agnostic.
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos) << msg;
-	EXPECT_NE(msg.find("'inner'"), std::string::npos) << msg;
-	EXPECT_NE(msg.find("'outer'"), std::string::npos) << msg;
+	EXPECT_NE(tb->text().find("'inner'"), std::string::npos) << tb->text();
+	EXPECT_NE(tb->text().find("'outer'"), std::string::npos) << tb->text();
 }
 
 TEST(TracebackTest, realTracebackParsesIntoFrames) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript(
+	vm.lua.loadAndExecuteScript(
 	    "function inner() error('deep') end\n"
 	    "function outer() inner() end\n"
 	    "outer()");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto tb = mem.entries().front().message.traceback();
+	const auto tb = vm.firstMessage().traceback();
 	ASSERT_TRUE(tb.has_value());
-	EXPECT_EQ(tb->text().rfind(TracebackHeader, 0), 0u)
-	    << "traceback block must start with the header: " << tb->text();
 
 	// Guards the parser against format drift in Lua: a real traceback must
 	// decompose into the frames we expect (error(), inner, outer, main chunk).
@@ -175,163 +186,169 @@ TEST(TracebackTest, realTracebackParsesIntoFrames) {
 }
 
 TEST(TracebackTest, executeFunctionPathCarriesTraceback) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript("function fail(a, b) error('args') end");
-	ASSERT_TRUE(mem.entries().empty());
+	vm.lua.loadAndExecuteScript("function fail(a, b) error('args') end");
+	ASSERT_TRUE(vm.mem.entries().empty());
 
 	// numArgs > 0 exercises the handler-slot computation below func+args.
-	lua.executeFunction("fail", 1, 2);
+	vm.lua.executeFunction("fail", 1, 2);
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
+	const auto& msg = vm.firstMessage();
 	EXPECT_NE(msg.find("args"), std::string::npos);
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos) << msg;
+	EXPECT_TRUE(msg.traceback().has_value()) << msg.raw();
 }
 
 TEST(TracebackTest, executeScriptPathCarriesTraceback) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadScript(1, "error('stored')");
-	ASSERT_TRUE(mem.entries().empty());
-	lua.executeScript(1);
+	vm.lua.loadScript(1, "error('stored')");
+	ASSERT_TRUE(vm.mem.entries().empty());
+	vm.lua.executeScript(1);
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
+	const auto& msg = vm.firstMessage();
 	EXPECT_NE(msg.find("stored"), std::string::npos);
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos) << msg;
+	EXPECT_TRUE(msg.traceback().has_value()) << msg.raw();
 }
 
 TEST(TracebackTest, successPathPreservesMultretResults) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
 	// Regression test for the handler removal: with the msgh inserted below
 	// the chunk, all MULTRET results must land exactly where they would have
 	// without it.
-	lua.loadAndExecuteScript("return 1, 2, 3");
+	vm.lua.loadAndExecuteScript("return 1, 2, 3");
 
-	EXPECT_TRUE(mem.entries().empty());
-	ASSERT_EQ(lua.getStackSize(), 3);
-	EXPECT_EQ(lua.getStackValue<int>(-3), 1);
-	EXPECT_EQ(lua.getStackValue<int>(-2), 2);
-	EXPECT_EQ(lua.getStackValue<int>(-1), 3);
+	EXPECT_TRUE(vm.mem.entries().empty());
+	ASSERT_EQ(vm.lua.getStackSize(), 3);
+	EXPECT_EQ(vm.lua.getStackValue<int>(-3), 1);
+	EXPECT_EQ(vm.lua.getStackValue<int>(-2), 2);
+	EXPECT_EQ(vm.lua.getStackValue<int>(-1), 3);
 }
 
 TEST(TracebackTest, successPathReturningLeavesBalancedStack) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript("function add(a, b) return a + b end");
-	const auto result = lua.executeFunctionReturning<int>("add", 20, 22);
+	vm.lua.loadAndExecuteScript("function add(a, b) return a + b end");
+	const auto result = vm.lua.executeFunctionReturning<int>("add", 20, 22);
 
-	EXPECT_TRUE(mem.entries().empty());
+	EXPECT_TRUE(vm.mem.entries().empty());
 	ASSERT_TRUE(result.has_value());
 	EXPECT_EQ(*result, 42);
-	EXPECT_EQ(lua.getStackSize(), 0) << "handler slot leaked onto the stack";
+	EXPECT_EQ(vm.lua.getStackSize(), 0) << "handler slot leaked onto the stack";
 }
 
-TEST(TracebackTest, nonStringErrorObjectGetsPlaceholderAndTraceback) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+TEST(TracebackTest, nonStringErrorObjectStringifiesLikeDisabledPath) {
+	// The opt-in must be purely additive: error objects stringify through
+	// the same luaL_tolstring path with and without tracebacks, so a plain
+	// table yields "table: 0x..." in both modes (not a placeholder text).
+	TracebackVm vm;
+	vm.lua.loadAndExecuteScript("error({code = 1})");
+	const auto disabledText = vm.firstMessage().raw();
+	EXPECT_EQ(disabledText.rfind("table: ", 0), 0u) << disabledText;
 
-	lua.loadAndExecuteScript("error({code = 1})");
-
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
-	EXPECT_NE(msg.find("(error object is a table value)"), std::string::npos) << msg;
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos) << msg;
+	TracebackVm vm2;
+	vm2.lua.diagnostics.setTracebackEnabled(true);
+	vm2.lua.loadAndExecuteScript("error({code = 1})");
+	const auto& msg = vm2.firstMessage();
+	EXPECT_EQ(msg.raw().rfind("table: ", 0), 0u) << msg.raw();
+	EXPECT_TRUE(msg.traceback().has_value());
 }
 
 TEST(TracebackTest, tostringErrorObjectKeepsCustomMessage) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript(
+	vm.lua.loadAndExecuteScript(
 	    "error(setmetatable({}, {__tostring = function() return 'custom msg' end}))");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
-	EXPECT_NE(msg.find("custom msg"), std::string::npos) << msg;
-	// Documented deviation from lua.c's msghandler: __tostring-convertible
-	// error objects get a traceback appended too.
-	EXPECT_NE(msg.find(TracebackHeader), std::string::npos) << msg;
+	const auto& msg = vm.firstMessage();
+	EXPECT_EQ(msg.raw(), "custom msg");
+	EXPECT_TRUE(msg.traceback().has_value());
+}
+
+TEST(TracebackTest, embeddedNulInErrorMessageSurvives) {
+	// The traceback is captured out-of-band, so the error object still goes
+	// through the length-aware luaL_tolstring — NULs must not truncate it.
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
+
+	vm.lua.loadAndExecuteScript("error('a\\0b')");
+
+	const std::string expected("a\0b", 3);
+	EXPECT_NE(vm.firstMessage().find(expected), std::string::npos);
+	EXPECT_TRUE(vm.firstMessage().traceback().has_value());
+}
+
+TEST(TracebackTest, userMessageContainingHeaderIsNotMistakenForTraceback) {
+	// Regression: the traceback is no longer sniffed out of the message
+	// string, so error text that happens to contain the header phrase
+	// (e.g. a rethrown debug.traceback() result) cannot fake one.
+	TracebackVm vm;
+	vm.lua.loadAndExecuteScript("error('msg\\nstack traceback: fake', 0)");
+
+	const auto& msg = vm.firstMessage();
+	EXPECT_FALSE(msg.traceback().has_value());
+	EXPECT_NE(msg.text().find("stack traceback: fake"), std::string::npos);
 }
 
 TEST(TracebackTest, reDisableRestoresPlainMessage) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
+	TracebackVm vm;
 
-	lua.diagnostics.setTracebackEnabled(true);
-	lua.loadAndExecuteScript("error('first')");
-	lua.diagnostics.setTracebackEnabled(false);
-	lua.loadAndExecuteScript("error('second')");
+	vm.lua.diagnostics.setTracebackEnabled(true);
+	vm.lua.loadAndExecuteScript("error('first')");
+	vm.lua.diagnostics.setTracebackEnabled(false);
+	vm.lua.loadAndExecuteScript("error('second')");
 
-	ASSERT_EQ(mem.entries().size(), 2u);
-	EXPECT_NE(mem.entries()[0].message.find(TracebackHeader), std::string::npos);
-	EXPECT_EQ(mem.entries()[1].message.find(TracebackHeader), std::string::npos)
-	    << "traceback still present after opt-out: " << mem.entries()[1].message;
+	ASSERT_EQ(vm.mem.entries().size(), 2u);
+	EXPECT_TRUE(vm.mem.entries()[0].message.traceback().has_value());
+	EXPECT_FALSE(vm.mem.entries()[1].message.traceback().has_value());
 }
 
 TEST(TracebackTest, fileScriptTracebackReferencesFile) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
+	vm.lua.loadAndExecuteScript(dataFile("runtime_error.lua"));
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
-	const auto headerPos = msg.find(TracebackHeader);
-	ASSERT_NE(headerPos, std::string::npos) << msg;
+	const auto& msg = vm.firstMessage();
 	// The file name must appear in the prefix AND inside a traceback frame.
-	EXPECT_NE(msg.find("runtime_error.lua"), std::string::npos) << msg;
-	EXPECT_NE(msg.find("runtime_error.lua", headerPos), std::string::npos)
-	    << "no frame references the file: " << msg;
+	EXPECT_NE(msg.find("runtime_error.lua"), std::string::npos) << msg.raw();
+	const auto tb = msg.traceback();
+	ASSERT_TRUE(tb.has_value());
+	EXPECT_NE(tb->text().find("runtime_error.lua"), std::string::npos)
+	    << "no frame references the file: " << tb->text();
 }
 
 TEST(TracebackTest, borrowedWrapperSharesTracebackFlag) {
-	State owner(State::LibBase);
-	auto& mem = owner.diagnostics.installLogger<MemoryLogger>();
-	owner.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
 	// A borrowed wrapper around the same VM shares the per-VM context —
 	// including the traceback flag and the logger.
-	State borrowed(owner.getState());
+	State borrowed(vm.lua.getState());
 	EXPECT_TRUE(borrowed.diagnostics.tracebackEnabled());
 	borrowed.loadAndExecuteScript("error('via borrowed')");
 
-	ASSERT_FALSE(mem.entries().empty());
-	EXPECT_NE(mem.entries().front().message.find(TracebackHeader), std::string::npos);
+	EXPECT_TRUE(vm.firstMessage().traceback().has_value());
 }
 
 TEST(TracebackTest, messageAccessorsSplitTextAndTraceback) {
-	State lua(State::LibBase);
-	auto& mem = lua.diagnostics.installLogger<MemoryLogger>();
-	lua.diagnostics.setTracebackEnabled(true);
+	TracebackVm vm;
+	vm.lua.diagnostics.setTracebackEnabled(true);
 
-	lua.loadAndExecuteScript("error('boom')");
+	vm.lua.loadAndExecuteScript("error('boom')");
 
-	ASSERT_FALSE(mem.entries().empty());
-	const auto& msg = mem.entries().front().message;
-
-	// text(): error text only — no prefix, no traceback block.
-	EXPECT_EQ(msg.text(), "boom");
-	// traceback(): the block, verbatim, starting at the header.
-	const auto tb = msg.traceback();
-	ASSERT_TRUE(tb.has_value());
-	EXPECT_EQ(tb->text().rfind(TracebackHeader, 0), 0u);
-	// raw(): both parts combined.
-	EXPECT_NE(msg.raw().find("boom"), std::string::npos);
-	EXPECT_NE(msg.raw().find(TracebackHeader), std::string::npos);
+	const auto& msg = vm.firstMessage();
+	EXPECT_EQ(msg.text(), "boom");                                   // pure error text
+	ASSERT_TRUE(msg.traceback().has_value());                        // the stack block
+	EXPECT_EQ(msg.raw().find(TracebackHeader), std::string::npos);   // raw = message only
+	EXPECT_NE(msg.full().find("boom"), std::string::npos);           // full = both
+	EXPECT_NE(msg.full().find(TracebackHeader), std::string::npos);
 }
 
 } // namespace

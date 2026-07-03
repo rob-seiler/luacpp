@@ -2,6 +2,8 @@
 
 #include <luacpp/State.hpp>
 
+#include "TestSupport.hpp" // dataFile
+
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -12,12 +14,6 @@
 #endif
 
 namespace Lua {
-
-namespace {
-Lua::File dataFile(const char* name) {
-	return Lua::File(LUACPP_TEST_DATA_DIR) / name;
-}
-}
 
 TEST(FileLoadingTest, ValidFile_LoadsAndExecutes) {
 	State lua;
