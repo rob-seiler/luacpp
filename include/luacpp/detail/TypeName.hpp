@@ -90,10 +90,20 @@ constexpr std::string_view typeName() noexcept {
 // named probe exercises the fragile paths the `int` case cannot — leading
 // keyword stripping (MSVC "struct ...") and "::" qualification.
 namespace typename_selftest { struct Probe {}; }
+
+// The exact namespace qualification a compiler prints is NOT portable — GCC
+// omits the namespace the type shares with rawSignature (so it emits
+// "typename_selftest::Probe", MSVC the fully-qualified name) — so assert the
+// invariants that must hold everywhere, not an exact string.
+constexpr bool probeExtractionValid(std::string_view n) noexcept {
+	return n.find("::") != std::string_view::npos &&           // qualification survived
+	       !(n.size() >= 7 && n.substr(0, 7) == "struct ") &&  // leading keyword stripped
+	       n.size() >= 7 && n.substr(n.size() - 7) == "::Probe"; // type name intact
+}
+
 static_assert(typeName<int>() == std::string_view("int"),
               "luacpp: type-name extraction broke on this compiler");
-static_assert(typeName<typename_selftest::Probe>() ==
-                  std::string_view("Lua::detail::typename_selftest::Probe"),
+static_assert(probeExtractionValid(typeName<typename_selftest::Probe>()),
               "luacpp: type-name keyword-stripping/qualification broke on this compiler");
 
 // The Lua C API needs a NUL-terminated const char*, so the prefixed name is
