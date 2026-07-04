@@ -83,6 +83,54 @@ print(Vec.EPSILON)          -- 1e-06
 local v = Vec.fromAngle(0)  -- Vec(1, 0)
 ```
 
+## Metatable names
+
+Every bound class is registered in Lua's registry under a metatable name.
+The default (since v0.3.0) is `"luacpp."` plus the qualified C++ type name,
+computed at compile time:
+
+```
+luacpp.Vec
+luacpp.myns::Grid
+```
+
+For named, non-template types this string is **identical across MSVC, GCC
+and Clang** — the reason this matters is the host/plugin scenario: a host
+application and a plugin built with different compilers can share one
+`lua_State` and still recognize each other's bound types. (Previously the
+default was `typeid(T).name()`, which is compiler-specific; a host and
+plugin built against luacpp < 0.3.0 and ≥ 0.3.0 will not match either —
+upgrade both sides together.)
+
+The name is visible wherever Lua uses the metatable's `__name` field: the
+default `tostring()` output (`luacpp.Vec: 0x0000019f...`) and type-check
+error messages (`bad argument #1 (luacpp.Vec expected, got number)`). The
+`luacpp.` prefix keeps the registry key from colliding with metatables you
+create yourself via `createMetaTable("Vec", ...)`.
+
+Not guaranteed to match across compilers (deterministic per compiler only):
+template instantiations (spelling of arguments differs) and types in
+anonymous namespaces. For those — or to pick a custom name — specialize
+`Metatable<T>`:
+
+```c++
+template <>
+struct Lua::Metatable<myns::Grid> {
+	static const char* metatableName() { return "luacpp.Grid"; }
+
+	static void registerMetatable(Lua::State& state) {
+		Lua::detail::registerDefaultMetatable<myns::Grid>(state);
+	}
+
+	template <typename... Args>
+	static myns::Grid* create(Lua::State& state, Args&&... args) {
+		myns::Grid* obj = state.createUserData<myns::Grid>(std::forward<Args>(args)...);
+		state.assignMetaTable(metatableName());
+		return obj;
+	}
+};
+```
+
 ## A note on ownership
 
 When a C++ value is pushed to Lua (e.g. as the return value of a bound method), it is *copied* into a fresh userdata that Lua owns and garbage-collects. Returning `T&` or `T*` from a bound method does not preserve aliasing — mutations on the Lua side will not propagate back to the original C++ object. To expose live state, bind explicit accessor methods rather than returning references or pointers.

@@ -63,7 +63,7 @@ A fresh `Lua::State` opens no standard libraries — scripts run in a sealed san
 
 - [Embedding C++ functions in Lua](docs/embedding-functions.md) — `registerNativeFunction`, upvalues, `registerMethod` for `std::function` callbacks and lambdas with capture.
 - [Reading and writing values](docs/values-and-tables.md) — `variables.read` / `variables.write`, homogeneous and generic table reads, nested tables via `variables.withTableDo`.
-- [Binding C++ classes to Lua](docs/class-binding.md) — `Metatable<T>` auto-detection of operators, `binding.constructor` / `binding.method` / `binding.property`, static fields, ownership semantics.
+- [Binding C++ classes to Lua](docs/class-binding.md) — `Metatable<T>` auto-detection of operators, `binding.constructor` / `binding.method` / `binding.property`, static fields, ownership semantics, cross-compiler-stable metatable names.
 - [Error handling and tracebacks](docs/error-handling.md) — `LuaError`, logger/handler slots, `LuaMessage` parsing, opt-in stack tracebacks via `setTracebackEnabled` with per-frame access.
 - [Lua standard libraries](docs/lua-libraries.md) — Library bits, eager opening vs `require()`-based preloading, extending `package.path` / `package.cpath`.
 - [Loading C modules at runtime](docs/c-modules.md) — `LUACPP_ENABLE_CMODULE_LOADING`, POSIX vs Windows deployment, LuaRocks-compatible C-API contract.
@@ -79,10 +79,6 @@ Runnable end-to-end examples live in [`examples/`](examples/):
 - [`examples/traceback/`](examples/traceback/) — a mini "script editor console" rendering error text, jump-to-line target, and the parsed Lua call stack from a failed script.
 
 ## Roadmap
-
-### v0.3.0 — Embedding hardening
-
-- **Stable metatable names** — replace the `typeid(T).name()` default.
 
 ### v0.4.0 — Class binding expansion
 
